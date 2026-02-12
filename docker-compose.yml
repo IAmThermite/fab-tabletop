@@ -1,0 +1,17 @@
+services:
+  database:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - 5432:5432
+
+  services:
+  coturn:
+    image: coturn/coturn:latest
+    network_mode: "host"
+    volumes:
+      - ./infrastructure/coturn/coturn.dev.conf:/etc/coturn/turnserver.conf
+    command: ["turnserver", "-c", "/etc/coturn/turnserver.conf"]

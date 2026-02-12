@@ -1,8 +1,6 @@
 defmodule TabletopWeb.UserLive.Login do
   use TabletopWeb, :live_view
 
-  alias Tabletop.Accounts
-
   @impl true
   def render(assigns) do
     ~H"""
@@ -83,23 +81,6 @@ defmodule TabletopWeb.UserLive.Login do
   @impl true
   def handle_event("submit_password", _params, socket) do
     {:noreply, assign(socket, :trigger_submit, true)}
-  end
-
-  def handle_event("submit_magic", %{"user" => %{"email" => email}}, socket) do
-    if user = Accounts.get_user_by_email(email) do
-      Accounts.deliver_login_instructions(
-        user,
-        &url(~p"/users/log-in/#{&1}")
-      )
-    end
-
-    info =
-      "If your email is in our system, you will receive instructions for logging in shortly."
-
-    {:noreply,
-     socket
-     |> put_flash(:info, info)
-     |> push_navigate(to: ~p"/users/log-in")}
   end
 
   defp local_mail_adapter? do

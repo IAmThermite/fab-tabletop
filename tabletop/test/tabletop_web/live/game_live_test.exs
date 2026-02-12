@@ -4,9 +4,9 @@ defmodule TabletopWeb.GameLiveTest do
   import Phoenix.LiveViewTest
   import Tabletop.GamesFixtures
 
-  @create_attrs %{name: "some name"}
-  @update_attrs %{name: "some updated name"}
-  @invalid_attrs %{name: nil}
+  @create_attrs %{title: "some title", format: :classic_constructed}
+  @update_attrs %{title: "some updated title"}
+  @invalid_attrs %{title: nil}
 
   setup :register_and_log_in_user
 
@@ -23,7 +23,7 @@ defmodule TabletopWeb.GameLiveTest do
       {:ok, _index_live, html} = live(conn, ~p"/games")
 
       assert html =~ "Listing Games"
-      assert html =~ game.name
+      assert html =~ game.title
     end
 
     test "saves new game", %{conn: conn} do
@@ -49,7 +49,7 @@ defmodule TabletopWeb.GameLiveTest do
 
       html = render(index_live)
       assert html =~ "Game created successfully"
-      assert html =~ "some name"
+      assert html =~ "some title"
     end
 
     test "updates game in listing", %{conn: conn, game: game} do
@@ -75,7 +75,7 @@ defmodule TabletopWeb.GameLiveTest do
 
       html = render(index_live)
       assert html =~ "Game updated successfully"
-      assert html =~ "some updated name"
+      assert html =~ "some updated title"
     end
 
     test "deletes game in listing", %{conn: conn, game: game} do
@@ -93,7 +93,7 @@ defmodule TabletopWeb.GameLiveTest do
       {:ok, _show_live, html} = live(conn, ~p"/games/#{game}")
 
       assert html =~ "Show Game"
-      assert html =~ game.name
+      assert html =~ game.title
     end
 
     test "updates game and returns to show", %{conn: conn, game: game} do
@@ -119,7 +119,7 @@ defmodule TabletopWeb.GameLiveTest do
 
       html = render(show_live)
       assert html =~ "Game updated successfully"
-      assert html =~ "some updated name"
+      assert html =~ "some updated title"
     end
   end
 end

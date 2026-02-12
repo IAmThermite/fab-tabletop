@@ -14,7 +14,8 @@ defmodule Tabletop.AccountsFixtures do
 
   def valid_user_attributes(attrs \\ %{}) do
     Enum.into(attrs, %{
-      email: unique_user_email()
+      email: unique_user_email(),
+      password: "test_password"
     })
   end
 
@@ -32,12 +33,10 @@ defmodule Tabletop.AccountsFixtures do
 
     token =
       extract_user_token(fn url ->
-        Accounts.deliver_login_instructions(user, url)
+        Accounts.deliver_user_confirmation_instructions(user, url)
       end)
 
-    {:ok, {user, _expired_tokens}} =
-      Accounts.login_user_by_magic_link(token)
-
+    {:ok, user} = Accounts.confirm_user(token)
     user
   end
 
@@ -72,8 +71,8 @@ defmodule Tabletop.AccountsFixtures do
     )
   end
 
-  def generate_user_magic_link_token(user) do
-    {encoded_token, user_token} = Accounts.UserToken.build_email_token(user, "login")
+  def generate_user_confirmation_token(user) do
+    {encoded_token, user_token} = Accounts.UserToken.build_email_token(user, "confirm")
     Tabletop.Repo.insert!(user_token)
     {encoded_token, user_token.token}
   end

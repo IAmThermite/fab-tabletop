@@ -10,7 +10,8 @@ defmodule Tabletop.GamesFixtures do
   def game_fixture(scope, attrs \\ %{}) do
     attrs =
       Enum.into(attrs, %{
-        name: "some name"
+        title: "Game Time",
+        format: :classic_constructed
       })
 
     {:ok, game} = Tabletop.Games.create_game(scope, attrs)

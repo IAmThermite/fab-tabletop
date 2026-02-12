@@ -20,7 +20,6 @@ defmodule Tabletop.Games do
 
   """
   def subscribe_games(%Scope{} = _scope) do
-
     Phoenix.PubSub.subscribe(Tabletop.PubSub, "games")
   end
 
@@ -37,7 +36,7 @@ defmodule Tabletop.Games do
       [%Game{}, ...]
 
   """
-  def list_games(%Scope{} = scope) do
+  def list_games(%Scope{} = _scope) do
     Repo.all(Game)
   end
 

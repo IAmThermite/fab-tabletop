@@ -53,7 +53,6 @@ defmodule TabletopWeb.Router do
     live_session :require_authenticated_user,
       on_mount: [{TabletopWeb.UserAuth, :require_authenticated}] do
       live("/users/settings", UserLive.Settings, :edit)
-      live("/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email)
 
       live "/games/new", GameLive.Form, :new
       live "/games/:id", GameLive.Show, :show
@@ -68,7 +67,10 @@ defmodule TabletopWeb.Router do
     pipe_through([:browser, :require_authenticated_user, :require_sudo_mode])
 
     live_session :require_authenticated_user_and_sudo_mode,
-      on_mount: [{TabletopWeb.UserAuth, :require_authenticated}, {TabletopWeb.UserAuth, :require_sudo_mode}] do
+      on_mount: [
+        {TabletopWeb.UserAuth, :require_authenticated},
+        {TabletopWeb.UserAuth, :require_sudo_mode}
+      ] do
       live("/users/settings/confirm-password", UserLive.Settings, :confirm_password)
     end
   end
@@ -80,11 +82,11 @@ defmodule TabletopWeb.Router do
       on_mount: [{TabletopWeb.UserAuth, :mount_current_scope}] do
       live("/users/register", UserLive.Registration, :new)
       live("/users/log-in", UserLive.Login, :new)
-      live("/users/log-in/:token", UserLive.Confirmation, :new)
 
       live("/games", GameLive.Index, :index)
     end
 
+    get("/users/confirm/:token", UserSessionController, :confirm)
     post("/users/log-in", UserSessionController, :create)
     delete("/users/log-out", UserSessionController, :delete)
   end

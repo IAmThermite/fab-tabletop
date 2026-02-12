@@ -2,10 +2,11 @@ defmodule TabletopWeb.UserSessionControllerTest do
   use TabletopWeb.ConnCase, async: true
 
   import Tabletop.AccountsFixtures
+
   alias Tabletop.Accounts
 
   setup do
-    %{unconfirmed_user: unconfirmed_user_fixture(), user: user_fixture()}
+    %{user: user_fixture()}
   end
 
   describe "POST /users/log-in - email and password" do
@@ -72,60 +73,40 @@ defmodule TabletopWeb.UserSessionControllerTest do
     end
   end
 
-  describe "POST /users/log-in - magic link" do
-    test "logs the user in", %{conn: conn, user: user} do
-      {token, _hashed_token} = generate_user_magic_link_token(user)
+  describe "GET /users/confirm/:token" do
+    test "confirms an unconfirmed user", %{conn: conn} do
+      user = unconfirmed_user_fixture()
 
-      conn =
-        post(conn, ~p"/users/log-in", %{
-          "user" => %{"token" => token}
-        })
+      token =
+        extract_user_token(fn url ->
+          Accounts.deliver_user_confirmation_instructions(user, url)
+        end)
 
-      assert get_session(conn, :user_token)
-      assert redirected_to(conn) == ~p"/"
-
-      # Now do a logged in request and assert on the menu
-      conn = get(conn, ~p"/")
-      response = html_response(conn, 200)
-      assert response =~ user.email
-      assert response =~ ~p"/users/settings"
-      assert response =~ ~p"/users/log-out"
-    end
-
-    test "confirms unconfirmed user", %{conn: conn, unconfirmed_user: user} do
-      {token, _hashed_token} = generate_user_magic_link_token(user)
-      refute user.confirmed_at
-
-      conn =
-        post(conn, ~p"/users/log-in", %{
-          "user" => %{"token" => token},
-          "_action" => "confirmed"
-        })
-
-      assert get_session(conn, :user_token)
-      assert redirected_to(conn) == ~p"/"
-      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "User confirmed successfully."
-
-      assert Accounts.get_user!(user.id).confirmed_at
-
-      # Now do a logged in request and assert on the menu
-      conn = get(conn, ~p"/")
-      response = html_response(conn, 200)
-      assert response =~ user.email
-      assert response =~ ~p"/users/settings"
-      assert response =~ ~p"/users/log-out"
-    end
-
-    test "redirects to login page when magic link is invalid", %{conn: conn} do
-      conn =
-        post(conn, ~p"/users/log-in", %{
-          "user" => %{"token" => "invalid"}
-        })
-
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "The link is invalid or it has expired."
+      conn = get(conn, ~p"/users/confirm/#{token}")
 
       assert redirected_to(conn) == ~p"/users/log-in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Account confirmed successfully"
+      assert Accounts.get_user!(user.id).confirmed_at
+    end
+
+    test "does not confirm with invalid token", %{conn: conn} do
+      conn = get(conn, ~p"/users/confirm/invalid-token")
+
+      assert redirected_to(conn) == ~p"/users/log-in"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
+               "Confirmation link is invalid or it has expired"
+    end
+
+    test "does not confirm an already confirmed user", %{conn: conn, user: user} do
+      {encoded_token, _hashed_token} = generate_user_confirmation_token(user)
+
+      conn = get(conn, ~p"/users/confirm/#{encoded_token}")
+
+      assert redirected_to(conn) == ~p"/users/log-in"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
+               "Confirmation link is invalid or it has expired"
     end
   end
 

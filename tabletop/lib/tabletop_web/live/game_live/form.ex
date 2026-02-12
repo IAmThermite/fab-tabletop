@@ -14,7 +14,7 @@ defmodule TabletopWeb.GameLive.Form do
       </.header>
 
       <.form for={@form} id="game-form" phx-change="validate" phx-submit="save">
-        <.input field={@form[:name]} type="text" label="Game Title" />
+        <.input field={@form[:title]} type="text" label="Game Title" />
         <.input
           field={@form[:format]}
           type="select"
@@ -95,6 +95,7 @@ defmodule TabletopWeb.GameLive.Form do
          )}
 
       {:error, %Ecto.Changeset{} = changeset} ->
+        IO.inspect(changeset)
         {:noreply, assign(socket, form: to_form(changeset))}
     end
   end

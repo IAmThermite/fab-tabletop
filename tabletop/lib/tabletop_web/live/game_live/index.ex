@@ -2,6 +2,7 @@ defmodule TabletopWeb.GameLive.Index do
   use TabletopWeb, :live_view
 
   alias Tabletop.Games
+  alias Tabletop.Games.Game
 
   @impl true
   def render(assigns) do
@@ -21,7 +22,8 @@ defmodule TabletopWeb.GameLive.Index do
         rows={@streams.games}
         row_click={fn {_id, game} -> JS.navigate(~p"/games/#{game}") end}
       >
-        <:col :let={{_id, game}} label="Name">{game.name}</:col>
+        <:col :let={{_id, game}} label="Game Title">{game.title}</:col>
+        <:col :let={{_id, game}} label="Format">{Game.format_name(game)}</:col>
         <:action :let={{_id, game}}>
           <div class="sr-only">
             <.link navigate={~p"/games/#{game}"}>Show</.link>

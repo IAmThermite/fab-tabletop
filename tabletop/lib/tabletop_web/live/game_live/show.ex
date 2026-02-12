@@ -2,6 +2,7 @@ defmodule TabletopWeb.GameLive.Show do
   use TabletopWeb, :live_view
 
   alias Tabletop.Games
+  alias Tabletop.Games.Game
 
   @impl true
   def render(assigns) do
@@ -22,7 +23,7 @@ defmodule TabletopWeb.GameLive.Show do
 
       <.list>
         <:item title="Title">{@game.title}</:item>
-        <:item title="Format">{Tabletop.Games.Game.format_name(@game.format)}</:item>
+        <:item title="Format">{Game.format_name(@game)}</:item>
         <:item title="Player 1">{@game.user.email}</:item>
         <:item :if={@game.user2} title="Player 2">{@game.user2.email}</:item>
       </.list>

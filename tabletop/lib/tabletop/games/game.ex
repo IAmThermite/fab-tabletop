@@ -19,8 +19,8 @@ defmodule Tabletop.Games.Game do
     timestamps(type: :utc_datetime)
   end
 
-  def format_name(format) do
-    @valid_formats[format]
+  def format_name(%__MODULE__{} = game) do
+    @valid_formats[game.format]
   end
 
   @doc false

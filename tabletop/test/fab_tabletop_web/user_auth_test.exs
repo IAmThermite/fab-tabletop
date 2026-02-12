@@ -283,7 +283,7 @@ defmodule TabletopWeb.UserAuthTest do
   end
 
   describe "on_mount :require_sudo_mode" do
-    test "allows users that have authenticated in the last 10 minutes", %{conn: conn, user: user} do
+    test "allows users that have authenticated in the last 20 minutes", %{conn: conn, user: user} do
       user_token = Accounts.generate_user_session_token(user)
       session = conn |> put_session(:user_token, user_token) |> get_session()
 
@@ -297,8 +297,8 @@ defmodule TabletopWeb.UserAuthTest do
     end
 
     test "redirects when authentication is too old", %{conn: conn, user: user} do
-      eleven_minutes_ago = DateTime.utc_now(:second) |> DateTime.add(-11, :minute)
-      user = %{user | authenticated_at: eleven_minutes_ago}
+      twenty_one_minutes_ago = DateTime.utc_now(:second) |> DateTime.add(-21, :minute)
+      user = %{user | authenticated_at: twenty_one_minutes_ago}
       user_token = Accounts.generate_user_session_token(user)
       {user, token_inserted_at} = Accounts.get_user_by_session_token(user_token)
       assert DateTime.compare(token_inserted_at, user.authenticated_at) == :gt

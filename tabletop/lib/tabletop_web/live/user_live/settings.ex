@@ -118,7 +118,7 @@ defmodule TabletopWeb.UserLive.Settings do
         Accounts.deliver_user_update_email_instructions(
           Ecto.Changeset.apply_action!(changeset, :insert),
           user.email,
-          &url(~p"/users/settings/confirm-email/#{&1}")
+          &url(~p"/users/confirm/#{&1}")
         )
 
         info = "A link to confirm your email change has been sent to the new address."

@@ -38,7 +38,7 @@ defmodule Tabletop.AccountsTest do
   describe "get_user!/1" do
     test "raises if id is invalid" do
       assert_raise Ecto.NoResultsError, fn ->
-        Accounts.get_user!(-1)
+        Accounts.get_user!(Ecto.UUID.autogenerate())
       end
     end
 
@@ -49,41 +49,43 @@ defmodule Tabletop.AccountsTest do
   end
 
   describe "register_user/1" do
-    test "requires email to be set" do
+    test "requires email and password to be set" do
       {:error, changeset} = Accounts.register_user(%{})
 
-      assert %{email: ["can't be blank"]} = errors_on(changeset)
+      assert %{email: ["can't be blank"], password: ["can't be blank"]} = errors_on(changeset)
     end
 
     test "validates email when given" do
-      {:error, changeset} = Accounts.register_user(%{email: "not valid"})
+      {:error, changeset} =
+        Accounts.register_user(%{email: "not valid", password: "test_password"})
 
       assert %{email: ["must have the @ sign and no spaces"]} = errors_on(changeset)
     end
 
     test "validates maximum values for email for security" do
       too_long = String.duplicate("db", 100)
-      {:error, changeset} = Accounts.register_user(%{email: too_long})
+      {:error, changeset} = Accounts.register_user(%{email: too_long, password: "test_password"})
       assert "should be at most 160 character(s)" in errors_on(changeset).email
     end
 
     test "validates email uniqueness" do
       %{email: email} = user_fixture()
-      {:error, changeset} = Accounts.register_user(%{email: email})
+      {:error, changeset} = Accounts.register_user(%{email: email, password: "test_password"})
       assert "has already been taken" in errors_on(changeset).email
 
       # Now try with the uppercased email too, to check that email case is ignored.
-      {:error, changeset} = Accounts.register_user(%{email: String.upcase(email)})
+      {:error, changeset} =
+        Accounts.register_user(%{email: String.upcase(email), password: "test_password"})
+
       assert "has already been taken" in errors_on(changeset).email
     end
 
-    test "registers users without password" do
+    test "registers users with password" do
       email = unique_user_email()
       {:ok, user} = Accounts.register_user(valid_user_attributes(email: email))
       assert user.email == email
-      assert is_nil(user.hashed_password)
+      refute is_nil(user.hashed_password)
       assert is_nil(user.confirmed_at)
-      assert is_nil(user.password)
     end
   end
 
@@ -215,7 +217,6 @@ defmodule Tabletop.AccountsTest do
         })
 
       assert %{
-               password: ["should be at least 12 character(s)"],
                password_confirmation: ["does not match password"]
              } = errors_on(changeset)
     end
@@ -226,7 +227,7 @@ defmodule Tabletop.AccountsTest do
       {:error, changeset} =
         Accounts.update_user_password(user, %{password: too_long})
 
-      assert "should be at most 72 character(s)" in errors_on(changeset).password
+      assert "should be at most 72 byte(s)" in errors_on(changeset).password
     end
 
     test "updates the password", %{user: user} do
@@ -307,57 +308,42 @@ defmodule Tabletop.AccountsTest do
     end
   end
 
-  describe "get_user_by_magic_link_token/1" do
-    setup do
-      user = user_fixture()
-      {encoded_token, _hashed_token} = generate_user_magic_link_token(user)
-      %{user: user, token: encoded_token}
-    end
-
-    test "returns user by token", %{user: user, token: token} do
-      assert session_user = Accounts.get_user_by_magic_link_token(token)
-      assert session_user.id == user.id
-    end
-
-    test "does not return user for invalid token" do
-      refute Accounts.get_user_by_magic_link_token("oops")
-    end
-
-    test "does not return user for expired token", %{token: token} do
-      {1, nil} = Repo.update_all(UserToken, set: [inserted_at: ~N[2020-01-01 00:00:00]])
-      refute Accounts.get_user_by_magic_link_token(token)
-    end
-  end
-
-  describe "login_user_by_magic_link/1" do
-    test "confirms user and expires tokens" do
+  describe "confirm_user/1" do
+    test "confirms an unconfirmed user" do
       user = unconfirmed_user_fixture()
       refute user.confirmed_at
-      {encoded_token, hashed_token} = generate_user_magic_link_token(user)
 
-      assert {:ok, {user, [%{token: ^hashed_token}]}} =
-               Accounts.login_user_by_magic_link(encoded_token)
+      token =
+        extract_user_token(fn url ->
+          Accounts.deliver_user_confirmation_instructions(user, url)
+        end)
 
-      assert user.confirmed_at
+      assert {:ok, confirmed_user} = Accounts.confirm_user(token)
+      assert confirmed_user.confirmed_at
     end
 
-    test "returns user and (deleted) token for confirmed user" do
+    test "returns error for already confirmed user" do
       user = user_fixture()
       assert user.confirmed_at
-      {encoded_token, _hashed_token} = generate_user_magic_link_token(user)
-      assert {:ok, {^user, []}} = Accounts.login_user_by_magic_link(encoded_token)
-      # one time use only
-      assert {:error, :not_found} = Accounts.login_user_by_magic_link(encoded_token)
+
+      {encoded_token, _hashed_token} = generate_user_confirmation_token(user)
+      assert :error = Accounts.confirm_user(encoded_token)
     end
 
-    test "raises when unconfirmed user has password set" do
-      user = unconfirmed_user_fixture()
-      {1, nil} = Repo.update_all(User, set: [hashed_password: "hashed"])
-      {encoded_token, _hashed_token} = generate_user_magic_link_token(user)
+    test "returns error for invalid token" do
+      assert :error = Accounts.confirm_user("oops")
+    end
 
-      assert_raise RuntimeError, ~r/magic link log in is not allowed/, fn ->
-        Accounts.login_user_by_magic_link(encoded_token)
-      end
+    test "returns error for expired token" do
+      user = unconfirmed_user_fixture()
+
+      token =
+        extract_user_token(fn url ->
+          Accounts.deliver_user_confirmation_instructions(user, url)
+        end)
+
+      {1, nil} = Repo.update_all(UserToken, set: [inserted_at: ~N[2020-01-01 00:00:00]])
+      assert :error = Accounts.confirm_user(token)
     end
   end
 
@@ -370,7 +356,7 @@ defmodule Tabletop.AccountsTest do
     end
   end
 
-  describe "deliver_login_instructions/2" do
+  describe "deliver_user_confirmation_instructions/2" do
     setup do
       %{user: unconfirmed_user_fixture()}
     end
@@ -378,14 +364,14 @@ defmodule Tabletop.AccountsTest do
     test "sends token through notification", %{user: user} do
       token =
         extract_user_token(fn url ->
-          Accounts.deliver_login_instructions(user, url)
+          Accounts.deliver_user_confirmation_instructions(user, url)
         end)
 
       {:ok, token} = Base.url_decode64(token, padding: false)
       assert user_token = Repo.get_by(UserToken, token: :crypto.hash(:sha256, token))
       assert user_token.user_id == user.id
       assert user_token.sent_to == user.email
-      assert user_token.context == "login"
+      assert user_token.context == "confirm"
     end
   end
 

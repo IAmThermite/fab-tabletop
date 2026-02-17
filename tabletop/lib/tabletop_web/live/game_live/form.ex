@@ -75,6 +75,7 @@ defmodule TabletopWeb.GameLive.Form do
         {:noreply,
          socket
          |> put_flash(:info, "Game updated successfully")
+         |> assign(:return_to, return_to("show"))
          |> push_navigate(
            to: return_path(socket.assigns.current_scope, socket.assigns.return_to, game)
          )}

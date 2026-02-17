@@ -32,6 +32,8 @@ defmodule TabletopWeb.Layouts do
     doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
   )
 
+  attr(:max_width, :string, default: "max-w-2xl", doc: "the max width class for the main content")
+
   slot(:inner_block, required: true)
 
   def app(assigns) do
@@ -44,29 +46,27 @@ defmodule TabletopWeb.Layouts do
         </a>
       </div>
       <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-4 items-center">
-          <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
-          </li>
-          <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
-          <li>
-            <.theme_toggle />
-          </li>
-          <li>
-            <a href="https://hexdocs.pm/phoenix/overview.html" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
-            </a>
-          </li>
-        </ul>
       </div>
     </header>
 
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
+    <main class="px-3 py-10 sm:px-6 lg:px-8">
+      <div class={["mx-auto space-y-4", @max_width]}>
         {render_slot(@inner_block)}
       </div>
+    </main>
+
+    <.flash_group flash={@flash} />
+    """
+  end
+
+  def game(assigns) do
+    ~H"""
+    <header class="navbar">
+      <p>Game</p>
+    </header>
+
+    <main>
+      {render_slot(@inner_block)}
     </main>
 
     <.flash_group flash={@flash} />

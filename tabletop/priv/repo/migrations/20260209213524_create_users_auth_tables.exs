@@ -7,6 +7,7 @@ defmodule Tabletop.Repo.Migrations.CreateUsersAuthTables do
     create table(:users, primary_key: false) do
       add :id, :uuid, primary_key: true
       add(:email, :citext, null: false)
+      add(:name, :string)
       add(:hashed_password, :string)
       add(:confirmed_at, :utc_datetime)
 
@@ -14,6 +15,7 @@ defmodule Tabletop.Repo.Migrations.CreateUsersAuthTables do
     end
 
     create(unique_index(:users, [:email]))
+    create(unique_index(:users, [:name]))
 
     create table(:users_tokens) do
       add(:user_id, references(:users, on_delete: :delete_all, type: :uuid), null: false)

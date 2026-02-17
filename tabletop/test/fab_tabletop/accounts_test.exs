@@ -49,33 +49,44 @@ defmodule Tabletop.AccountsTest do
   end
 
   describe "register_user/1" do
-    test "requires email and password to be set" do
+    test "requires email, password, and name to be set" do
       {:error, changeset} = Accounts.register_user(%{})
 
-      assert %{email: ["can't be blank"], password: ["can't be blank"]} = errors_on(changeset)
+      assert %{email: ["can't be blank"], password: ["can't be blank"], name: ["can't be blank"]} =
+               errors_on(changeset)
     end
 
     test "validates email when given" do
       {:error, changeset} =
-        Accounts.register_user(%{email: "not valid", password: "test_password"})
+        Accounts.register_user(%{email: "not valid", password: "test_password", name: "testuser"})
 
       assert %{email: ["must have the @ sign and no spaces"]} = errors_on(changeset)
     end
 
     test "validates maximum values for email for security" do
       too_long = String.duplicate("db", 100)
-      {:error, changeset} = Accounts.register_user(%{email: too_long, password: "test_password"})
+
+      {:error, changeset} =
+        Accounts.register_user(%{email: too_long, password: "test_password", name: "testuser"})
+
       assert "should be at most 160 character(s)" in errors_on(changeset).email
     end
 
     test "validates email uniqueness" do
       %{email: email} = user_fixture()
-      {:error, changeset} = Accounts.register_user(%{email: email, password: "test_password"})
+
+      {:error, changeset} =
+        Accounts.register_user(%{email: email, password: "test_password", name: "testuser1"})
+
       assert "has already been taken" in errors_on(changeset).email
 
       # Now try with the uppercased email too, to check that email case is ignored.
       {:error, changeset} =
-        Accounts.register_user(%{email: String.upcase(email), password: "test_password"})
+        Accounts.register_user(%{
+          email: String.upcase(email),
+          password: "test_password",
+          name: "testuser2"
+        })
 
       assert "has already been taken" in errors_on(changeset).email
     end
@@ -105,80 +116,6 @@ defmodule Tabletop.AccountsTest do
 
       # not authenticated
       refute Accounts.sudo_mode?(%User{})
-    end
-  end
-
-  describe "change_user_email/3" do
-    test "returns a user changeset" do
-      assert %Ecto.Changeset{} = changeset = Accounts.change_user_email(%User{})
-      assert changeset.required == [:email]
-    end
-  end
-
-  describe "deliver_user_update_email_instructions/3" do
-    setup do
-      %{user: user_fixture()}
-    end
-
-    test "sends token through notification", %{user: user} do
-      token =
-        extract_user_token(fn url ->
-          Accounts.deliver_user_update_email_instructions(user, "current@example.com", url)
-        end)
-
-      {:ok, token} = Base.url_decode64(token, padding: false)
-      assert user_token = Repo.get_by(UserToken, token: :crypto.hash(:sha256, token))
-      assert user_token.user_id == user.id
-      assert user_token.sent_to == user.email
-      assert user_token.context == "change:current@example.com"
-    end
-  end
-
-  describe "update_user_email/2" do
-    setup do
-      user = unconfirmed_user_fixture()
-      email = unique_user_email()
-
-      token =
-        extract_user_token(fn url ->
-          Accounts.deliver_user_update_email_instructions(%{user | email: email}, user.email, url)
-        end)
-
-      %{user: user, token: token, email: email}
-    end
-
-    test "updates the email with a valid token", %{user: user, token: token, email: email} do
-      assert {:ok, %{email: ^email}} = Accounts.update_user_email(user, token)
-      changed_user = Repo.get!(User, user.id)
-      assert changed_user.email != user.email
-      assert changed_user.email == email
-      refute Repo.get_by(UserToken, user_id: user.id)
-    end
-
-    test "does not update email with invalid token", %{user: user} do
-      assert Accounts.update_user_email(user, "oops") ==
-               {:error, :transaction_aborted}
-
-      assert Repo.get!(User, user.id).email == user.email
-      assert Repo.get_by(UserToken, user_id: user.id)
-    end
-
-    test "does not update email if user email changed", %{user: user, token: token} do
-      assert Accounts.update_user_email(%{user | email: "current@example.com"}, token) ==
-               {:error, :transaction_aborted}
-
-      assert Repo.get!(User, user.id).email == user.email
-      assert Repo.get_by(UserToken, user_id: user.id)
-    end
-
-    test "does not update email if token expired", %{user: user, token: token} do
-      {1, nil} = Repo.update_all(UserToken, set: [inserted_at: ~N[2020-01-01 00:00:00]])
-
-      assert Accounts.update_user_email(user, token) ==
-               {:error, :transaction_aborted}
-
-      assert Repo.get!(User, user.id).email == user.email
-      assert Repo.get_by(UserToken, user_id: user.id)
     end
   end
 

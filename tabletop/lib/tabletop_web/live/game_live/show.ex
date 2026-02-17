@@ -7,7 +7,7 @@ defmodule TabletopWeb.GameLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.game flash={@flash} current_scope={@current_scope}>
       <.header>
         Game {@game.id}
         <:subtitle>This is a game record from your database.</:subtitle>
@@ -27,7 +27,7 @@ defmodule TabletopWeb.GameLive.Show do
         <:item title="Player 1">{@game.user.email}</:item>
         <:item :if={@game.user2} title="Player 2">{@game.user2.email}</:item>
       </.list>
-    </Layouts.app>
+    </Layouts.game>
     """
   end
 

@@ -5,38 +5,24 @@ defmodule Tabletop.Accounts.User do
   @primary_key {:id, Ecto.UUID, autogenerate: true}
 
   schema "users" do
-    field(:email, :string)
+    field(:email, :string, writable: :insert)
     field(:password, :string, virtual: true, redact: true)
     field(:hashed_password, :string, redact: true)
     field(:confirmed_at, :utc_datetime)
     field(:authenticated_at, :utc_datetime, virtual: true)
+    field(:name, :string)
 
     timestamps(type: :utc_datetime)
   end
 
   def changeset(user, attrs) do
     user
-    |> cast(attrs, [:email, :password])
-    |> validate_required([:email, :password])
+    |> cast(attrs, [:email, :password, :name])
+    |> validate_required([:email, :password, :name])
     |> validate_email(validate_unique: true)
     |> validate_password(hash_password: true)
-  end
-
-  @doc """
-  A user changeset for registering or changing the email.
-
-  It requires the email to change otherwise an error is added.
-
-  ## Options
-
-    * `:validate_unique` - Set to false if you don't want to validate the
-      uniqueness of the email, useful when displaying live validations.
-      Defaults to `true`.
-  """
-  def email_changeset(user, attrs, opts \\ []) do
-    user
-    |> cast(attrs, [:email])
-    |> validate_email(opts)
+    |> unique_constraint(:name)
+    |> unique_constraint(:email)
   end
 
   defp validate_email(changeset, opts) do

@@ -7,7 +7,7 @@ defmodule TabletopWeb.GameLive.Index do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-7xl">
       <.header>
         Listing Games
         <:actions>
@@ -17,28 +17,38 @@ defmodule TabletopWeb.GameLive.Index do
         </:actions>
       </.header>
 
-      <.table
-        id="games"
-        rows={@streams.games}
-        row_click={fn {_id, game} -> JS.navigate(~p"/games/#{game}") end}
-      >
-        <:col :let={{_id, game}} label="Game Title">{game.title}</:col>
-        <:col :let={{_id, game}} label="Format">{Game.format_name(game)}</:col>
-        <:action :let={{_id, game}}>
-          <div class="sr-only">
-            <.link navigate={~p"/games/#{game}"}>Show</.link>
-          </div>
-          <.link navigate={~p"/games/#{game}/edit"}>Edit</.link>
-        </:action>
-        <:action :let={{id, game}}>
-          <.link
-            phx-click={JS.push("delete", value: %{id: game.id}) |> hide("##{id}")}
-            data-confirm="Are you sure?"
+      <div id="game-content" class="grid grid-cols-3 gap-4">
+        <div>
+          <.table
+            id="games"
+            rows={@streams.games}
+            row_click={fn {_id, game} -> JS.navigate(~p"/games/#{game}") end}
           >
-            Delete
-          </.link>
-        </:action>
-      </.table>
+            <:col :let={{_id, game}} label="Game Title">{game.title}</:col>
+            <:col :let={{_id, game}} label="Format">{Game.format_name(game)}</:col>
+            <:action :let={{_id, game}}>
+              <div class="sr-only">
+                <.link navigate={~p"/games/#{game}"}>Show</.link>
+              </div>
+              <.link navigate={~p"/games/#{game}/edit"}>Edit</.link>
+            </:action>
+            <:action :let={{id, game}}>
+              <.link
+                phx-click={JS.push("delete", value: %{id: game.id}) |> hide("##{id}")}
+                data-confirm="Are you sure?"
+              >
+                Delete
+              </.link>
+            </:action>
+          </.table>
+        </div>
+        <div>
+          <p>test</p>
+        </div>
+        <div>
+          <p>test</p>
+        </div>
+      </div>
     </Layouts.app>
     """
   end

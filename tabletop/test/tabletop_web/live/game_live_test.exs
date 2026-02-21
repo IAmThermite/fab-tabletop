@@ -92,34 +92,15 @@ defmodule TabletopWeb.GameLiveTest do
     test "displays game", %{conn: conn, game: game} do
       {:ok, _show_live, html} = live(conn, ~p"/games/#{game}")
 
-      assert html =~ "Show Game"
       assert html =~ game.title
+      assert html =~ "game-video"
+      assert html =~ "remote-canvas"
     end
 
-    test "updates game and returns to show", %{conn: conn, game: game} do
+    test "has leave button that navigates to games list", %{conn: conn, game: game} do
       {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
 
-      assert {:ok, form_live, _} =
-               show_live
-               |> element("a", "Edit")
-               |> render_click()
-               |> follow_redirect(conn, ~p"/games/#{game}/edit?return_to=show")
-
-      assert render(form_live) =~ "Edit Game"
-
-      assert form_live
-             |> form("#game-form", game: @invalid_attrs)
-             |> render_change() =~ "can&#39;t be blank"
-
-      assert {:ok, show_live, _html} =
-               form_live
-               |> form("#game-form", game: @update_attrs)
-               |> render_submit()
-               |> follow_redirect(conn, ~p"/games/#{game}")
-
-      html = render(show_live)
-      assert html =~ "Game updated successfully"
-      assert html =~ "some updated title"
+      assert has_element?(show_live, "a[title='Leave']")
     end
   end
 end

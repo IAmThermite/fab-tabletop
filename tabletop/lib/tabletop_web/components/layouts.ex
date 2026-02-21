@@ -59,13 +59,18 @@ defmodule TabletopWeb.Layouts do
     """
   end
 
+  attr(:flash, :map, required: true, doc: "the map of flash messages")
+
+  attr(:current_scope, :map,
+    default: nil,
+    doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
+  )
+
+  slot(:inner_block, required: true)
+
   def game(assigns) do
     ~H"""
-    <header class="navbar">
-      <p>Game</p>
-    </header>
-
-    <main>
+    <main class="fixed inset-0 z-20 overflow-hidden">
       {render_slot(@inner_block)}
     </main>
 

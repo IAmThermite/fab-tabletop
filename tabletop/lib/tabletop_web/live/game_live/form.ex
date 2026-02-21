@@ -23,7 +23,7 @@ defmodule TabletopWeb.GameLive.Form do
         />
         <footer>
           <.button phx-disable-with="Saving..." variant="primary">Save Game</.button>
-          <.button navigate={return_path(@current_scope, @return_to, @game)}>Cancel</.button>
+          <.button navigate={return_path(@current_scope, "index", @game)}>Cancel</.button>
         </footer>
       </.form>
     </Layouts.app>
@@ -34,12 +34,8 @@ defmodule TabletopWeb.GameLive.Form do
   def mount(params, _session, socket) do
     {:ok,
      socket
-     |> assign(:return_to, return_to(params["return_to"]))
      |> apply_action(socket.assigns.live_action, params)}
   end
-
-  defp return_to("show"), do: "show"
-  defp return_to(_), do: "index"
 
   defp apply_action(socket, :edit, %{"id" => id}) do
     game = Games.get_game!(socket.assigns.current_scope, id)
@@ -75,10 +71,7 @@ defmodule TabletopWeb.GameLive.Form do
         {:noreply,
          socket
          |> put_flash(:info, "Game updated successfully")
-         |> assign(:return_to, return_to("show"))
-         |> push_navigate(
-           to: return_path(socket.assigns.current_scope, socket.assigns.return_to, game)
-         )}
+         |> push_navigate(to: return_path(socket.assigns.current_scope, "show", game))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, form: to_form(changeset))}
@@ -91,12 +84,9 @@ defmodule TabletopWeb.GameLive.Form do
         {:noreply,
          socket
          |> put_flash(:info, "Game created successfully")
-         |> push_navigate(
-           to: return_path(socket.assigns.current_scope, socket.assigns.return_to, game)
-         )}
+         |> push_navigate(to: return_path(socket.assigns.current_scope, "show", game))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        IO.inspect(changeset)
         {:noreply, assign(socket, form: to_form(changeset))}
     end
   end

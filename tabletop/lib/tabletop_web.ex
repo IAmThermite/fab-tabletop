@@ -88,6 +88,7 @@ defmodule TabletopWeb do
       import TabletopWeb.CoreComponents
 
       # Common modules used in templates
+      alias Phoenix.LiveView.ColocatedHook
       alias Phoenix.LiveView.JS
       alias TabletopWeb.Layouts
 

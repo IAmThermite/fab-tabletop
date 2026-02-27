@@ -6,8 +6,8 @@ defmodule Tabletop.Fab.Effects do
       description: "",
       card_img_src: ""
     },
-    frostbite: %{
-      name: "Frostbite",
+    overpower: %{
+      name: "Overpower",
       icon: "",
       description: "",
       card_img_src: ""

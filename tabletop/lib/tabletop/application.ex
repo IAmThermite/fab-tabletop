@@ -12,6 +12,7 @@ defmodule Tabletop.Application do
       Tabletop.Repo,
       {DNSCluster, query: Application.get_env(:tabletop, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Tabletop.PubSub},
+      %{id: :game_channels_pg, start: {:pg, :start_link, [:game_channels]}},
       # Start a worker by calling: Tabletop.Worker.start_link(arg)
       # {Tabletop.Worker, arg},
       # Start to serve requests, typically the last entry

@@ -2,40 +2,38 @@ defmodule TabletopWeb.GameLive.Show do
   use TabletopWeb, :live_view
 
   alias Tabletop.Games
+  alias Tabletop.Fab.GameState
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     game = Games.get_game!(socket.assigns.current_scope, id)
+    user_id = socket.assigns.current_scope.user.id
 
     if connected?(socket) do
       Games.subscribe_games(socket.assigns.current_scope)
       Phoenix.PubSub.subscribe(Tabletop.PubSub, "game_session:#{game.id}")
     end
 
-    user_token = Phoenix.Token.sign(socket, "user socket", socket.assigns.current_scope.user.id)
+    if Games.user_part_of_game?(socket.assigns.current_scope, game) do
+      user_token = Phoenix.Token.sign(socket, "user socket", user_id)
 
-    {:ok,
-      socket
-      |> assign(:page_title, game.title)
-      |> assign(:game, game)
-      |> assign(:user_token, user_token)
-      |> assign(:my_life, 40)
-      |> assign(:opponent_life, 40)
-      |> assign(:peer_connected, false)
-      |> assign(:my_physical_damage, 0)
-      |> assign(:my_arcane_damage, 0)
-      |> assign(:my_goagain_active, false)
-      |> assign(:my_physical_active, false)
-      |> assign(:my_arcane_active, false)
-      |> assign(:my_effects_active, %{}) # a map of effect name to boolean
-      |> assign(:opponent_physical_damage, 0)
-      |> assign(:opponent_arcane_damage, 0)
-      |> assign(:opponent_goagain_active, false)
-      |> assign(:opponent_physical_active, false)
-      |> assign(:opponent_arcane_active, false)
-      |> assign(:opponent_effects_active, %{}) # a map of effect name to boolean
-    }
+      {:ok,
+       socket
+       |> assign(:page_title, game.title)
+       |> assign(:game, game)
+       |> assign(:user_token, user_token)
+       |> assign(:user_id, user_id)
+       |> assign(:peer_connected, false)
+       |> assign(:game_state, GameState.new())}
+    else
+      {:ok,
+       socket
+       |> put_flash(:error, "You are not a participant in this game.")
+       |> push_navigate(to: ~p"/games")}
+    end
   end
+
+  # --- User events ---
 
   @impl true
   def handle_event("peer_connected", _params, socket) do
@@ -47,73 +45,55 @@ defmodule TabletopWeb.GameLive.Show do
   end
 
   def handle_event("toggle_damage", %{"type" => type}, socket) do
-    key = String.to_atom("#{type}_toggled")
-    broadcast_game_update(socket, key, !Map.get(socket.assigns, :opponent_damage_active), socket.assigns.current_scope.user.id)
-    {:noreply, assign(socket, :my_damage_active, !Map.get(socket.assigns, :my_damage_active))}
+    apply_my_action(
+      socket,
+      GameState.toggle_damage(socket.assigns.game_state, validate_damage_type(type))
+    )
   end
 
   def handle_event("change_damage", %{"type" => type, "delta" => delta}, socket) do
-    key = String.to_existing_atom("#{type}_damage")
-    new_value = Map.get(socket.assigns, key) + String.to_integer(delta)
-    {:noreply, assign(socket, key, new_value)}
+    apply_my_action(
+      socket,
+      GameState.change_damage(
+        socket.assigns.game_state,
+        validate_damage_type(type),
+        String.to_integer(delta)
+      )
+    )
   end
 
   def handle_event("toggle_goagain", _params, socket) do
-    broadcast_game_update(socket, :goagain_toggled, !socket.assigns.my_goagain_active, socket.assigns.current_scope.user.id)
-    {:noreply, assign(socket, :my_goagain_active, !socket.assigns.my_goagain_active)}
+    apply_my_action(socket, GameState.toggle_goagain(socket.assigns.game_state))
   end
 
   def handle_event("toggle_effect", %{"type" => type}, socket) do
-    my_key = String.to_atom("my_#{type}_active")
-    opponent_key = String.to_atom("opponent_#{type}_active")
-    {:noreply, assign(socket, opponent_key, !Map.get(socket.assigns, my_key))}
+    apply_my_action(socket, GameState.toggle_effect(socket.assigns.game_state, type))
   end
 
   def handle_event("change_life", %{"delta" => delta}, socket) do
-    new_life = socket.assigns.my_life + String.to_integer(delta)
-
-    broadcast_game_update(socket, :life_changed, new_life, socket.assigns.current_scope.user.id)
-
-    {:noreply, assign(socket, :my_life, new_life)}
+    apply_my_action(
+      socket,
+      GameState.change_life(socket.assigns.game_state, String.to_integer(delta))
+    )
   end
+
+  def handle_event("reset_chain", _params, socket) do
+    apply_my_action(socket, GameState.reset_chain(socket.assigns.game_state))
+  end
+
+  # --- PubSub messages ---
 
   @impl true
-  def handle_info({:life_changed, life, user_id}, socket) do
-    if user_id != socket.assigns.current_scope.user.id do
-      {:noreply, assign(socket, :opponent_life, life)}
-    else
-      # we don't subscribe to our own life changes, ignore them
-      {:noreply, socket}
-    end
+  def handle_info(
+        {:game_update, _broadcast_msg, sender_id},
+        %{assigns: %{user_id: sender_id}} = socket
+      ) do
+    {:noreply, socket}
   end
 
-  def handle_info({:goagain_toggled, active, user_id}, socket) do
-    if user_id != socket.assigns.current_scope.user.id do
-      {:noreply, assign(socket, :opponent_goagain_active, active)}
-    else
-      # we don't subscribe to our own go again toggles, ignore them
-      {:noreply, socket}
-    end
-  end
-
-  def handle_info({:physical_toggled, active, user_id}, socket) do
-    if user_id != socket.assigns.current_scope.user.id do
-      key = String.to_atom("opponent_physical_active")
-      {:noreply, assign(socket, key, active)}
-    else
-      # we don't subscribe to our own physical damage toggles, ignore them
-      {:noreply, socket}
-    end
-  end
-
-  def handle_info({:arcane_toggled, active, user_id}, socket) do
-    if user_id != socket.assigns.current_scope.user.id do
-      key = String.to_atom("opponent_arcane_active")
-      {:noreply, assign(socket, key, active)}
-    else
-      # we don't subscribe to our own arcane damage toggles, ignore them
-      {:noreply, socket}
-    end
+  def handle_info({:game_update, broadcast_msg, _sender_id}, socket) do
+    new_state = GameState.apply_opponent_update(socket.assigns.game_state, broadcast_msg)
+    {:noreply, assign(socket, :game_state, new_state)}
   end
 
   def handle_info(
@@ -138,11 +118,24 @@ defmodule TabletopWeb.GameLive.Show do
     {:noreply, socket}
   end
 
-  defp broadcast_game_update(socket, event, payload, user_id) do
+  defp apply_my_action(socket, {:ok, new_state, broadcast_msg}) do
+    broadcast_game_update(socket, broadcast_msg, socket.assigns.user_id)
+    {:noreply, assign(socket, :game_state, new_state)}
+  end
+
+  defp apply_my_action(socket, {:error, reason}) do
+    IO.inspect(reason, label: "Action error")
+    {:noreply, socket}
+  end
+
+  defp validate_damage_type("physical"), do: :physical
+  defp validate_damage_type("arcane"), do: :arcane
+
+  defp broadcast_game_update(socket, broadcast_msg, user_id) do
     Phoenix.PubSub.broadcast(
       Tabletop.PubSub,
       "game_session:#{socket.assigns.game.id}",
-      {event, payload, user_id}
+      {:game_update, broadcast_msg, user_id}
     )
   end
 end

@@ -66,7 +66,7 @@
             <input
               type="checkbox"
               class="checkbox checkbox-xs checkbox-warning"
-              checked={@my_physical_active}
+              checked={@game_state.my.physical.active}
               phx-click="toggle_damage"
               phx-value-type="physical"
             />
@@ -82,7 +82,7 @@
             >
               -
             </button>
-            <span class="text-lg font-bold">{@my_physical_damage}</span>
+            <span class="text-lg font-bold">{@game_state.my.physical.damage}</span>
             <button
               type="button"
               class="btn btn-xs btn-circle btn-success"
@@ -101,7 +101,7 @@
             <input
               type="checkbox"
               class="checkbox checkbox-xs checkbox-info"
-              checked={@my_arcane_active}
+              checked={@game_state.my.arcane.active}
               phx-click="toggle_damage"
               phx-value-type="arcane"
             />
@@ -117,7 +117,7 @@
             >
               -
             </button>
-            <span class="text-lg font-bold">{@my_arcane_damage}</span>
+            <span class="text-lg font-bold">{@game_state.my.arcane.damage}</span>
             <button
               type="button"
               class="btn btn-xs btn-circle btn-success"
@@ -136,7 +136,7 @@
             <input
               type="checkbox"
               class="checkbox checkbox-xs checkbox-success"
-              checked={@my_goagain_active}
+              checked={@game_state.my.goagain}
               phx-click="toggle_goagain"
             />
             <span class="text-xs font-semibold">Go Again</span>
@@ -155,7 +155,7 @@
                   <input
                     type="checkbox"
                     class="checkbox checkbox-xs checkbox-warning"
-                    checked={@my_effects_active[effect[:name]]}
+                    checked={@game_state.my.effects[effect[:name]]}
                     phx-click="toggle_effect"
                     phx-value-type={effect[:name]}
                   />
@@ -178,7 +178,7 @@
                   <input
                     type="checkbox"
                     class="checkbox checkbox-xs checkbox-warning"
-                    checked={@my_effects_active[effect[:name]]}
+                    checked={@game_state.my.effects[effect[:name]]}
                     phx-click="toggle_effect"
                     phx-value-type={effect[:name]}
                   />
@@ -189,7 +189,7 @@
           </ul>
         </details>
 
-        <button type="button" class="btn btn-success">Reset Attack</button>
+        <button type="button" class="btn btn-success" phx-click="reset_chain">Reset Chain</button>
 
         <button type="button" class="btn btn-success">End turn</button>
 
@@ -199,7 +199,7 @@
 
         <%!-- Player life (bottom-left) --%>
         <div class="bg-warning text-warning-content rounded p-2 text-center">
-          <div class="text-2xl font-bold">{@my_life}</div>
+          <div class="text-2xl font-bold">{@game_state.my.life}</div>
           <div class="flex justify-center gap-1">
             <button
               type="button"
@@ -258,27 +258,27 @@
           </div>
         </div>
 
-        <%= if @opponent_goagain_active do %>
+        <%= if @game_state.my.goagain or @game_state.opponent.goagain do %>
           <div class="absolute bottom-2 left-2 bg-base-200/80 rounded px-2 py-1 text-sm font-semibold">
             Go Again active
           </div>
         <% end %>
 
-        <%= if @opponent_physical_active do %>
+        <%= if @game_state.my.physical.active or @game_state.opponent.physical.active do %>
           <div class="absolute bottom-12 left-2 bg-base-200/80 rounded px-2 py-1 text-sm font-semibold">
-            Physical Damage active <%= @opponent_physical_damage %>
+            Physical Damage active <%= @game_state.my.physical.damage + @game_state.opponent.physical.damage %>
           </div>
         <% end %>
 
-        <%= if @opponent_arcane_active do %>
+        <%= if @game_state.my.arcane.active or @game_state.opponent.arcane.active do %>
           <div class="absolute bottom-22 left-2 bg-base-200/80 rounded px-2 py-1 text-sm font-semibold">
-            Arcane Damage active <%= @opponent_arcane_damage %>
+            Arcane Damage active <%= @game_state.my.arcane.damage + @game_state.opponent.arcane.damage %>
           </div>
         <% end %>
 
         <%!-- Opponent life (bottom-right) --%>
         <div class="absolute bottom-2 right-2 bg-warning text-warning-content rounded p-2 text-center">
-          <div class="text-2xl font-bold">{@opponent_life}</div>
+          <div class="text-2xl font-bold">{@game_state.opponent.life}</div>
         </div>
       </div>
     </div>

@@ -24,10 +24,23 @@ export default class WebRTCManager {
     this.animFrameId = null
     this.cameraEnabled = true
     this.micEnabled = true
+    this._status = null
   }
 
   async start() {
-    this.onStatusChange("connecting")
+    this._setStatus("connecting")
+
+    // Capture local media first so tracks are ready before signaling
+    try {
+      this.localStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: true,
+      })
+      this.localVideoEl.srcObject = this.localStream
+    } catch (err) {
+      console.error("[WebRTC] Failed to get user media:", err)
+      this._setStatus("no_camera")
+    }
 
     // Connect the Phoenix socket
     this.socket = new Socket("/socket", { params: { token: this.token } })
@@ -37,6 +50,7 @@ export default class WebRTCManager {
     this.channel = this.socket.channel(`game:${this.gameId}`, {})
 
     this.channel.on("peer_joined", () => this._createOffer())
+    this.channel.on("peer_exists", () => console.log("[WebRTC] Peer already in channel, waiting for offer"))
     this.channel.on("offer", (msg) => this._handleOffer(msg))
     this.channel.on("answer", (msg) => this._handleAnswer(msg))
     this.channel.on("ice_candidate", (msg) => this._handleIceCandidate(msg))
@@ -44,24 +58,18 @@ export default class WebRTCManager {
     this.channel.on("media_status", (msg) => this.onRemoteMediaStatus(msg))
 
     this.channel.join()
-      .receive("ok", () => console.log("[WebRTC] Joined game channel"))
+      .receive("ok", () => {
+        console.log("[WebRTC] Joined game channel")
+        // Only set "waiting" if we haven't already progressed further
+        // (e.g., signaling may have completed before the join ack arrives)
+        if (this._status !== "connected") {
+          this._setStatus("waiting")
+        }
+      })
       .receive("error", (resp) => {
         console.error("[WebRTC] Failed to join channel:", resp)
-        this.onStatusChange("error")
+        this._setStatus("error")
       })
-
-    // Capture local media
-    try {
-      this.localStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: true,
-      })
-      this.localVideoEl.srcObject = this.localStream
-      this.onStatusChange("waiting")
-    } catch (err) {
-      console.error("[WebRTC] Failed to get user media:", err)
-      this.onStatusChange("no_camera")
-    }
   }
 
   toggleCamera() {
@@ -124,6 +132,11 @@ export default class WebRTCManager {
 
   // -- Private methods --
 
+  _setStatus(status) {
+    this._status = status
+    this.onStatusChange(status)
+  }
+
   _createPeerConnection() {
     if (this.peerConnection) {
       this.peerConnection.close()
@@ -150,7 +163,7 @@ export default class WebRTCManager {
       this.remoteVideoEl.srcObject = event.streams[0]
       this.remoteVideoEl.play().catch(() => {})
       this._startCanvasRender()
-      this.onStatusChange("connected")
+      this._setStatus("connected")
     }
 
     this.peerConnection.oniceconnectionstatechange = () => {
@@ -158,10 +171,10 @@ export default class WebRTCManager {
       console.log("[WebRTC] ICE connection state:", state)
 
       if (state === "disconnected" || state === "failed") {
-        this.onStatusChange("disconnected")
+        this._setStatus("disconnected")
         this._stopCanvasRender()
       } else if (state === "connected" || state === "completed") {
-        this.onStatusChange("connected")
+        this._setStatus("connected")
       }
     }
   }
@@ -216,7 +229,7 @@ export default class WebRTCManager {
 
     this.remoteVideoEl.srcObject = null
     this._clearCanvas()
-    this.onStatusChange("waiting")
+    this._setStatus("waiting")
   }
 
   _startCanvasRender() {

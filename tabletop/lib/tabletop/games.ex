@@ -23,6 +23,10 @@ defmodule Tabletop.Games do
     Phoenix.PubSub.subscribe(Tabletop.PubSub, "games")
   end
 
+  def subscribe_games(nil) do
+    Phoenix.PubSub.subscribe(Tabletop.PubSub, "games")
+  end
+
   defp broadcast_game(%Scope{} = _scope, message) do
     Phoenix.PubSub.broadcast(Tabletop.PubSub, "games", message)
   end
@@ -38,6 +42,47 @@ defmodule Tabletop.Games do
   """
   def list_games(%Scope{} = _scope) do
     Repo.all(Game)
+  end
+
+  @doc """
+  Returns the list of joinable games (no opponent yet, not created by current user).
+  Optionally filters by format.
+  """
+  def list_joinable_games(scope, format_filter \\ "")
+
+  def list_joinable_games(%Scope{} = scope, format_filter) do
+    query =
+      from g in Game,
+        where: is_nil(g.user2_id),
+        where: g.user_id != ^scope.user.id,
+        order_by: [desc: g.inserted_at],
+        preload: [:user]
+
+    query =
+      if format_filter != "" do
+        from g in query, where: g.format == ^format_filter
+      else
+        query
+      end
+
+    Repo.all(query)
+  end
+
+  def list_joinable_games(nil, format_filter) do
+    query =
+      from g in Game,
+        where: is_nil(g.user2_id),
+        order_by: [desc: g.inserted_at],
+        preload: [:user]
+
+    query =
+      if format_filter != "" do
+        from g in query, where: g.format == ^format_filter
+      else
+        query
+      end
+
+    Repo.all(query)
   end
 
   @doc """
@@ -139,6 +184,32 @@ defmodule Tabletop.Games do
     true = game.user_id == scope.user.id
 
     Game.changeset(game, attrs, scope)
+  end
+
+  @doc """
+  Joins a game by setting the current user as user2 (opponent).
+  """
+  def join_game(%Scope{} = scope, %Game{} = game) do
+    cond do
+      game.user_id == scope.user.id ->
+        {:error, :own_game}
+
+      game.user2_id != nil ->
+        {:error, :game_full}
+
+      true ->
+        game
+        |> Ecto.Changeset.change(%{user2_id: scope.user.id})
+        |> Repo.update()
+        |> case do
+          {:ok, game} ->
+            broadcast_game(scope, {:updated, game})
+            {:ok, game}
+
+          error ->
+            error
+        end
+    end
   end
 
   def user_part_of_game?(%Scope{} = scope, %Game{} = game) do

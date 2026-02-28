@@ -19,8 +19,10 @@ defmodule TabletopWeb.GameLive.Form do
           field={@form[:format]}
           type="select"
           label="Format"
-          options={[{"Classic Constructed", :classic_constructed}, {"Silver Age", :silver_age}]}
+          options={Game.format_options()}
         />
+        <.input field={@form[:hero]} type="text" label="Hero" />
+        <.input field={@form[:decklist]} type="text" label="Decklist" placeholder="https://fabrary.com/..." />
         <footer>
           <.button phx-disable-with="Saving..." variant="primary">Save Game</.button>
           <.button navigate={return_path(@current_scope, "index", @game)}>Cancel</.button>
@@ -42,15 +44,6 @@ defmodule TabletopWeb.GameLive.Form do
 
     socket
     |> assign(:page_title, "Edit Game")
-    |> assign(:game, game)
-    |> assign(:form, to_form(Games.change_game(socket.assigns.current_scope, game)))
-  end
-
-  defp apply_action(socket, :new, _params) do
-    game = %Game{user_id: socket.assigns.current_scope.user.id}
-
-    socket
-    |> assign(:page_title, "New Game")
     |> assign(:game, game)
     |> assign(:form, to_form(Games.change_game(socket.assigns.current_scope, game)))
   end
@@ -78,19 +71,6 @@ defmodule TabletopWeb.GameLive.Form do
     end
   end
 
-  defp save_game(socket, :new, game_params) do
-    case Games.create_game(socket.assigns.current_scope, game_params) do
-      {:ok, game} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Game created successfully")
-         |> push_navigate(to: return_path(socket.assigns.current_scope, "show", game))}
-
-      {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, form: to_form(changeset))}
-    end
-  end
-
-  defp return_path(_scope, "index", _game), do: ~p"/games"
+  defp return_path(_scope, "index", _game), do: ~p"/"
   defp return_path(_scope, "show", game), do: ~p"/games/#{game}"
 end

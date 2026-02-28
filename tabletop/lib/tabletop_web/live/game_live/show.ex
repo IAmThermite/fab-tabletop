@@ -29,7 +29,7 @@ defmodule TabletopWeb.GameLive.Show do
       {:ok,
        socket
        |> put_flash(:error, "You are not a participant in this game.")
-       |> push_navigate(to: ~p"/games")}
+       |> push_navigate(to: ~p"/")}
     end
   end
 
@@ -110,7 +110,7 @@ defmodule TabletopWeb.GameLive.Show do
     {:noreply,
      socket
      |> put_flash(:error, "The current game was deleted.")
-     |> push_navigate(to: ~p"/games")}
+     |> push_navigate(to: ~p"/")}
   end
 
   def handle_info({type, %Tabletop.Games.Game{}}, socket)

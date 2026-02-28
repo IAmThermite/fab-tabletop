@@ -7,6 +7,8 @@ defmodule Tabletop.Repo.Migrations.CreateGames do
       add :user_id, references(:users, type: :uuid, on_delete: :delete_all)
       add :user2_id, references(:users, type: :uuid, on_delete: :delete_all)
       add :format, :string, null: false
+      add :hero, :string
+      add :decklist, :string
 
       timestamps(type: :utc_datetime)
     end

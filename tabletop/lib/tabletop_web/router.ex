@@ -20,7 +20,8 @@ defmodule TabletopWeb.Router do
   scope "/", TabletopWeb do
     pipe_through(:browser)
 
-    get("/", PageController, :home)
+    # get("/", PageController, :home)
+    get("/about", PageController, :about)
   end
 
   # Other scopes may use custom stacks.
@@ -54,7 +55,6 @@ defmodule TabletopWeb.Router do
       on_mount: [{TabletopWeb.UserAuth, :require_authenticated}] do
       live("/users/settings", UserLive.Settings, :edit)
 
-      live "/games/new", GameLive.Form, :new
       live "/games/:id", GameLive.Show, :show
       live "/games/:id/edit", GameLive.Form, :edit
     end
@@ -83,7 +83,7 @@ defmodule TabletopWeb.Router do
       live("/users/register", UserLive.Registration, :new)
       live("/users/log-in", UserLive.Login, :new)
 
-      live("/games", GameLive.Index, :index)
+      live "/", GameLive.Index, :index
     end
 
     get("/users/confirm/:token", UserSessionController, :confirm)

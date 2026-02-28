@@ -12,6 +12,8 @@ defmodule Tabletop.Games.Game do
   schema "games" do
     field :title, :string
     field :format, Ecto.Enum, values: Map.keys(@valid_formats), default: :classic_constructed
+    field :hero, :string
+    field :decklist, :string
 
     belongs_to :user, Tabletop.Accounts.User, type: Ecto.UUID
     belongs_to :user2, Tabletop.Accounts.User, type: Ecto.UUID
@@ -23,10 +25,18 @@ defmodule Tabletop.Games.Game do
     @valid_formats[game.format]
   end
 
+  def format_name_for(format) when is_atom(format) do
+    @valid_formats[format]
+  end
+
+  def format_options do
+    Enum.map(@valid_formats, fn {key, label} -> {label, key} end)
+  end
+
   @doc false
   def changeset(game, attrs, user_scope) do
     game
-    |> cast(attrs, [:title, :format])
+    |> cast(attrs, [:title, :format, :hero, :decklist])
     |> validate_required([:title, :format])
     |> validate_inclusion(:format, Map.keys(@valid_formats))
     |> put_change(:user_id, user_scope.user.id)

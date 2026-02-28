@@ -3,6 +3,7 @@ defmodule TabletopWeb.GameLiveTest do
 
   import Phoenix.LiveViewTest
   import Tabletop.GamesFixtures
+  import Tabletop.AccountsFixtures
 
   @create_attrs %{title: "some title", format: :classic_constructed}
   @update_attrs %{title: "some updated title"}
@@ -17,72 +18,60 @@ defmodule TabletopWeb.GameLiveTest do
   end
 
   describe "Index" do
-    setup [:create_game]
+    test "shows three-column layout", %{conn: conn} do
+      {:ok, _live, html} = live(conn, ~p"/")
 
-    test "lists all games", %{conn: conn, game: game} do
-      {:ok, _index_live, html} = live(conn, ~p"/games")
-
-      assert html =~ "Listing Games"
-      assert html =~ game.title
+      assert html =~ "Games to join"
+      assert html =~ "Create Game"
+      assert html =~ "News"
     end
 
-    test "saves new game", %{conn: conn} do
-      {:ok, index_live, _html} = live(conn, ~p"/games")
+    test "creates new game inline", %{conn: conn} do
+      {:ok, live_view, _html} = live(conn, ~p"/")
 
-      assert {:ok, form_live, _} =
-               index_live
-               |> element("a", "New Game")
-               |> render_click()
-               |> follow_redirect(conn, ~p"/games/new")
-
-      assert render(form_live) =~ "New Game"
-
-      assert form_live
-             |> form("#game-form", game: @invalid_attrs)
+      assert live_view
+             |> form("#create-game-form", game: @invalid_attrs)
              |> render_change() =~ "can&#39;t be blank"
 
-      assert {:ok, index_live, _html} =
-               form_live
-               |> form("#game-form", game: @create_attrs)
+      assert {:ok, _show_live, html} =
+               live_view
+               |> form("#create-game-form", game: @create_attrs)
                |> render_submit()
-               |> follow_redirect(conn, ~p"/games")
+               |> follow_redirect(conn)
 
-      html = render(index_live)
       assert html =~ "Game created successfully"
-      assert html =~ "some title"
     end
 
-    test "updates game in listing", %{conn: conn, game: game} do
-      {:ok, index_live, _html} = live(conn, ~p"/games")
+    test "shows joinable games from other users", %{conn: conn} do
+      other_scope = user_scope_fixture()
+      game_fixture(other_scope, %{title: "Joinable Game"})
 
-      assert {:ok, form_live, _html} =
-               index_live
-               |> element("#games-#{game.id} a", "Edit")
+      {:ok, _live, html} = live(conn, ~p"/")
+
+      assert html =~ "Joinable Game"
+    end
+
+    test "does not show own games in games to join", %{conn: conn, scope: scope} do
+      game_fixture(scope, %{title: "My Own Game"})
+
+      {:ok, _live, html} = live(conn, ~p"/")
+
+      refute html =~ "My Own Game"
+    end
+
+    test "joins a game", %{conn: conn} do
+      other_scope = user_scope_fixture()
+      game = game_fixture(other_scope, %{title: "Join Me"})
+
+      {:ok, live_view, _html} = live(conn, ~p"/")
+
+      assert {:ok, _show_live, html} =
+               live_view
+               |> element("button", "JOIN")
                |> render_click()
-               |> follow_redirect(conn, ~p"/games/#{game}/edit")
+               |> follow_redirect(conn, ~p"/games/#{game}")
 
-      assert render(form_live) =~ "Edit Game"
-
-      assert form_live
-             |> form("#game-form", game: @invalid_attrs)
-             |> render_change() =~ "can&#39;t be blank"
-
-      assert {:ok, index_live, _html} =
-               form_live
-               |> form("#game-form", game: @update_attrs)
-               |> render_submit()
-               |> follow_redirect(conn, ~p"/games")
-
-      html = render(index_live)
-      assert html =~ "Game updated successfully"
-      assert html =~ "some updated title"
-    end
-
-    test "deletes game in listing", %{conn: conn, game: game} do
-      {:ok, index_live, _html} = live(conn, ~p"/games")
-
-      assert index_live |> element("#games-#{game.id} a", "Delete") |> render_click()
-      refute has_element?(index_live, "#games-#{game.id}")
+      assert html =~ "Joined game successfully"
     end
   end
 
@@ -101,6 +90,29 @@ defmodule TabletopWeb.GameLiveTest do
       {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
 
       assert has_element?(show_live, "a[title='Leave']")
+    end
+  end
+
+  describe "Edit" do
+    setup [:create_game]
+
+    test "updates game", %{conn: conn, game: game} do
+      {:ok, form_live, _html} = live(conn, ~p"/games/#{game}/edit")
+
+      assert render(form_live) =~ "Edit Game"
+
+      assert form_live
+             |> form("#game-form", game: @invalid_attrs)
+             |> render_change() =~ "can&#39;t be blank"
+
+      assert {:ok, _show_live, html} =
+               form_live
+               |> form("#game-form", game: @update_attrs)
+               |> render_submit()
+               |> follow_redirect(conn)
+
+      assert html =~ "Game updated successfully"
+      assert html =~ "some updated title"
     end
   end
 end

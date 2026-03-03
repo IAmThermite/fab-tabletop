@@ -41,7 +41,6 @@ defmodule TabletopWeb.Layouts do
     <header class="navbar px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
         <.link navigate={~p"/"} class="btn btn-ghost normal-case text-xl">
-          <.icon name="hero-dice" class="size-5 mr-2" />
           Fab Tabletop
         </.link>
       </div>

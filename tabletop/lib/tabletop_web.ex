@@ -86,6 +86,7 @@ defmodule TabletopWeb do
       import Phoenix.HTML
       # Core UI components
       import TabletopWeb.CoreComponents
+      import TabletopWeb.GameComponents
 
       # Common modules used in templates
       alias Phoenix.LiveView.ColocatedHook

@@ -33,7 +33,7 @@ export default class WebRTCManager {
     // Capture local media first so tracks are ready before signaling
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: true,
       })
       this.localVideoEl.srcObject = this.localStream

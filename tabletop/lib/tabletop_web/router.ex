@@ -83,6 +83,7 @@ defmodule TabletopWeb.Router do
       live "/", GameLive.Index, :index
       live "/games/:id", GameLive.Show, :show
       live "/games/:id/edit", GameLive.Form, :edit
+      live "/camera-test", CameraTestLive, :index
     end
 
     get("/users/confirm/:token", UserSessionController, :confirm)

@@ -9,6 +9,34 @@ defmodule TabletopWeb.GameLive.Index do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-7xl">
+      <div
+        :if={@current_game}
+        class="mb-6 border-2 border-primary rounded-lg p-4 bg-primary/10"
+      >
+        <h2 class="text-xl font-bold mb-2">Game in Progress</h2>
+        <div class="flex items-center justify-between">
+          <div>
+            <span class="font-semibold">{@current_game.title}</span>
+            <span class="text-sm text-zinc-500 ml-2">
+              {Game.format_name(@current_game)}
+            </span>
+          </div>
+          <div class="flex gap-2">
+            <.link navigate={~p"/games/#{@current_game}"} class="btn btn-primary btn-sm">
+              Rejoin Game
+            </.link>
+            <button
+              phx-click="leave_game"
+              phx-value-id={@current_game.id}
+              data-confirm="Are you sure you want to leave the game?"
+              class="btn btn-error btn-sm btn-outline"
+            >
+              Leave Game
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         <%!-- Games to join --%>
         <div>
@@ -118,6 +146,7 @@ defmodule TabletopWeb.GameLive.Index do
       socket
       |> assign(:page_title, "Games")
       |> assign_form(scope)
+      |> assign_current_game(scope)
       |> assign_games()
 
     {:ok, socket}
@@ -158,6 +187,13 @@ defmodule TabletopWeb.GameLive.Index do
     end
   end
 
+  def handle_event("leave_game", %{"id" => id}, socket) do
+    game = Games.get_game!(socket.assigns.current_scope, id)
+    Games.LeaveTimer.cancel_leave(game.id, socket.assigns.current_scope.user.id)
+    Games.terminate_game(socket.assigns.current_scope, game)
+    {:noreply, assign_current_game(socket, socket.assigns.current_scope)}
+  end
+
   def handle_event("join", %{"id" => id}, socket) do
     game = Games.get_game!(socket.assigns.current_scope, id)
 
@@ -176,7 +212,18 @@ defmodule TabletopWeb.GameLive.Index do
   @impl true
   def handle_info({type, %Game{}}, socket)
       when type in [:created, :updated, :deleted] do
-    {:noreply, assign_games(socket)}
+    {:noreply,
+     socket
+     |> assign_current_game(socket.assigns.current_scope)
+     |> assign_games()}
+  end
+
+  defp assign_current_game(socket, %Scope{} = scope) do
+    assign(socket, :current_game, Games.get_current_game_for_user(scope))
+  end
+
+  defp assign_current_game(socket, nil) do
+    assign(socket, :current_game, nil)
   end
 
   defp assign_games(socket) do

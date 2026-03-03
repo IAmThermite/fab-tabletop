@@ -87,4 +87,189 @@ defmodule Tabletop.GamesTest do
       assert %Ecto.Changeset{} = Games.change_game(scope, game)
     end
   end
+
+  describe "join_game/2" do
+    import Tabletop.AccountsFixtures, only: [user_scope_fixture: 0]
+    import Tabletop.GamesFixtures
+
+    test "sets user2 and status to active" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1)
+
+      assert {:ok, game} = Games.join_game(scope2, game)
+      assert game.user2_id == scope2.user.id
+      assert game.status == :active
+    end
+
+    test "cannot join own game" do
+      scope = user_scope_fixture()
+      game = game_fixture(scope)
+
+      assert {:error, :own_game} = Games.join_game(scope, game)
+    end
+
+    test "cannot join a full game" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      scope3 = user_scope_fixture()
+      game = game_fixture(scope1)
+
+      assert {:ok, game} = Games.join_game(scope2, game)
+      assert {:error, :game_full} = Games.join_game(scope3, game)
+    end
+  end
+
+  describe "terminate_game/2" do
+    import Tabletop.AccountsFixtures, only: [user_scope_fixture: 0]
+    import Tabletop.GamesFixtures
+
+    test "marks both players as left and sets status to finished" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1)
+      {:ok, game} = Games.join_game(scope2, game)
+
+      assert {:ok, game} = Games.terminate_game(scope1, game)
+      assert game.status == :finished
+      assert not is_nil(game.user1_left_at)
+      assert not is_nil(game.user2_left_at)
+    end
+
+    test "is idempotent on an already finished game" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1)
+      {:ok, game} = Games.join_game(scope2, game)
+
+      {:ok, game} = Games.terminate_game(scope1, game)
+      original_user1_left = game.user1_left_at
+      original_user2_left = game.user2_left_at
+
+      assert {:ok, game} = Games.terminate_game(scope2, game)
+      assert game.user1_left_at == original_user1_left
+      assert game.user2_left_at == original_user2_left
+    end
+  end
+
+  describe "rejoin_game/2" do
+    import Tabletop.AccountsFixtures, only: [user_scope_fixture: 0]
+    import Tabletop.GamesFixtures
+
+    test "clears user1_left_at after terminate" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1)
+      {:ok, game} = Games.join_game(scope2, game)
+      {:ok, game} = Games.terminate_game(scope1, game)
+      assert not is_nil(game.user1_left_at)
+
+      game = Games.rejoin_game(scope1, game)
+      assert is_nil(game.user1_left_at)
+    end
+
+    test "clears user2_left_at after terminate" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1)
+      {:ok, game} = Games.join_game(scope2, game)
+      {:ok, game} = Games.terminate_game(scope2, game)
+      assert not is_nil(game.user2_left_at)
+
+      game = Games.rejoin_game(scope2, game)
+      assert is_nil(game.user2_left_at)
+    end
+
+    test "is a no-op when user hasn't left" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1)
+      {:ok, game} = Games.join_game(scope2, game)
+
+      assert {:ok, ^game} = Games.rejoin_game(scope1, game)
+    end
+  end
+
+  describe "get_current_game_for_user/1" do
+    import Tabletop.AccountsFixtures, only: [user_scope_fixture: 0]
+    import Tabletop.GamesFixtures
+
+    test "returns active game for user" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1)
+      {:ok, _game} = Games.join_game(scope2, game)
+
+      current = Games.get_current_game_for_user(scope1)
+      assert current.id == game.id
+    end
+
+    test "returns waiting game for creator" do
+      scope = user_scope_fixture()
+      game = game_fixture(scope)
+
+      current = Games.get_current_game_for_user(scope)
+      assert current.id == game.id
+    end
+
+    test "returns nil for finished games" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1)
+      {:ok, game} = Games.join_game(scope2, game)
+      Games.terminate_game(scope1, game)
+
+      assert is_nil(Games.get_current_game_for_user(scope1))
+      assert is_nil(Games.get_current_game_for_user(scope2))
+    end
+
+    test "returns nil for nil scope" do
+      assert is_nil(Games.get_current_game_for_user(nil))
+    end
+  end
+
+  describe "list_joinable_games/2" do
+    import Tabletop.AccountsFixtures, only: [user_scope_fixture: 0]
+    import Tabletop.GamesFixtures
+
+    test "excludes active games" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      scope3 = user_scope_fixture()
+      game = game_fixture(scope1)
+      {:ok, _game} = Games.join_game(scope2, game)
+
+      joinable = Games.list_joinable_games(scope3)
+      refute Enum.any?(joinable, &(&1.id == game.id))
+    end
+
+    test "excludes finished games" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      scope3 = user_scope_fixture()
+      game = game_fixture(scope1)
+      {:ok, game} = Games.join_game(scope2, game)
+      Games.terminate_game(scope1, game)
+
+      joinable = Games.list_joinable_games(scope3)
+      refute Enum.any?(joinable, &(&1.id == game.id))
+    end
+
+    test "excludes own games" do
+      scope = user_scope_fixture()
+      game_fixture(scope)
+
+      joinable = Games.list_joinable_games(scope)
+      assert joinable == []
+    end
+
+    test "includes waiting games from other users" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1)
+
+      joinable = Games.list_joinable_games(scope2)
+      assert Enum.any?(joinable, &(&1.id == game.id))
+    end
+  end
 end

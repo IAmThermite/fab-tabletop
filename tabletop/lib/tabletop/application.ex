@@ -13,8 +13,8 @@ defmodule Tabletop.Application do
       {DNSCluster, query: Application.get_env(:tabletop, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Tabletop.PubSub},
       %{id: :game_channels_pg, start: {:pg, :start_link, [:game_channels]}},
-      # Start a worker by calling: Tabletop.Worker.start_link(arg)
-      # {Tabletop.Worker, arg},
+      {Registry, keys: :unique, name: Tabletop.Games.LeaveTimerRegistry},
+      {DynamicSupervisor, name: Tabletop.Games.LeaveTimerSupervisor, strategy: :one_for_one},
       # Start to serve requests, typically the last entry
       TabletopWeb.Endpoint
     ]

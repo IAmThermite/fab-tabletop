@@ -9,6 +9,9 @@ defmodule Tabletop.Repo.Migrations.CreateGames do
       add :format, :string, null: false
       add :hero, :string
       add :decklist, :string
+      add :status, :string, null: false, default: "waiting"
+      add :user1_left_at, :utc_datetime_usec
+      add :user2_left_at, :utc_datetime_usec
 
       timestamps(type: :utc_datetime)
     end

@@ -2,6 +2,7 @@ defmodule TabletopWeb.GameLive.Show do
   use TabletopWeb, :live_view
 
   alias Tabletop.Games
+  alias Tabletop.Games.LeaveTimer
   alias Tabletop.Fab.GameState
 
   @impl true
@@ -15,6 +16,11 @@ defmodule TabletopWeb.GameLive.Show do
     end
 
     if Games.user_part_of_game?(socket.assigns.current_scope, game) do
+      if connected?(socket) do
+        LeaveTimer.cancel_leave(game.id, user_id)
+        Games.rejoin_game(socket.assigns.current_scope, game)
+      end
+
       user_token = Phoenix.Token.sign(socket, "user socket", user_id)
 
       {:ok,
@@ -81,6 +87,16 @@ defmodule TabletopWeb.GameLive.Show do
     apply_my_action(socket, GameState.reset_chain(socket.assigns.game_state))
   end
 
+  def handle_event("leave_game", _params, socket) do
+    LeaveTimer.cancel_leave(socket.assigns.game.id, socket.assigns.user_id)
+    Games.terminate_game(socket.assigns.current_scope, socket.assigns.game)
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "The game has ended.")
+     |> push_navigate(to: ~p"/")}
+  end
+
   # --- PubSub messages ---
 
   @impl true
@@ -89,6 +105,13 @@ defmodule TabletopWeb.GameLive.Show do
         %{assigns: %{user_id: sender_id}} = socket
       ) do
     {:noreply, socket}
+  end
+
+  def handle_info({:game_update, "game_ended", _sender_id}, socket) do
+    {:noreply,
+     socket
+     |> put_flash(:info, "The game has ended.")
+     |> push_navigate(to: ~p"/")}
   end
 
   def handle_info({:game_update, broadcast_msg, _sender_id}, socket) do
@@ -137,5 +160,17 @@ defmodule TabletopWeb.GameLive.Show do
       "game_session:#{socket.assigns.game.id}",
       {:game_update, broadcast_msg, user_id}
     )
+  end
+
+  @impl true
+  def terminate(_reason, socket) do
+    if game = socket.assigns[:game] do
+      if scope = socket.assigns[:current_scope] do
+        user_id = scope.user.id
+        LeaveTimer.schedule_leave(game.id, user_id, scope)
+      end
+    end
+
+    :ok
   end
 end

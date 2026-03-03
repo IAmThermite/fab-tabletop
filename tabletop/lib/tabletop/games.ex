@@ -31,6 +31,14 @@ defmodule Tabletop.Games do
     Phoenix.PubSub.broadcast(Tabletop.PubSub, "games", message)
   end
 
+  defp broadcast_game_session(game_id, message, sender_id) do
+    Phoenix.PubSub.broadcast(
+      Tabletop.PubSub,
+      "game_session:#{game_id}",
+      {:game_update, message, sender_id}
+    )
+  end
+
   @doc """
   Returns the list of games.
 
@@ -40,7 +48,7 @@ defmodule Tabletop.Games do
       [%Game{}, ...]
 
   """
-  def list_games(%Scope{} = _scope) do
+  def list_games(_scope) do
     Repo.all(Game)
   end
 
@@ -53,6 +61,7 @@ defmodule Tabletop.Games do
   def list_joinable_games(%Scope{} = scope, format_filter) do
     query =
       from g in Game,
+        where: g.status == :waiting,
         where: is_nil(g.user2_id),
         where: g.user_id != ^scope.user.id,
         order_by: [desc: g.inserted_at],
@@ -71,6 +80,7 @@ defmodule Tabletop.Games do
   def list_joinable_games(nil, format_filter) do
     query =
       from g in Game,
+        where: g.status == :waiting,
         where: is_nil(g.user2_id),
         order_by: [desc: g.inserted_at],
         preload: [:user]
@@ -199,10 +209,11 @@ defmodule Tabletop.Games do
 
       true ->
         game
-        |> Ecto.Changeset.change(%{user2_id: scope.user.id})
+        |> Ecto.Changeset.change(%{user2_id: scope.user.id, status: :active})
         |> Repo.update()
         |> case do
           {:ok, game} ->
+            game = Repo.preload(game, [:user, :user2])
             broadcast_game(scope, {:updated, game})
             {:ok, game}
 
@@ -211,6 +222,86 @@ defmodule Tabletop.Games do
         end
     end
   end
+
+  @doc """
+  Terminates a game, marking both players as left and setting status to :finished.
+  Broadcasts game_ended to the game session and an update to the games topic.
+  """
+  def terminate_game(%Scope{} = scope, %Game{} = game) do
+    now = DateTime.utc_now()
+
+    changes =
+      %{status: :finished}
+      |> then(fn c -> if is_nil(game.user1_left_at), do: Map.put(c, :user1_left_at, now), else: c end)
+      |> then(fn c -> if is_nil(game.user2_left_at), do: Map.put(c, :user2_left_at, now), else: c end)
+
+    game
+    |> Ecto.Changeset.change(changes)
+    |> Repo.update()
+    |> case do
+      {:ok, game} ->
+        game = Repo.preload(game, [:user, :user2])
+        broadcast_game(scope, {:updated, game})
+        broadcast_game_session(game.id, "game_ended", scope.user.id)
+        {:ok, game}
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
+  Clears a user's left_at timestamp so they can rejoin an active game.
+  """
+  def rejoin_game(%Scope{} = scope, %Game{} = game) do
+    user_id = scope.user.id
+
+    changes =
+      cond do
+        game.user_id == user_id and not is_nil(game.user1_left_at) ->
+          %{user1_left_at: nil}
+
+        game.user2_id == user_id and not is_nil(game.user2_left_at) ->
+          %{user2_left_at: nil}
+
+        true ->
+          %{}
+      end
+
+    if changes == %{} do
+      {:ok, game}
+    else
+      game
+      |> Ecto.Changeset.change(changes)
+      |> Repo.update()
+      |> case do
+        {:ok, game} ->
+          Repo.preload(game, [:user, :user2])
+
+        error ->
+          error
+      end
+    end
+  end
+
+  @doc """
+  Returns the user's active game (status == :active and they haven't left), if any.
+  """
+  def get_current_game_for_user(%Scope{} = scope) do
+    user_id = scope.user.id
+
+    from(g in Game,
+      where: g.status == :active or g.status == :waiting,
+      where:
+        (g.user_id == ^user_id and is_nil(g.user1_left_at)) or
+          (g.user2_id == ^user_id and is_nil(g.user2_left_at)),
+      limit: 1,
+      preload: [:user, :user2]
+    )
+    |> Repo.one()
+  end
+
+  def get_current_game_for_user(nil), do: nil
 
   def user_part_of_game?(%Scope{} = scope, %Game{} = game) do
     game.user_id == scope.user.id || game.user2_id == scope.user.id

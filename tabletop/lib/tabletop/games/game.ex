@@ -6,7 +6,8 @@ defmodule Tabletop.Games.Game do
 
   @valid_formats %{
     classic_constructed: "Classic Constructed",
-    silver_age: "Silver Age"
+    silver_age: "Silver Age",
+    living_legend: "Living Legend"
   }
 
   schema "games" do
@@ -14,6 +15,9 @@ defmodule Tabletop.Games.Game do
     field :format, Ecto.Enum, values: Map.keys(@valid_formats), default: :classic_constructed
     field :hero, :string
     field :decklist, :string
+    field :status, Ecto.Enum, values: [:waiting, :active, :finished], default: :waiting
+    field :user1_left_at, :utc_datetime_usec
+    field :user2_left_at, :utc_datetime_usec
 
     belongs_to :user, Tabletop.Accounts.User, type: Ecto.UUID
     belongs_to :user2, Tabletop.Accounts.User, type: Ecto.UUID

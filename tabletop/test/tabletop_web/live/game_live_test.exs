@@ -54,9 +54,9 @@ defmodule TabletopWeb.GameLiveTest do
     test "does not show own games in games to join", %{conn: conn, scope: scope} do
       game_fixture(scope, %{title: "My Own Game"})
 
-      {:ok, _live, html} = live(conn, ~p"/")
+      {:ok, live_view, _html} = live(conn, ~p"/")
 
-      refute html =~ "My Own Game"
+      refute has_element?(live_view, ".space-y-3", "My Own Game")
     end
 
     test "joins a game", %{conn: conn} do
@@ -89,7 +89,7 @@ defmodule TabletopWeb.GameLiveTest do
     test "has leave button that navigates to games list", %{conn: conn, game: game} do
       {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
 
-      assert has_element?(show_live, "a[title='Leave']")
+      assert has_element?(show_live, "button[title='Leave Game']")
     end
   end
 

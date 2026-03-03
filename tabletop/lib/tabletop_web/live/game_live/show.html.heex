@@ -49,9 +49,14 @@
         Connecting...
       </div>
 
-      <.link navigate={~p"/"} class="btn btn-circle btn-sm btn-error" title="Leave">
+      <button
+        phx-click="leave_game"
+        data-confirm="Are you sure you want to leave the game?"
+        class="btn btn-circle btn-sm btn-error"
+        title="Leave Game"
+      >
         <.icon name="hero-arrow-right-start-on-rectangle" class="size-5" />
-      </.link>
+      </button>
     </div>
 
     <%!-- Main area --%>

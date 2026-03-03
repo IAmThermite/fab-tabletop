@@ -45,7 +45,7 @@
         {@game.title}
       </div>
 
-      <div id="connection-status" class="badge badge-sm badge-outline">
+      <div id="connection-status" phx-update="ignore" class="badge badge-sm badge-outline">
         Connecting...
       </div>
 
@@ -246,7 +246,7 @@
         </div>
 
         <%!-- Remote peer media status --%>
-        <div id="remote-media-status" class="absolute top-2 right-2 flex gap-1 hidden">
+        <div id="remote-media-status" phx-update="ignore" class="absolute top-2 right-2 flex gap-1 hidden">
           <div
             id="remote-camera-off"
             class="badge badge-error gap-1 hidden"

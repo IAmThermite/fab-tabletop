@@ -54,9 +54,6 @@ defmodule TabletopWeb.Router do
     live_session :require_authenticated_user,
       on_mount: [{TabletopWeb.UserAuth, :require_authenticated}] do
       live("/users/settings", UserLive.Settings, :edit)
-
-      live "/games/:id", GameLive.Show, :show
-      live "/games/:id/edit", GameLive.Form, :edit
     end
 
     post("/users/update-password", UserSessionController, :update_password)
@@ -84,6 +81,8 @@ defmodule TabletopWeb.Router do
       live("/users/log-in", UserLive.Login, :new)
 
       live "/", GameLive.Index, :index
+      live "/games/:id", GameLive.Show, :show
+      live "/games/:id/edit", GameLive.Form, :edit
     end
 
     get("/users/confirm/:token", UserSessionController, :confirm)

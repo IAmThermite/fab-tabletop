@@ -4,6 +4,8 @@ defmodule TabletopWeb.GameLive.Form do
   alias Tabletop.Games
   alias Tabletop.Games.Game
 
+  on_mount {TabletopWeb.UserAuth, :require_authenticated}
+
   @impl true
   def render(assigns) do
     ~H"""

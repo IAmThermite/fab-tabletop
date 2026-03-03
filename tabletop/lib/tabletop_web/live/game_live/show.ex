@@ -5,20 +5,23 @@ defmodule TabletopWeb.GameLive.Show do
   alias Tabletop.Games.LeaveTimer
   alias Tabletop.Fab.GameState
 
+  on_mount {TabletopWeb.UserAuth, :require_authenticated}
+
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    game = Games.get_game!(socket.assigns.current_scope, id)
-    user_id = socket.assigns.current_scope.user.id
+    scope = socket.assigns.current_scope
+    game = Games.get_game!(scope, id)
+    user_id = scope.user.id
 
     if connected?(socket) do
-      Games.subscribe_games(socket.assigns.current_scope)
+      Games.subscribe_games(scope)
       Phoenix.PubSub.subscribe(Tabletop.PubSub, "game_session:#{game.id}")
     end
 
-    if Games.user_part_of_game?(socket.assigns.current_scope, game) do
+    if Games.user_part_of_game?(scope, game) do
       if connected?(socket) do
         LeaveTimer.cancel_leave(game.id, user_id)
-        Games.rejoin_game(socket.assigns.current_scope, game)
+        Games.rejoin_game(scope, game)
       end
 
       user_token = Phoenix.Token.sign(socket, "user socket", user_id)

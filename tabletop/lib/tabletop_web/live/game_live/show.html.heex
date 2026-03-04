@@ -8,14 +8,8 @@
   >
     <%!-- Top bar --%>
     <div class="flex items-center gap-3 px-3 py-2 bg-base-200 border-b border-base-300">
-      <video
-        id="local-video"
-        autoplay
-        muted
-        playsinline
-        class="w-24 h-18 rounded object-cover bg-black"
-      >
-      </video>
+      <video id="local-video" autoplay muted playsinline class="hidden"></video>
+      <canvas id="local-canvas" class="w-24 h-18 rounded bg-black"></canvas>
 
       <button
         id="toggle-camera"
@@ -48,6 +42,15 @@
       <div id="connection-status" phx-update="ignore" class="badge badge-sm badge-outline">
         Connecting...
       </div>
+
+      <button
+        id="settings-btn"
+        type="button"
+        class="btn btn-circle btn-sm"
+        title="Settings"
+      >
+        <.icon name="hero-cog-6-tooth" class="size-5" />
+      </button>
 
       <button
         phx-click="leave_game"
@@ -103,6 +106,30 @@
         <.game_overlays game_state={@game_state} />
       </div>
     </div>
+
+    <%!-- Settings dialog --%>
+    <dialog id="settings-dialog" class="modal">
+      <div class="modal-box">
+        <h3 class="text-lg font-bold">Settings</h3>
+        <div class="py-4 space-y-4">
+          <label class="flex items-center justify-between cursor-pointer">
+            <span class="label-text">Flip opponent's view</span>
+            <input id="flip-opponent-toggle" type="checkbox" class="toggle" />
+          </label>
+          <.link navigate={~p"/camera-setup"} class="btn btn-outline btn-sm w-full">
+            Reconfigure Camera
+          </.link>
+        </div>
+        <div class="modal-action">
+          <form method="dialog">
+            <button class="btn">Close</button>
+          </form>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+      </form>
+    </dialog>
   </div>
 
   <script :type={ColocatedHook} name=".GameVideo">
@@ -114,6 +141,7 @@
         const token = this.el.dataset.userToken
 
         const localVideoEl = document.getElementById("local-video")
+        const localCanvasEl = document.getElementById("local-canvas")
         const remoteVideoEl = document.getElementById("remote-video")
         const canvasEl = document.getElementById("remote-canvas")
         const statusEl = document.getElementById("connection-status")
@@ -123,6 +151,66 @@
         const remoteStatusEl = document.getElementById("remote-media-status")
         const remoteCameraOff = document.getElementById("remote-camera-off")
         const remoteMicOff = document.getElementById("remote-mic-off")
+
+        const settingsBtn = document.getElementById("settings-btn")
+        const settingsDialog = document.getElementById("settings-dialog")
+        const flipToggle = document.getElementById("flip-opponent-toggle")
+
+        // Load flip preference from localStorage
+        const FLIP_KEY = "tabletop:flip-opponent"
+        const savedFlip = localStorage.getItem(FLIP_KEY) === "true"
+        flipToggle.checked = savedFlip
+        if (savedFlip) {
+          canvasEl.style.transform = "rotate(180deg)"
+        }
+
+        // Render local video preview with saved camera transforms
+        const savedZoom = parseFloat(localStorage.getItem("tabletop:camera-zoom") || "1")
+        const savedRotation = parseFloat(localStorage.getItem("tabletop:camera-rotation") || "0")
+        const localCtx = localCanvasEl.getContext("2d")
+        this._localPreviewFrameId = null
+
+        const renderLocalPreview = () => {
+          if (localVideoEl.readyState >= localVideoEl.HAVE_CURRENT_DATA) {
+            const cw = localCanvasEl.clientWidth
+            const ch = localCanvasEl.clientHeight
+            localCanvasEl.width = cw
+            localCanvasEl.height = ch
+
+            const vw = localVideoEl.videoWidth
+            const vh = localVideoEl.videoHeight
+
+            const sw = vw / savedZoom
+            const sh = vh / savedZoom
+            const sx = (vw - sw) / 2
+            const sy = (vh - sh) / 2
+
+            const baseScale = Math.max(cw / sw, ch / sh)
+            const rad = savedRotation * Math.PI / 180
+            let dw = sw * baseScale
+            let dh = sh * baseScale
+            const sinR = Math.abs(Math.sin(rad))
+            const cosR = Math.abs(Math.cos(rad))
+            const rotScale = Math.max(
+              (cw * cosR + ch * sinR) / dw,
+              (cw * sinR + ch * cosR) / dh
+            )
+            dw *= rotScale
+            dh *= rotScale
+            const dx = (cw - dw) / 2
+            const dy = (ch - dh) / 2
+
+            localCtx.clearRect(0, 0, cw, ch)
+            localCtx.save()
+            localCtx.translate(cw / 2, ch / 2)
+            localCtx.rotate(rad)
+            localCtx.translate(-cw / 2, -ch / 2)
+            localCtx.drawImage(localVideoEl, sx, sy, sw, sh, dx, dy, dw, dh)
+            localCtx.restore()
+          }
+          this._localPreviewFrameId = requestAnimationFrame(renderLocalPreview)
+        }
+        this._localPreviewFrameId = requestAnimationFrame(renderLocalPreview)
 
         const updateButtonIcons = (btn, enabled) => {
           const on = btn.querySelector(".icon-on")
@@ -186,9 +274,24 @@
             updateButtonIcons(btn, enabled)
           }
         })
+
+        // Settings dialog
+        settingsBtn.addEventListener("click", () => {
+          settingsDialog.showModal()
+        })
+
+        // Flip opponent toggle
+        flipToggle.addEventListener("change", () => {
+          const flipped = flipToggle.checked
+          canvasEl.style.transform = flipped ? "rotate(180deg)" : ""
+          localStorage.setItem(FLIP_KEY, flipped)
+        })
       },
 
       destroyed() {
+        if (this._localPreviewFrameId) {
+          cancelAnimationFrame(this._localPreviewFrameId)
+        }
         if (this.webrtc) {
           this.webrtc.disconnect()
         }

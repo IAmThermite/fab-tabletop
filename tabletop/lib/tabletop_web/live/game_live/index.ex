@@ -9,6 +9,18 @@ defmodule TabletopWeb.GameLive.Index do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-7xl">
+      <div id="game-index" phx-hook=".GameIndex">
+
+      <div id="camera-setup-banner" class="hidden mb-6 border-2 border-warning rounded-lg p-4 bg-warning/10">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-bold">Camera Setup Required</h3>
+            <p class="text-sm opacity-75">Set up your camera before joining or creating a game.</p>
+          </div>
+          <.link navigate={~p"/camera-setup"} class="btn btn-warning btn-sm">Set Up Camera</.link>
+        </div>
+      </div>
+
       <div
         :if={@current_game}
         class="mb-6 border-2 border-primary rounded-lg p-4 bg-primary/10"
@@ -65,6 +77,7 @@ defmodule TabletopWeb.GameLive.Index do
                     phx-click="join"
                     phx-value-id={game.id}
                     variant="primary"
+                    data-requires-setup="true"
                   >
                     JOIN
                   </.button>
@@ -107,7 +120,7 @@ defmodule TabletopWeb.GameLive.Index do
                 placeholder="https://fabrary.com/..."
               />
               <div class="flex justify-center pt-4">
-                <.button variant="primary" phx-disable-with="Starting...">Start</.button>
+                <.button variant="primary" phx-disable-with="Starting..." data-requires-setup="true">Start</.button>
               </div>
             </.form>
           </div>
@@ -130,7 +143,32 @@ defmodule TabletopWeb.GameLive.Index do
           </div>
         </div>
       </div>
+
+      </div>
     </Layouts.app>
+
+    <script :type={ColocatedHook} name=".GameIndex">
+      export default {
+        mounted() {
+          const setupDone = localStorage.getItem("tabletop:camera-setup-done") === "true"
+
+          if (!setupDone) {
+            const banner = document.getElementById("camera-setup-banner")
+            if (banner) banner.classList.remove("hidden")
+          }
+
+          // Intercept join/create clicks if setup not done
+          this.el.addEventListener("click", (e) => {
+            const btn = e.target.closest("[data-requires-setup]")
+            if (btn && !setupDone) {
+              e.preventDefault()
+              e.stopPropagation()
+              window.location.href = "/camera-setup"
+            }
+          }, true)
+        }
+      }
+    </script>
     """
   end
 

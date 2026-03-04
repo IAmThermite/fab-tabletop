@@ -11,6 +11,7 @@ defmodule TabletopWeb.GameLive.Show do
   def mount(%{"id" => id}, _session, socket) do
     scope = socket.assigns.current_scope
     game = Games.get_game!(scope, id)
+
     user_id = scope.user.id
 
     if connected?(socket) do

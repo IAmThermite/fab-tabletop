@@ -1,4 +1,4 @@
-defmodule TabletopWeb.CameraTestLive do
+defmodule TabletopWeb.CameraSetupLive do
   use TabletopWeb, :live_view
 
   alias Tabletop.Fab.GameState
@@ -7,7 +7,12 @@ defmodule TabletopWeb.CameraTestLive do
   def render(assigns) do
     ~H"""
     <Layouts.game flash={@flash} current_scope={@current_scope}>
-      <div id="camera-test" phx-hook=".CameraTest" class="flex flex-col h-full">
+      <div
+        id="camera-setup"
+        phx-hook=".CameraSetup"
+        data-redirect={@redirect_to}
+        class="flex flex-col h-full"
+      >
         <%!-- Top bar --%>
         <div class="flex items-center gap-3 px-3 py-2 bg-base-200 border-b border-base-300">
           <video
@@ -15,7 +20,7 @@ defmodule TabletopWeb.CameraTestLive do
             autoplay
             muted
             playsinline
-            class="w-24 h-18 rounded object-cover bg-black"
+            class="hidden"
           >
           </video>
 
@@ -44,7 +49,7 @@ defmodule TabletopWeb.CameraTestLive do
           </button>
 
           <div class="flex-1 text-center font-semibold truncate">
-            Camera Test
+            Camera Setup
           </div>
 
           <div id="test-audio-level" phx-update="ignore" class="flex items-center gap-2">
@@ -63,6 +68,10 @@ defmodule TabletopWeb.CameraTestLive do
             Initializing...
           </div>
 
+          <button id="setup-done-btn" type="button" class="btn btn-primary btn-sm">
+            Save & Continue
+          </button>
+
           <.link navigate={~p"/"} class="btn btn-circle btn-sm">
             <.icon name="hero-x-mark" class="size-5" />
           </.link>
@@ -72,7 +81,7 @@ defmodule TabletopWeb.CameraTestLive do
         <div class="flex flex-1 min-h-0">
           <.game_sidebar game_state={@game_state} />
 
-          <%!-- Central area — opponent view canvas --%>
+          <%!-- Central area — camera preview canvas --%>
           <div class="flex-1 relative bg-blue-100">
             <canvas id="test-canvas" class="w-full h-full"></canvas>
 
@@ -88,15 +97,46 @@ defmodule TabletopWeb.CameraTestLive do
               </div>
             </div>
 
+            <%!-- Zoom/rotation controls --%>
+            <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-base-200/90 rounded-lg px-4 py-2 backdrop-blur-sm">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-semibold">Rotate</span>
+                <input
+                  id="rotation-slider"
+                  type="range"
+                  min="0"
+                  max="360"
+                  step="1"
+                  value="180"
+                  class="range range-xs range-secondary w-72"
+                />
+                <span id="rotation-value" class="text-xs w-8">0&deg;</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-semibold">Zoom</span>
+                <input
+                  id="zoom-slider"
+                  type="range"
+                  min="1"
+                  max="3"
+                  step="0.1"
+                  value="1"
+                  class="range range-xs range-primary w-48"
+                />
+                <span id="zoom-value" class="text-xs w-8">1.0x</span>
+              </div>
+            </div>
+
             <.game_overlays game_state={@game_state} />
           </div>
         </div>
       </div>
     </Layouts.game>
 
-    <script :type={ColocatedHook} name=".CameraTest">
+    <script :type={ColocatedHook} name=".CameraSetup">
       export default {
         mounted() {
+          const el = this.el
           const videoEl = document.getElementById("test-local-video")
           const canvasEl = document.getElementById("test-canvas")
           const noCameraEl = document.getElementById("test-no-camera")
@@ -104,6 +144,11 @@ defmodule TabletopWeb.CameraTestLive do
           const audioBar = document.getElementById("test-audio-bar")
           const toggleCameraBtn = document.getElementById("test-toggle-camera")
           const toggleMicBtn = document.getElementById("test-toggle-mic")
+          const zoomSlider = document.getElementById("zoom-slider")
+          const zoomValueEl = document.getElementById("zoom-value")
+          const rotationSlider = document.getElementById("rotation-slider")
+          const rotationValueEl = document.getElementById("rotation-value")
+          const doneBtn = document.getElementById("setup-done-btn")
 
           let stream = null
           let animFrameId = null
@@ -111,6 +156,14 @@ defmodule TabletopWeb.CameraTestLive do
           let analyser = null
           let cameraEnabled = true
           let micEnabled = true
+
+          // Load saved settings from localStorage
+          const savedZoom = localStorage.getItem("tabletop:camera-zoom") || "1"
+          const savedRotation = localStorage.getItem("tabletop:camera-rotation") || "0"
+          zoomSlider.value = savedZoom
+          rotationSlider.value = savedRotation
+          zoomValueEl.textContent = parseFloat(savedZoom).toFixed(1) + "x"
+          rotationValueEl.textContent = savedRotation + "\u00B0"
 
           const updateButtonIcons = (btn, enabled) => {
             const on = btn.querySelector(".icon-on")
@@ -133,14 +186,41 @@ defmodule TabletopWeb.CameraTestLive do
 
                 const vw = videoEl.videoWidth
                 const vh = videoEl.videoHeight
-                const scale = Math.min(cw / vw, ch / vh)
-                const dw = vw * scale
-                const dh = vh * scale
+                const zoom = parseFloat(zoomSlider.value)
+                const rotation = parseFloat(rotationSlider.value) * Math.PI / 180
+
+                // Source crop for zoom (center crop)
+                const sw = vw / zoom
+                const sh = vh / zoom
+                const sx = (vw - sw) / 2
+                const sy = (vh - sh) / 2
+
+                // Base cover scale (no rotation)
+                const baseScale = Math.max(cw / sw, ch / sh)
+                let dw = sw * baseScale
+                let dh = sh * baseScale
+
+                // When rotated, the image must be larger to still cover the canvas.
+                // The rotated bounding box of a dw×dh rect needs to cover cw×ch.
+                const sinR = Math.abs(Math.sin(rotation))
+                const cosR = Math.abs(Math.cos(rotation))
+                const rotScale = Math.max(
+                  (cw * cosR + ch * sinR) / dw,
+                  (cw * sinR + ch * cosR) / dh
+                )
+                dw *= rotScale
+                dh *= rotScale
+
                 const dx = (cw - dw) / 2
                 const dy = (ch - dh) / 2
 
                 ctx.clearRect(0, 0, cw, ch)
-                ctx.drawImage(videoEl, dx, dy, dw, dh)
+                ctx.save()
+                ctx.translate(cw / 2, ch / 2)
+                ctx.rotate(rotation)
+                ctx.translate(-cw / 2, -ch / 2)
+                ctx.drawImage(videoEl, sx, sy, sw, sh, dx, dy, dw, dh)
+                ctx.restore()
               }
               animFrameId = requestAnimationFrame(render)
             }
@@ -183,13 +263,23 @@ defmodule TabletopWeb.CameraTestLive do
               startCanvasRender()
               startAudioMeter(stream)
             } catch (err) {
-              console.error("[CameraTest] Failed to get user media:", err)
+              console.error("[CameraSetup] Failed to get user media:", err)
               noCameraEl.classList.remove("hidden")
               statusEl.textContent = "No camera"
               statusEl.className = "badge badge-sm badge-warning"
             }
           }
 
+          // Slider listeners — update labels in real-time
+          zoomSlider.addEventListener("input", () => {
+            zoomValueEl.textContent = parseFloat(zoomSlider.value).toFixed(1) + "x"
+          })
+
+          rotationSlider.addEventListener("input", () => {
+            rotationValueEl.textContent = rotationSlider.value + "\u00B0"
+          })
+
+          // Camera/mic toggles
           toggleCameraBtn.addEventListener("click", () => {
             if (!stream) return
             const track = stream.getVideoTracks()[0]
@@ -210,6 +300,15 @@ defmodule TabletopWeb.CameraTestLive do
             }
           })
 
+          // Save & Continue
+          doneBtn.addEventListener("click", () => {
+            localStorage.setItem("tabletop:camera-zoom", zoomSlider.value)
+            localStorage.setItem("tabletop:camera-rotation", rotationSlider.value)
+            localStorage.setItem("tabletop:camera-setup-done", "true")
+            const redirect = el.dataset.redirect
+            window.location.href = redirect || "/"
+          })
+
           start()
 
           this.cleanup = () => {
@@ -228,20 +327,31 @@ defmodule TabletopWeb.CameraTestLive do
   end
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
     {:ok,
      socket
-     |> assign(:page_title, "Camera Test")
+     |> assign(:page_title, "Camera Setup")
+     |> assign(:redirect_to, params["redirect"])
      |> assign(:game_state, GameState.new())}
   end
 
   @impl true
   def handle_event("toggle_damage", %{"type" => type}, socket) do
-    apply_action(socket, GameState.toggle_damage(socket.assigns.game_state, validate_damage_type(type)))
+    apply_action(
+      socket,
+      GameState.toggle_damage(socket.assigns.game_state, validate_damage_type(type))
+    )
   end
 
   def handle_event("change_damage", %{"type" => type, "delta" => delta}, socket) do
-    apply_action(socket, GameState.change_damage(socket.assigns.game_state, validate_damage_type(type), String.to_integer(delta)))
+    apply_action(
+      socket,
+      GameState.change_damage(
+        socket.assigns.game_state,
+        validate_damage_type(type),
+        String.to_integer(delta)
+      )
+    )
   end
 
   def handle_event("toggle_goagain", _params, socket) do
@@ -253,7 +363,10 @@ defmodule TabletopWeb.CameraTestLive do
   end
 
   def handle_event("change_life", %{"delta" => delta}, socket) do
-    apply_action(socket, GameState.change_life(socket.assigns.game_state, String.to_integer(delta)))
+    apply_action(
+      socket,
+      GameState.change_life(socket.assigns.game_state, String.to_integer(delta))
+    )
   end
 
   def handle_event("reset_chain", _params, socket) do

@@ -25,6 +25,12 @@ export default class WebRTCManager {
     this.cameraEnabled = true
     this.micEnabled = true
     this._status = null
+
+    // Transformed stream for sending zoom/rotation to peer
+    this._streamForPeer = null
+    this._localCanvasEl = null
+    this._localAnimFrameId = null
+    this._canvasStream = null
   }
 
   async start() {
@@ -37,6 +43,7 @@ export default class WebRTCManager {
         audio: true,
       })
       this.localVideoEl.srcObject = this.localStream
+      this._streamForPeer = this._createTransformedStream()
     } catch (err) {
       console.error("[WebRTC] Failed to get user media:", err)
       this._setStatus("no_camera")
@@ -78,6 +85,9 @@ export default class WebRTCManager {
     if (videoTrack) {
       this.cameraEnabled = !this.cameraEnabled
       videoTrack.enabled = this.cameraEnabled
+      if (this._canvasStream) {
+        this._canvasStream.getVideoTracks().forEach(t => t.enabled = this.cameraEnabled)
+      }
     }
     this._broadcastMediaStatus()
     return this.cameraEnabled
@@ -104,6 +114,19 @@ export default class WebRTCManager {
   }
 
   disconnect() {
+    if (this._localAnimFrameId) {
+      cancelAnimationFrame(this._localAnimFrameId)
+      this._localAnimFrameId = null
+    }
+
+    if (this._canvasStream) {
+      this._canvasStream.getTracks().forEach(t => t.stop())
+      this._canvasStream = null
+    }
+
+    this._localCanvasEl = null
+    this._streamForPeer = null
+
     if (this.animFrameId) {
       cancelAnimationFrame(this.animFrameId)
       this.animFrameId = null
@@ -144,10 +167,11 @@ export default class WebRTCManager {
 
     this.peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS })
 
-    // Add local tracks to the connection
-    if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => {
-        this.peerConnection.addTrack(track, this.localStream)
+    // Add local tracks to the connection (use transformed stream if available)
+    const streamToSend = this._streamForPeer || this.localStream
+    if (streamToSend) {
+      streamToSend.getTracks().forEach((track) => {
+        this.peerConnection.addTrack(track, streamToSend)
       })
     }
 
@@ -230,6 +254,74 @@ export default class WebRTCManager {
     this.remoteVideoEl.srcObject = null
     this._clearCanvas()
     this._setStatus("waiting")
+  }
+
+  _createTransformedStream() {
+    const zoom = parseFloat(localStorage.getItem("tabletop:camera-zoom") || "1")
+    const rotation = parseFloat(localStorage.getItem("tabletop:camera-rotation") || "0")
+
+    // No transforms needed — use raw stream directly
+    if (zoom === 1 && rotation === 0) {
+      return this.localStream
+    }
+
+    // Create a hidden canvas to render transformed video
+    this._localCanvasEl = document.createElement("canvas")
+    const videoTrack = this.localStream.getVideoTracks()[0]
+    const settings = videoTrack.getSettings()
+    this._localCanvasEl.width = settings.width || 1280
+    this._localCanvasEl.height = settings.height || 720
+
+    const ctx = this._localCanvasEl.getContext("2d")
+    const videoEl = this.localVideoEl
+    const rad = rotation * Math.PI / 180
+
+    const renderLocal = () => {
+      if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
+        const cw = this._localCanvasEl.width
+        const ch = this._localCanvasEl.height
+        const vw = videoEl.videoWidth
+        const vh = videoEl.videoHeight
+
+        // Zoom: crop source rectangle from center
+        const sw = vw / zoom
+        const sh = vh / zoom
+        const sx = (vw - sw) / 2
+        const sy = (vh - sh) / 2
+
+        // Scale up to fill corners when rotated
+        const sinR = Math.abs(Math.sin(rad))
+        const cosR = Math.abs(Math.cos(rad))
+        const rotScale = Math.max(
+          (cw * cosR + ch * sinR) / cw,
+          (cw * sinR + ch * cosR) / ch
+        )
+        const dw = cw * rotScale
+        const dh = ch * rotScale
+        const dx = (cw - dw) / 2
+        const dy = (ch - dh) / 2
+
+        ctx.clearRect(0, 0, cw, ch)
+        ctx.save()
+        ctx.translate(cw / 2, ch / 2)
+        ctx.rotate(rad)
+        ctx.translate(-cw / 2, -ch / 2)
+        ctx.drawImage(videoEl, sx, sy, sw, sh, dx, dy, dw, dh)
+        ctx.restore()
+      }
+      this._localAnimFrameId = requestAnimationFrame(renderLocal)
+    }
+    this._localAnimFrameId = requestAnimationFrame(renderLocal)
+
+    // Capture stream from canvas at 30fps
+    this._canvasStream = this._localCanvasEl.captureStream(30)
+
+    // Combine canvas video track with original audio tracks
+    const combinedStream = new MediaStream()
+    this._canvasStream.getVideoTracks().forEach(t => combinedStream.addTrack(t))
+    this.localStream.getAudioTracks().forEach(t => combinedStream.addTrack(t))
+
+    return combinedStream
   }
 
   _startCanvasRender() {

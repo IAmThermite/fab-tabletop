@@ -1,7 +1,7 @@
 defmodule TabletopWeb.GameComponents do
   @moduledoc """
   Shared UI components for the game view, used by both the live game
-  and the camera test page.
+  and the camera setup page.
   """
   use Phoenix.Component
 

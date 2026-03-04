@@ -1,15 +1,9 @@
 defmodule Tabletop.Fab.Heros do
-  @classic_constructed_heros [
+  @classic_constructed_heros []
 
-  ]
+  @silver_age_heros []
 
-  @silver_age_heros [
-
-  ]
-
-  @living_legend_heros [
-
-  ]
+  @living_legend_heros []
 
   def heros_for_format(:classic_constructed), do: @classic_constructed_heros
   def heros_for_format(:silver_age), do: @silver_age_heros

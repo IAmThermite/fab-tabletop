@@ -79,7 +79,11 @@ defmodule TabletopWeb.CameraSetupLive do
 
         <%!-- Main area --%>
         <div class="flex flex-1 min-h-0">
-          <.game_sidebar game_state={@game_state} />
+          <.game_sidebar
+            game_state={@game_state}
+            abilities_open={@abilities_open}
+            on_hits_open={@on_hits_open}
+          />
 
           <%!-- Central area — camera preview canvas --%>
           <div class="flex-1 relative bg-blue-100">
@@ -127,7 +131,7 @@ defmodule TabletopWeb.CameraSetupLive do
               </div>
             </div>
 
-            <.game_overlays game_state={@game_state} />
+            <.game_tiles game_state={@game_state} context={:remote} />
           </div>
         </div>
       </div>
@@ -332,7 +336,9 @@ defmodule TabletopWeb.CameraSetupLive do
      socket
      |> assign(:page_title, "Camera Setup")
      |> assign(:redirect_to, params["redirect"])
-     |> assign(:game_state, GameState.new())}
+     |> assign(:game_state, GameState.new())
+     |> assign(:abilities_open, false)
+     |> assign(:on_hits_open, false)}
   end
 
   @impl true
@@ -373,6 +379,25 @@ defmodule TabletopWeb.CameraSetupLive do
     apply_action(socket, GameState.reset_chain(socket.assigns.game_state))
   end
 
+  def handle_event(
+        "move_tile",
+        %{"tile_id" => tile_id, "x" => x, "y" => y, "owner" => _owner},
+        socket
+      ) do
+    apply_action(
+      socket,
+      GameState.move_tile(socket.assigns.game_state, tile_id, to_float(x), to_float(y))
+    )
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "abilities"}, socket) do
+    {:noreply, assign(socket, :abilities_open, !socket.assigns.abilities_open)}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "on_hits"}, socket) do
+    {:noreply, assign(socket, :on_hits_open, !socket.assigns.on_hits_open)}
+  end
+
   defp apply_action(socket, {:ok, new_state, _broadcast_msg}) do
     {:noreply, assign(socket, :game_state, new_state)}
   end
@@ -383,4 +408,14 @@ defmodule TabletopWeb.CameraSetupLive do
 
   defp validate_damage_type("physical"), do: :physical
   defp validate_damage_type("arcane"), do: :arcane
+
+  defp to_float(val) when is_float(val), do: val
+  defp to_float(val) when is_integer(val), do: val * 1.0
+
+  defp to_float(val) when is_binary(val) do
+    case Float.parse(val) do
+      {f, _} -> f
+      :error -> 0.0
+    end
+  end
 end

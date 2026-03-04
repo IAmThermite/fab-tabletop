@@ -33,20 +33,29 @@ defmodule Tabletop.Fab.GameStateTest do
   describe "toggle_damage/2" do
     test "toggles physical from false to true" do
       state = GameState.new()
-      assert {:ok, new_state, {:damage_toggled, :physical, true}} = GameState.toggle_damage(state, :physical)
+
+      assert {:ok, new_state, {:damage_toggled, :physical, true}} =
+               GameState.toggle_damage(state, :physical)
+
       assert new_state.my.physical.active == true
     end
 
     test "toggles physical from true to false" do
       state = GameState.new()
       {:ok, state, _} = GameState.toggle_damage(state, :physical)
-      assert {:ok, new_state, {:damage_toggled, :physical, false}} = GameState.toggle_damage(state, :physical)
+
+      assert {:ok, new_state, {:damage_toggled, :physical, false}} =
+               GameState.toggle_damage(state, :physical)
+
       assert new_state.my.physical.active == false
     end
 
     test "toggles arcane" do
       state = GameState.new()
-      assert {:ok, new_state, {:damage_toggled, :arcane, true}} = GameState.toggle_damage(state, :arcane)
+
+      assert {:ok, new_state, {:damage_toggled, :arcane, true}} =
+               GameState.toggle_damage(state, :arcane)
+
       assert new_state.my.arcane.active == true
     end
 
@@ -65,26 +74,38 @@ defmodule Tabletop.Fab.GameStateTest do
   describe "change_damage/3" do
     test "increments physical damage by 1" do
       state = GameState.new()
-      assert {:ok, new_state, {:damage_changed, :physical, 1}} = GameState.change_damage(state, :physical, 1)
+
+      assert {:ok, new_state, {:damage_changed, :physical, 1}} =
+               GameState.change_damage(state, :physical, 1)
+
       assert new_state.my.physical.damage == 1
     end
 
     test "decrements physical damage by 1" do
       state = GameState.new()
       {:ok, state, _} = GameState.change_damage(state, :physical, 3)
-      assert {:ok, new_state, {:damage_changed, :physical, 2}} = GameState.change_damage(state, :physical, -1)
+
+      assert {:ok, new_state, {:damage_changed, :physical, 2}} =
+               GameState.change_damage(state, :physical, -1)
+
       assert new_state.my.physical.damage == 2
     end
 
     test "clamps damage at 0" do
       state = GameState.new()
-      assert {:ok, new_state, {:damage_changed, :physical, 0}} = GameState.change_damage(state, :physical, -5)
+
+      assert {:ok, new_state, {:damage_changed, :physical, 0}} =
+               GameState.change_damage(state, :physical, -5)
+
       assert new_state.my.physical.damage == 0
     end
 
     test "works with arcane damage" do
       state = GameState.new()
-      assert {:ok, new_state, {:damage_changed, :arcane, 3}} = GameState.change_damage(state, :arcane, 3)
+
+      assert {:ok, new_state, {:damage_changed, :arcane, 3}} =
+               GameState.change_damage(state, :arcane, 3)
+
       assert new_state.my.arcane.damage == 3
     end
 
@@ -110,22 +131,31 @@ defmodule Tabletop.Fab.GameStateTest do
   end
 
   describe "toggle_effect/2" do
-    test "toggles a valid condition" do
+    test "toggles a valid abilities" do
       state = GameState.new()
-      assert {:ok, new_state, {:effect_toggled, "Dominate", true}} = GameState.toggle_effect(state, "Dominate")
+
+      assert {:ok, new_state, {:effect_toggled, "Dominate", true}} =
+               GameState.toggle_effect(state, "Dominate")
+
       assert new_state.my.effects["Dominate"] == true
     end
 
     test "toggles a valid on-hit effect" do
       state = GameState.new()
-      assert {:ok, new_state, {:effect_toggled, "Mark", true}} = GameState.toggle_effect(state, "Mark")
+
+      assert {:ok, new_state, {:effect_toggled, "Mark", true}} =
+               GameState.toggle_effect(state, "Mark")
+
       assert new_state.my.effects["Mark"] == true
     end
 
     test "toggles from true back to false" do
       state = GameState.new()
       {:ok, state, _} = GameState.toggle_effect(state, "Dominate")
-      assert {:ok, new_state, {:effect_toggled, "Dominate", false}} = GameState.toggle_effect(state, "Dominate")
+
+      assert {:ok, new_state, {:effect_toggled, "Dominate", false}} =
+               GameState.toggle_effect(state, "Dominate")
+
       assert new_state.my.effects["Dominate"] == false
     end
 

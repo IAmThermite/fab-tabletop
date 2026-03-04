@@ -24,7 +24,12 @@ defmodule TabletopWeb.GameLive.Form do
           options={Game.format_options()}
         />
         <.input field={@form[:hero]} type="text" label="Hero" />
-        <.input field={@form[:decklist]} type="text" label="Decklist" placeholder="https://fabrary.com/..." />
+        <.input
+          field={@form[:decklist]}
+          type="text"
+          label="Decklist"
+          placeholder="https://fabrary.com/..."
+        />
         <footer>
           <.button phx-disable-with="Saving..." variant="primary">Save Game</.button>
           <.button navigate={return_path(@current_scope, "index", @game)}>Cancel</.button>

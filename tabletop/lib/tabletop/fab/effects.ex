@@ -1,5 +1,5 @@
 defmodule Tabletop.Fab.Effects do
-  @conditions_map %{
+  @abilities_map %{
     dominate: %{
       name: "Dominate",
       icon: "",
@@ -47,7 +47,7 @@ defmodule Tabletop.Fab.Effects do
     }
   }
 
-  def conditions, do: @conditions_map
+  def abilities, do: @abilities_map
 
   def on_hit_effects, do: @on_hit_effects_map
 end

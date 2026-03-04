@@ -232,8 +232,12 @@ defmodule Tabletop.Games do
 
     changes =
       %{status: :finished}
-      |> then(fn c -> if is_nil(game.user1_left_at), do: Map.put(c, :user1_left_at, now), else: c end)
-      |> then(fn c -> if is_nil(game.user2_left_at), do: Map.put(c, :user2_left_at, now), else: c end)
+      |> then(fn c ->
+        if is_nil(game.user1_left_at), do: Map.put(c, :user1_left_at, now), else: c
+      end)
+      |> then(fn c ->
+        if is_nil(game.user2_left_at), do: Map.put(c, :user2_left_at, now), else: c
+      end)
 
     game
     |> Ecto.Changeset.change(changes)

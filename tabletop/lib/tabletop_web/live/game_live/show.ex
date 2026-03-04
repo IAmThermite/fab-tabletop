@@ -34,7 +34,10 @@ defmodule TabletopWeb.GameLive.Show do
        |> assign(:user_token, user_token)
        |> assign(:user_id, user_id)
        |> assign(:peer_connected, false)
-       |> assign(:game_state, GameState.new())}
+       |> assign(:game_state, GameState.new())
+       |> assign(:abilities_open, false)
+       |> assign(:on_hits_open, false)
+       |> assign(:preview_open, false)}
     else
       {:ok,
        socket
@@ -89,6 +92,40 @@ defmodule TabletopWeb.GameLive.Show do
 
   def handle_event("reset_chain", _params, socket) do
     apply_my_action(socket, GameState.reset_chain(socket.assigns.game_state))
+  end
+
+  def handle_event(
+        "move_tile",
+        %{"tile_id" => tile_id, "x" => x, "y" => y, "owner" => "my"},
+        socket
+      ) do
+    apply_my_action(
+      socket,
+      GameState.move_tile(socket.assigns.game_state, tile_id, to_float(x), to_float(y))
+    )
+  end
+
+  def handle_event(
+        "move_tile",
+        %{"tile_id" => tile_id, "x" => x, "y" => y, "owner" => "opponent"},
+        socket
+      ) do
+    apply_my_action(
+      socket,
+      GameState.move_opponent_tile(socket.assigns.game_state, tile_id, to_float(x), to_float(y))
+    )
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "abilities"}, socket) do
+    {:noreply, assign(socket, :abilities_open, !socket.assigns.abilities_open)}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "on_hits"}, socket) do
+    {:noreply, assign(socket, :on_hits_open, !socket.assigns.on_hits_open)}
+  end
+
+  def handle_event("toggle_preview", _params, socket) do
+    {:noreply, assign(socket, :preview_open, !socket.assigns.preview_open)}
   end
 
   def handle_event("leave_game", _params, socket) do
@@ -157,6 +194,16 @@ defmodule TabletopWeb.GameLive.Show do
 
   defp validate_damage_type("physical"), do: :physical
   defp validate_damage_type("arcane"), do: :arcane
+
+  defp to_float(val) when is_float(val), do: val
+  defp to_float(val) when is_integer(val), do: val * 1.0
+
+  defp to_float(val) when is_binary(val) do
+    case Float.parse(val) do
+      {f, _} -> f
+      :error -> 0.0
+    end
+  end
 
   defp broadcast_game_update(socket, broadcast_msg, user_id) do
     Phoenix.PubSub.broadcast(

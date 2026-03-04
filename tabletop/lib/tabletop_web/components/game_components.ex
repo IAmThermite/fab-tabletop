@@ -5,15 +5,16 @@ defmodule TabletopWeb.GameComponents do
   """
   use Phoenix.Component
 
+  alias Phoenix.LiveView.ColocatedHook
   import TabletopWeb.CoreComponents, only: [icon: 1]
 
   attr :game_state, :any, required: true
+  attr :abilities_open, :boolean, default: false
+  attr :on_hits_open, :boolean, default: false
 
   def game_sidebar(assigns) do
     ~H"""
     <div class="flex flex-col gap-2 p-2 bg-base-200 border-r border-base-300 w-36 overflow-y-auto">
-      <button type="button" class="btn btn-success">Begin turn</button>
-
       <%!-- Physical Damage --%>
       <div class="bg-warning/20 rounded p-2">
         <div class="flex items-center gap-1 mb-1">
@@ -97,13 +98,25 @@ defmodule TabletopWeb.GameComponents do
         </div>
       </div>
 
-      <%!-- Conditions dropdown --%>
-      <details class="dropdown">
-        <summary class="btn btn-warning w-full">
-          Conditions <.icon name="hero-chevron-down" class="size-4" />
-        </summary>
-        <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-40 p-2 shadow-sm">
-          <%= for {_key, effect} <- Tabletop.Fab.Effects.conditions() do %>
+      <%!-- Abilities dropdown --%>
+      <div class="relative">
+        <button
+          type="button"
+          class="btn btn-warning w-full"
+          phx-click="toggle_dropdown"
+          phx-value-name="abilities"
+        >
+          Abilities
+          <.icon
+            name={if @abilities_open, do: "hero-chevron-up", else: "hero-chevron-down"}
+            class="size-4"
+          />
+        </button>
+        <ul
+          :if={@abilities_open}
+          class="absolute z-30 menu bg-base-100 rounded-box w-40 p-2 shadow-sm mt-1"
+        >
+          <%= for {_key, effect} <- Tabletop.Fab.Effects.abilities() do %>
             <li>
               <div class="flex items-center gap-1 mb-1">
                 <input
@@ -118,14 +131,26 @@ defmodule TabletopWeb.GameComponents do
             </li>
           <% end %>
         </ul>
-      </details>
+      </div>
 
       <%!-- On Hits dropdown --%>
-      <details class="dropdown">
-        <summary class="btn btn-warning w-full">
-          On Hits <.icon name="hero-chevron-down" class="size-4" />
-        </summary>
-        <ul class="dropdown-content menu bg-base-100 rounded-box z-30 w-40 p-2 shadow-sm">
+      <div class="relative">
+        <button
+          type="button"
+          class="btn btn-warning w-full"
+          phx-click="toggle_dropdown"
+          phx-value-name="on_hits"
+        >
+          On Hits
+          <.icon
+            name={if @on_hits_open, do: "hero-chevron-up", else: "hero-chevron-down"}
+            class="size-4"
+          />
+        </button>
+        <ul
+          :if={@on_hits_open}
+          class="absolute z-30 menu bg-base-100 rounded-box w-40 p-2 shadow-sm mt-1"
+        >
           <%= for {_key, effect} <- Tabletop.Fab.Effects.on_hit_effects() do %>
             <li>
               <div class="flex items-center gap-1 mb-1">
@@ -141,11 +166,9 @@ defmodule TabletopWeb.GameComponents do
             </li>
           <% end %>
         </ul>
-      </details>
+      </div>
 
       <button type="button" class="btn btn-success" phx-click="reset_chain">Reset Chain</button>
-
-      <button type="button" class="btn btn-success">End turn</button>
 
       <div class="flex-1"></div>
 
@@ -178,31 +201,219 @@ defmodule TabletopWeb.GameComponents do
   end
 
   attr :game_state, :any, required: true
+  attr :context, :atom, default: :remote
 
-  def game_overlays(assigns) do
+  def game_tiles(assigns) do
+    # Remote canvas: only opponent's tiles (my tiles show on my preview)
+    # Local/expanded preview: only my tiles (I manage my own tiles here)
+    tiles =
+      case assigns.context do
+        :remote -> build_tiles(assigns.game_state.opponent, "opponent")
+        _ -> build_tiles(assigns.game_state.my, "my")
+      end
+
+    assigns = assign(assigns, :tiles, tiles)
+
     ~H"""
-    <%= if @game_state.my.goagain or @game_state.opponent.goagain do %>
-      <div class="absolute bottom-2 left-2 bg-base-200/80 rounded px-2 py-1 text-sm font-semibold">
-        Go Again active
+    <%= for tile <- @tiles do %>
+      <div
+        class={[
+          "absolute select-none z-20 rounded shadow-md whitespace-nowrap font-semibold",
+          case @context do
+            :local -> "pointer-events-none px-1 py-0.5 text-[8px]"
+            :expanded -> "cursor-grab active:cursor-grabbing px-2 py-1 text-xs"
+            _ -> "pointer-events-none px-2 py-1 text-xs"
+          end,
+          tile_color_class(tile)
+        ]}
+        style={"left: #{tile.x}%; top: #{tile.y}%; transform: translate(-50%, -50%);"}
+        data-tile-id={tile.id}
+        data-tile-owner={tile.owner}
+        phx-hook={if @context == :expanded, do: "TabletopWeb.GameComponents.DraggableTile"}
+        id={"tile-#{@context}-#{tile.owner}-#{tile.id}"}
+      >
+        {tile.label}
       </div>
     <% end %>
 
-    <%= if @game_state.my.physical.active or @game_state.opponent.physical.active do %>
-      <div class="absolute bottom-12 left-2 bg-base-200/80 rounded px-2 py-1 text-sm font-semibold">
-        Physical Damage active <%= @game_state.my.physical.damage + @game_state.opponent.physical.damage %>
-      </div>
-    <% end %>
-
-    <%= if @game_state.my.arcane.active or @game_state.opponent.arcane.active do %>
-      <div class="absolute bottom-22 left-2 bg-base-200/80 rounded px-2 py-1 text-sm font-semibold">
-        Arcane Damage active <%= @game_state.my.arcane.damage + @game_state.opponent.arcane.damage %>
-      </div>
-    <% end %>
-
-    <%!-- Opponent life --%>
-    <div class="absolute bottom-2 right-2 bg-warning text-warning-content rounded p-2 text-center">
+    <%!-- Opponent life (not in local preview) --%>
+    <div
+      :if={@context != :local}
+      class="absolute bottom-2 right-2 bg-warning text-warning-content rounded p-2 text-center z-10"
+    >
       <div class="text-2xl font-bold">{@game_state.opponent.life}</div>
     </div>
+
+    <script :type={ColocatedHook} name=".DraggableTile">
+      export default {
+        mounted() {
+          const el = this.el
+          const tileId = el.dataset.tileId
+          const owner = el.dataset.tileOwner
+
+          let isDragging = false
+          let currentDragPos = null
+
+          const toPercent = (clientX, clientY) => {
+            const container = el.parentElement
+            const rect = container.getBoundingClientRect()
+            const x = ((clientX - rect.left) / rect.width) * 100
+            const y = ((clientY - rect.top) / rect.height) * 100
+            return {
+              x: Math.max(0, Math.min(100, x)),
+              y: Math.max(0, Math.min(100, y))
+            }
+          }
+
+          let startX = 0, startY = 0
+          const DRAG_THRESHOLD = 3
+
+          const onPointerDown = (e) => {
+            if (e.button !== 0) return
+
+            startX = e.clientX
+            startY = e.clientY
+            el.setPointerCapture(e.pointerId)
+          }
+
+          const onPointerMove = (e) => {
+            if (!el.hasPointerCapture(e.pointerId)) return
+
+            if (!isDragging) {
+              const dx = e.clientX - startX
+              const dy = e.clientY - startY
+              if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return
+              isDragging = true
+              el.style.cursor = "grabbing"
+              el.style.zIndex = "50"
+            }
+
+            const pos = toPercent(e.clientX, e.clientY)
+            currentDragPos = pos
+            el.style.left = pos.x + "%"
+            el.style.top = pos.y + "%"
+          }
+
+          const onPointerUp = (e) => {
+            if (!el.hasPointerCapture(e.pointerId)) return
+            el.releasePointerCapture(e.pointerId)
+
+            if (!isDragging) return
+            isDragging = false
+            currentDragPos = null
+            el.style.cursor = ""
+            el.style.zIndex = ""
+
+            const pos = toPercent(e.clientX, e.clientY)
+            this.pushEvent("move_tile", {
+              tile_id: tileId,
+              owner: owner,
+              x: pos.x,
+              y: pos.y
+            })
+          }
+
+          el.addEventListener("pointerdown", onPointerDown)
+          el.addEventListener("pointermove", onPointerMove)
+          el.addEventListener("pointerup", onPointerUp)
+          el.addEventListener("pointercancel", onPointerUp)
+
+          el.style.touchAction = "none"
+
+          this._cleanup = () => {
+            el.removeEventListener("pointerdown", onPointerDown)
+            el.removeEventListener("pointermove", onPointerMove)
+            el.removeEventListener("pointerup", onPointerUp)
+            el.removeEventListener("pointercancel", onPointerUp)
+          }
+
+          this._isDragging = () => isDragging
+          this._currentDragPos = () => currentDragPos
+        },
+
+        updated() {
+          if (this._isDragging && this._isDragging()) {
+            const pos = this._currentDragPos()
+            if (pos) {
+              this.el.style.left = pos.x + "%"
+              this.el.style.top = pos.y + "%"
+            }
+          }
+        },
+
+        destroyed() {
+          if (this._cleanup) this._cleanup()
+        }
+      }
+    </script>
     """
   end
+
+  defp build_tiles(player_state, owner) do
+    tiles = []
+
+    tiles =
+      if player_state.goagain do
+        pos = Map.get(player_state.tile_positions, "goagain", %{x: 50.0, y: 80.0})
+
+        [
+          %{id: "goagain", owner: owner, label: "Go Again", x: pos.x, y: pos.y, type: :goagain}
+          | tiles
+        ]
+      else
+        tiles
+      end
+
+    tiles =
+      if player_state.physical.active do
+        pos = Map.get(player_state.tile_positions, "physical", %{x: 20.0, y: 60.0})
+        label = "Physical #{player_state.physical.damage}"
+
+        [
+          %{id: "physical", owner: owner, label: label, x: pos.x, y: pos.y, type: :physical}
+          | tiles
+        ]
+      else
+        tiles
+      end
+
+    tiles =
+      if player_state.arcane.active do
+        pos = Map.get(player_state.tile_positions, "arcane", %{x: 80.0, y: 60.0})
+        label = "Arcane #{player_state.arcane.damage}"
+
+        [
+          %{id: "arcane", owner: owner, label: label, x: pos.x, y: pos.y, type: :arcane}
+          | tiles
+        ]
+      else
+        tiles
+      end
+
+    Enum.reduce(player_state.effects, tiles, fn {name, active}, acc ->
+      if active do
+        pos = Map.get(player_state.tile_positions, name, %{x: 50.0, y: 50.0})
+        [%{id: name, owner: owner, label: name, x: pos.x, y: pos.y, type: :effect} | acc]
+      else
+        acc
+      end
+    end)
+  end
+
+  defp tile_color_class(%{owner: "my", type: :goagain}), do: "bg-success text-success-content"
+  defp tile_color_class(%{owner: "my", type: :physical}), do: "bg-warning text-warning-content"
+  defp tile_color_class(%{owner: "my", type: :arcane}), do: "bg-info text-info-content"
+  defp tile_color_class(%{owner: "my", type: :effect}), do: "bg-secondary text-secondary-content"
+
+  defp tile_color_class(%{owner: "opponent", type: :goagain}),
+    do: "bg-success/60 text-success-content border border-success"
+
+  defp tile_color_class(%{owner: "opponent", type: :physical}),
+    do: "bg-warning/60 text-warning-content border border-warning"
+
+  defp tile_color_class(%{owner: "opponent", type: :arcane}),
+    do: "bg-info/60 text-info-content border border-info"
+
+  defp tile_color_class(%{owner: "opponent", type: :effect}),
+    do: "bg-secondary/60 text-secondary-content border border-secondary"
 end

@@ -86,7 +86,7 @@ defmodule TabletopWeb.CameraSetupLive do
           />
 
           <%!-- Central area — camera preview canvas --%>
-          <div class="flex-1 relative bg-blue-100">
+          <div id="game-area" class="flex-1 relative bg-blue-100">
             <canvas id="test-canvas" class="w-full h-full"></canvas>
 
             <%!-- No camera overlay --%>
@@ -132,12 +132,58 @@ defmodule TabletopWeb.CameraSetupLive do
             </div>
 
             <.game_tiles game_state={@game_state} context={:remote} />
+
+            <%!-- Card lookup popouts --%>
+            <%= for card <- @open_cards do %>
+              <div
+                id={"card-popout-#{card.id}"}
+                phx-hook=".DraggableCardPopout"
+                data-x={card.x}
+                data-y={card.y}
+                class="absolute z-30 w-64 bg-base-100 border border-base-300 rounded-lg shadow-xl overflow-hidden"
+                style="left: 0; top: 0;"
+              >
+                <div class="card-popout-header flex items-center justify-between px-3 py-2 bg-base-200 cursor-grab active:cursor-grabbing touch-none">
+                  <span class="font-semibold text-sm truncate flex-1">
+                    {card.details.name}
+                  </span>
+                  <button
+                    type="button"
+                    phx-click="close_card"
+                    phx-value-id={card.id}
+                    class="btn btn-circle btn-xs btn-error ml-2"
+                    title="Close"
+                  >
+                    <.icon name="hero-x-mark" class="size-3" />
+                  </button>
+                </div>
+                <div class="p-3 space-y-2">
+                  <img
+                    src={card.details.image_url}
+                    alt={card.details.name}
+                    class="w-full rounded"
+                  />
+                  <div class="flex justify-between text-xs">
+                    <span class="opacity-70">Type:</span>
+                    <span class="font-medium">{card.details.type}</span>
+                  </div>
+                  <div class="flex gap-3 text-xs">
+                    <span>Cost: <strong>{card.details.cost}</strong></span>
+                    <span>Power: <strong>{card.details.power}</strong></span>
+                    <span>Def: <strong>{card.details.defense}</strong></span>
+                  </div>
+                  <p class="text-xs opacity-85 leading-snug">{card.details.text}</p>
+                </div>
+              </div>
+            <% end %>
           </div>
         </div>
       </div>
     </Layouts.game>
 
     <script :type={ColocatedHook} name=".CameraSetup">
+      import { captureAndOCR, preloadLibraries } from "@/js/card_lookup.js"
+
       export default {
         mounted() {
           const el = this.el
@@ -315,6 +361,65 @@ defmodule TabletopWeb.CameraSetupLive do
 
           start()
 
+          // Card lookup — click on canvas to OCR card name
+          const gameArea = document.getElementById("game-area")
+          let _loadingEl = null
+
+          const showLoading = (x, y) => {
+            hideLoading()
+            const rect = gameArea.getBoundingClientRect()
+            _loadingEl = document.createElement("div")
+            _loadingEl.className = "absolute z-50 flex items-center gap-2 px-3 py-2 bg-base-200 border border-base-300 rounded-lg shadow-lg text-sm"
+            _loadingEl.style.left = (x - rect.left) + "px"
+            _loadingEl.style.top = (y - rect.top - 40) + "px"
+            _loadingEl.style.transform = "translateX(-50%)"
+            _loadingEl.innerHTML = '<span class="loading loading-spinner loading-sm"></span><span>Scanning card...</span>'
+            gameArea.appendChild(_loadingEl)
+          }
+
+          const hideLoading = () => {
+            if (_loadingEl) { _loadingEl.remove(); _loadingEl = null }
+          }
+
+          const showToast = (msg) => {
+            const toast = document.createElement("div")
+            toast.className = "absolute bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-error text-error-content rounded-lg text-sm shadow-lg"
+            toast.textContent = msg
+            gameArea.appendChild(toast)
+            setTimeout(() => toast.remove(), 3000)
+          }
+
+          preloadLibraries()
+
+          gameArea.addEventListener("click", async (e) => {
+            if (e.target !== canvasEl) return
+
+            showLoading(e.clientX, e.clientY)
+
+            try {
+              const text = await captureAndOCR(
+                canvasEl, e.clientX, e.clientY, false,
+                gameArea
+              )
+              hideLoading()
+
+              if (text) {
+                const rect = gameArea.getBoundingClientRect()
+                this.pushEvent("open_card", {
+                  name: text,
+                  x: e.clientX - rect.left + 10,
+                  y: e.clientY - rect.top - 50,
+                })
+              } else {
+                showToast("No text detected in that region.")
+              }
+            } catch (err) {
+              console.error("[CardLookup] OCR error:", err)
+              hideLoading()
+              showToast("OCR failed. Try again.")
+            }
+          })
+
           this.cleanup = () => {
             if (animFrameId) cancelAnimationFrame(animFrameId)
             if (audioContext) audioContext.close()
@@ -324,6 +429,60 @@ defmodule TabletopWeb.CameraSetupLive do
 
         destroyed() {
           if (this.cleanup) this.cleanup()
+        },
+      }
+    </script>
+
+    <script :type={ColocatedHook} name=".DraggableCardPopout">
+      export default {
+        mounted() {
+          const el = this.el
+          const header = el.querySelector(".card-popout-header")
+          const container = el.parentElement
+
+          const initX = parseFloat(el.dataset.x || "10")
+          const initY = parseFloat(el.dataset.y || "10")
+          const maxX = container.clientWidth - el.offsetWidth
+          const maxY = container.clientHeight - el.offsetHeight
+          el.style.left = Math.max(0, Math.min(initX, maxX)) + "px"
+          el.style.top = Math.max(0, Math.min(initY, maxY)) + "px"
+
+          let offsetX = 0
+          let offsetY = 0
+
+          header.addEventListener("pointerdown", (e) => {
+            if (e.target.closest("button")) return
+            e.preventDefault()
+            header.setPointerCapture(e.pointerId)
+            offsetX = e.clientX - el.getBoundingClientRect().left
+            offsetY = e.clientY - el.getBoundingClientRect().top
+            header.style.cursor = "grabbing"
+
+            container.querySelectorAll("[id^='card-popout-']").forEach((p) => {
+              p.style.zIndex = "30"
+            })
+            el.style.zIndex = "31"
+          })
+
+          header.addEventListener("pointermove", (e) => {
+            if (!header.hasPointerCapture(e.pointerId)) return
+            const rect = container.getBoundingClientRect()
+            let newX = e.clientX - rect.left - offsetX
+            let newY = e.clientY - rect.top - offsetY
+            newX = Math.max(0, Math.min(newX, container.clientWidth - el.offsetWidth))
+            newY = Math.max(0, Math.min(newY, container.clientHeight - el.offsetHeight))
+            el.style.left = newX + "px"
+            el.style.top = newY + "px"
+          })
+
+          const onPointerEnd = (e) => {
+            if (!header.hasPointerCapture(e.pointerId)) return
+            header.releasePointerCapture(e.pointerId)
+            header.style.cursor = "grab"
+          }
+
+          header.addEventListener("pointerup", onPointerEnd)
+          header.addEventListener("pointercancel", onPointerEnd)
         },
       }
     </script>
@@ -338,7 +497,8 @@ defmodule TabletopWeb.CameraSetupLive do
      |> assign(:redirect_to, params["redirect"])
      |> assign(:game_state, GameState.new())
      |> assign(:abilities_open, false)
-     |> assign(:on_hits_open, false)}
+     |> assign(:on_hits_open, false)
+     |> assign(:open_cards, [])}
   end
 
   @impl true
@@ -398,12 +558,41 @@ defmodule TabletopWeb.CameraSetupLive do
     {:noreply, assign(socket, :on_hits_open, !socket.assigns.on_hits_open)}
   end
 
+  def handle_event("open_card", %{"name" => name, "x" => x, "y" => y}, socket) do
+    card = %{
+      id: System.unique_integer([:positive]) |> Integer.to_string(),
+      name: name,
+      x: x,
+      y: y,
+      details: lookup_card(name)
+    }
+
+    {:noreply, assign(socket, :open_cards, socket.assigns.open_cards ++ [card])}
+  end
+
+  def handle_event("close_card", %{"id" => id}, socket) do
+    cards = Enum.reject(socket.assigns.open_cards, &(&1.id == id))
+    {:noreply, assign(socket, :open_cards, cards)}
+  end
+
   defp apply_action(socket, {:ok, new_state, _broadcast_msg}) do
     {:noreply, assign(socket, :game_state, new_state)}
   end
 
   defp apply_action(socket, {:error, _reason}) do
     {:noreply, socket}
+  end
+
+  defp lookup_card(name) do
+    %{
+      name: name,
+      type: "Action",
+      cost: "2",
+      power: "3",
+      defense: "2",
+      text: "Stub card for \"#{name}\". Replace with real card lookup.",
+      image_url: "https://placehold.co/300x420?text=#{URI.encode(name)}"
+    }
   end
 
   defp validate_damage_type("physical"), do: :physical

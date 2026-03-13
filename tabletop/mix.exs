@@ -83,10 +83,16 @@ defmodule Tabletop.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind tabletop", "esbuild tabletop"],
+      "assets.build": [
+        "compile",
+        "tailwind tabletop",
+        "esbuild tabletop",
+        "esbuild scanner_worker"
+      ],
       "assets.deploy": [
         "tailwind tabletop --minify",
         "esbuild tabletop --minify",
+        "esbuild scanner_worker --minify",
         "phx.digest"
       ],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]

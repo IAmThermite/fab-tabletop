@@ -215,7 +215,7 @@
 
   <script :type={ColocatedHook} name=".GameVideo">
     import WebRTCManager from "@/js/webrtc.js"
-    import { captureAndOCR, preloadLibraries } from "@/js/card_lookup.js"
+    import { captureAndOCR, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
 
     export default {
       mounted() {
@@ -329,7 +329,7 @@
 
             if (status === "connected") {
               this.pushEvent("peer_connected", {})
-              preloadLibraries()
+              preloadTesseract()
             } else if (status === "waiting" || status === "disconnected") {
               this.pushEvent("peer_disconnected", {})
               remoteStatusEl.classList.add("hidden")

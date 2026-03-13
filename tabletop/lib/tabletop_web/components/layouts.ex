@@ -50,6 +50,9 @@ defmodule TabletopWeb.Layouts do
         <.link navigate={~p"/about"} class="btn btn-ghost">
           About
         </.link>
+        <.link navigate={~p"/camera-setup"} class="btn btn-ghost">
+          Camera Setup
+        </.link>
       </div>
     </header>
 

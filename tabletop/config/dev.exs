@@ -32,6 +32,7 @@ config :tabletop, TabletopWeb.Endpoint,
   secret_key_base: "VzaTIY0A6wgGb8Ja/eZdIjrRHTKVzdZF4y3kufaBPahds2CILheU6osUUXcM0WKa",
   watchers: [
     esbuild: {Esbuild, :install_and_run, [:tabletop, ~w(--sourcemap=inline --watch)]},
+    esbuild_worker: {Esbuild, :install_and_run, [:scanner_worker, ~w(--sourcemap=inline --watch)]},
     tailwind: {Tailwind, :install_and_run, [:tabletop, ~w(--watch)]}
   ]
 

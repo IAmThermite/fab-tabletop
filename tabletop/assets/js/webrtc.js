@@ -39,7 +39,7 @@ export default class WebRTCManager {
     // Capture local media first so tracks are ready before signaling
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: { width: { ideal: 3840 }, height: { ideal: 2160 } },
         audio: true,
       })
       this.localVideoEl.srcObject = this.localStream
@@ -331,21 +331,17 @@ export default class WebRTCManager {
 
     const render = () => {
       if (this.remoteVideoEl.readyState >= this.remoteVideoEl.HAVE_CURRENT_DATA) {
-        const cw = this.canvasEl.clientWidth
-        const ch = this.canvasEl.clientHeight
-        this.canvasEl.width = cw
-        this.canvasEl.height = ch
-
         const vw = this.remoteVideoEl.videoWidth
         const vh = this.remoteVideoEl.videoHeight
-        const scale = Math.min(cw / vw, ch / vh)
-        const dw = vw * scale
-        const dh = vh * scale
-        const dx = (cw - dw) / 2
-        const dy = (ch - dh) / 2
 
-        ctx.clearRect(0, 0, cw, ch)
-        ctx.drawImage(this.remoteVideoEl, dx, dy, dw, dh)
+        // Render at native video resolution for sharper OCR captures
+        // CSS sizing handles display; canvas holds full-res pixels
+        if (this.canvasEl.width !== vw || this.canvasEl.height !== vh) {
+          this.canvasEl.width = vw
+          this.canvasEl.height = vh
+        }
+
+        ctx.drawImage(this.remoteVideoEl, 0, 0, vw, vh)
       }
       this.animFrameId = requestAnimationFrame(render)
     }

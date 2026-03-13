@@ -111,7 +111,7 @@ defmodule TabletopWeb.CameraSetupLive do
                   min="0"
                   max="360"
                   step="1"
-                  value="180"
+                  value="0"
                   class="range range-xs range-secondary w-72"
                 />
                 <span id="rotation-value" class="text-xs w-8">0&deg;</span>
@@ -182,7 +182,7 @@ defmodule TabletopWeb.CameraSetupLive do
     </Layouts.game>
 
     <script :type={ColocatedHook} name=".CameraSetup">
-      import { captureAndOCR, preloadLibraries } from "@/js/card_lookup.js"
+      import { captureAndOCR, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
 
       export default {
         mounted() {
@@ -389,7 +389,7 @@ defmodule TabletopWeb.CameraSetupLive do
             setTimeout(() => toast.remove(), 3000)
           }
 
-          preloadLibraries()
+          preloadTesseract()
 
           gameArea.addEventListener("click", async (e) => {
             if (e.target !== canvasEl) return

@@ -46,3 +46,6 @@ user2_scope = Scope.for_user(user2)
     description: "A test game created by user 2",
     format: :silver_age
   })
+
+# populate card database
+Tabletop.Cards.populate_cards()

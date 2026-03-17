@@ -71,14 +71,69 @@ export function showDebugPanel(result, ocrText, confidence) {
   if (result.upGrayCanvas) {
     addPreview(result.upGrayCanvas, "Upscaled grayscale", result.upGrayConfidence, result.upGrayText)
   }
+  if (result.sharpThreshCanvas) {
+    addPreview(result.sharpThreshCanvas, "Sharp + threshold", result.sharpThreshConfidence, result.sharpThreshText)
+  }
   addPreview(result.processedCanvas, "Adaptive threshold", result.threshConfidence, result.threshText)
+
+  // Show full card capture if available
+  if (result.cardCanvas) {
+    const cardCol = document.createElement("div")
+    cardCol.style.cssText = "display: flex; flex-direction: column; gap: 2px; border-left: 1px solid rgba(255,255,255,0.15); padding-left: 8px;"
+    const cardLbl = document.createElement("span")
+    cardLbl.style.cssText = "font-size: 10px; opacity: 0.7;"
+    cardLbl.textContent = result.rotation ? `Card (rotated ${result.rotation}\u00b0)` : "Card capture"
+    cardCol.appendChild(cardLbl)
+    const cardImg = document.createElement("img")
+    cardImg.src = result.cardCanvas.toDataURL()
+    cardImg.style.cssText = `
+      max-width: 150px; max-height: 200px; width: auto; height: auto;
+      border: 1px solid rgba(255,255,255,0.2); border-radius: 3px;
+    `
+    cardCol.appendChild(cardImg)
+    const cardSize = document.createElement("span")
+    cardSize.style.cssText = "font-size: 9px; opacity: 0.5;"
+    cardSize.textContent = `${result.cardCanvas.width}\u00d7${result.cardCanvas.height}`
+    cardCol.appendChild(cardSize)
+    row.appendChild(cardCol)
+  }
+
+  // Show art region and pHash if available
+  if (result.artCanvas) {
+    const artCol = document.createElement("div")
+    artCol.style.cssText = "display: flex; flex-direction: column; gap: 2px; border-left: 1px solid rgba(255,255,255,0.15); padding-left: 8px;"
+    const artLbl = document.createElement("span")
+    artLbl.style.cssText = "font-size: 10px; opacity: 0.7;"
+    artLbl.textContent = result.rotation ? `Art (rotated ${result.rotation}\u00b0)` : "Art region"
+    artCol.appendChild(artLbl)
+    const artImg = document.createElement("img")
+    artImg.src = result.artCanvas.toDataURL()
+    artImg.style.cssText = `
+      max-width: 120px; max-height: 120px; width: auto; height: auto;
+      border: 1px solid rgba(255,255,255,0.2); border-radius: 3px;
+    `
+    artCol.appendChild(artImg)
+    const artSize = document.createElement("span")
+    artSize.style.cssText = "font-size: 9px; opacity: 0.5;"
+    artSize.textContent = `${result.artCanvas.width}\u00d7${result.artCanvas.height}`
+    artCol.appendChild(artSize)
+    if (result.artHash) {
+      const hashEl = document.createElement("span")
+      hashEl.style.cssText = "font-size: 10px; font-weight: 600; color: #8cf; font-family: monospace; letter-spacing: 1px;"
+      hashEl.textContent = result.artHash
+      artCol.appendChild(hashEl)
+    }
+    row.appendChild(artCol)
+  }
 
   _debugPanel.appendChild(row)
 
   const resultEl = document.createElement("div")
   resultEl.style.cssText = "margin-top: 4px; padding: 4px 6px; background: rgba(255,255,255,0.1); border-radius: 4px;"
+  const rotationLabel = result.rotation ? ` | rotation: ${result.rotation}\u00b0` : ""
+  const hashLabel = result.artHash ? ` | pHash: ${result.artHash}` : ""
   resultEl.innerHTML = `
-    <div style="opacity: 0.7; font-size: 10px;">Best result (confidence: ${confidence ?? "?"})</div>
+    <div style="opacity: 0.7; font-size: 10px;">Best result (confidence: ${confidence ?? "?"}${rotationLabel}${hashLabel})</div>
     <div style="font-size: 13px; font-weight: bold; margin-top: 2px;">${ocrText || "<em style='opacity:0.5'>no text detected</em>"}</div>
   `
   _debugPanel.appendChild(resultEl)

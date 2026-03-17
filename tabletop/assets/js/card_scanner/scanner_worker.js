@@ -1,4 +1,4 @@
-// OpenCV Web Worker — detects card-shaped rectangles and title regions
+// OpenCV Web Worker — detects card-shaped rectangles, title, and art regions
 
 const LOG = "[ScannerWorker]"
 
@@ -54,15 +54,86 @@ const MIN_ASPECT = 1.1
 const MAX_ASPECT = 2.0
 
 // Title region: narrow banner near top of card
-// FaB titles sit ~5-9% from top, inset ~18% from edges (past resource icons)
 const TITLE_Y_RATIO = 0.055
 const TITLE_H_RATIO = 0.04
 const TITLE_X_INSET = 0.19
 
+// Art region: main illustration area
+const ART_Y_RATIO = 0.11
+const ART_H_RATIO = 0.505
+const ART_X_INSET = 0.06
+
+function clampRect(rect, imgW, imgH) {
+  let { x, y, width, height } = rect
+  x = Math.max(0, Math.min(x, imgW - 1))
+  y = Math.max(0, Math.min(y, imgH - 1))
+  width = Math.min(width, imgW - x)
+  height = Math.min(height, imgH - y)
+  return { x, y, width, height }
+}
+
+function extractRegions(cardX, cardY, cardW, cardH, imgW, imgH) {
+  const title = clampRect({
+    x: cardX + Math.round(cardW * TITLE_X_INSET),
+    y: cardY + Math.round(cardH * TITLE_Y_RATIO),
+    width: Math.round(cardW * (1 - 2 * TITLE_X_INSET)),
+    height: Math.round(cardH * TITLE_H_RATIO),
+  }, imgW, imgH)
+
+  const art = clampRect({
+    x: cardX + Math.round(cardW * ART_X_INSET),
+    y: cardY + Math.round(cardH * ART_Y_RATIO),
+    width: Math.round(cardW * (1 - 2 * ART_X_INSET)),
+    height: Math.round(cardH * ART_H_RATIO),
+  }, imgW, imgH)
+
+  return { title, art }
+}
+
+function findBestContour(contours, imgArea, centerX, centerY, minAspect, maxAspect) {
+  let bestCard = null
+  let bestDist = Infinity
+  let bestApproxCount = 0
+
+  for (let i = 0; i < contours.size(); i++) {
+    let cnt = contours.get(i)
+    let area = cv.contourArea(cnt)
+
+    if (area < imgArea * MIN_CARD_AREA_RATIO) continue
+    if (area > imgArea * MAX_CARD_AREA_RATIO) continue
+
+    let peri = cv.arcLength(cnt, true)
+    let approx = new cv.Mat()
+    cv.approxPolyDP(cnt, approx, 0.02 * peri, true)
+
+    let rect = cv.boundingRect(cnt)
+
+    let aspect = rect.height / rect.width
+    if (aspect < minAspect || aspect > maxAspect) {
+      approx.delete()
+      continue
+    }
+
+    if (approx.rows >= 4 && approx.rows <= 12) {
+      const cx = rect.x + rect.width / 2
+      const cy = rect.y + rect.height / 2
+      const dist = Math.hypot(cx - centerX, cy - centerY)
+      if (dist < bestDist) {
+        bestDist = dist
+        bestCard = rect
+        bestApproxCount = approx.rows
+      }
+    }
+
+    approx.delete()
+  }
+
+  return { bestCard, bestDist, bestApproxCount }
+}
+
 self.onmessage = function (event) {
   const { imageData, requestId } = event.data
 
-  // Always respond so the main thread doesn't hang
   if (!cvReady || !cvModule) {
     self.postMessage({ type: "noCard", requestId, reason: "not ready" })
     return
@@ -78,15 +149,12 @@ self.onmessage = function (event) {
     edges = new cv.Mat()
 
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
-
-    // Use adaptive threshold to handle varying lighting
     cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0)
     cv.Canny(blurred, edges, 30, 100)
 
-    // Dilate to close gaps in card borders
     kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3))
     cv.dilate(edges, edges, kernel)
-    cv.dilate(edges, edges, kernel) // double dilate for thicker borders
+    cv.dilate(edges, edges, kernel)
 
     contours = new cv.MatVector()
     hierarchy = new cv.Mat()
@@ -99,45 +167,25 @@ self.onmessage = function (event) {
     const imgArea = imageData.width * imageData.height
     const centerX = imageData.width / 2
     const centerY = imageData.height / 2
-    let bestCard = null
-    let bestDist = Infinity
-    let bestApproxCount = 0
 
-    for (let i = 0; i < contours.size(); i++) {
-      let cnt = contours.get(i)
-      let area = cv.contourArea(cnt)
+    // Pass 1: Look for portrait-oriented cards
+    let { bestCard, bestDist, bestApproxCount } = findBestContour(
+      contours, imgArea, centerX, centerY, MIN_ASPECT, MAX_ASPECT
+    )
+    let rotation = 0
 
-      if (area < imgArea * MIN_CARD_AREA_RATIO) continue
-      if (area > imgArea * MAX_CARD_AREA_RATIO) continue
-
-      // Approximate to polygon
-      let peri = cv.arcLength(cnt, true)
-      let approx = new cv.Mat()
-      cv.approxPolyDP(cnt, approx, 0.02 * peri, true)
-
-      let rect = cv.boundingRect(cnt)
-
-      // Filter by portrait card aspect ratio
-      let aspect = rect.height / rect.width
-      if (aspect < MIN_ASPECT || aspect > MAX_ASPECT) {
-        approx.delete()
-        continue
+    // Pass 2: If no portrait card found, look for landscape (90-degree rotated)
+    if (!bestCard) {
+      const landscape = findBestContour(
+        contours, imgArea, centerX, centerY, 1 / MAX_ASPECT, 1 / MIN_ASPECT
+      )
+      if (landscape.bestCard) {
+        bestCard = landscape.bestCard
+        bestDist = landscape.bestDist
+        bestApproxCount = landscape.bestApproxCount
+        rotation = 90
+        console.log(`${LOG} Detected landscape card (90° rotation)`)
       }
-
-      // Accept any roughly rectangular contour (4-12 vertices)
-      // Pick the one whose center is closest to the click point (center of region)
-      if (approx.rows >= 4 && approx.rows <= 12) {
-        const cx = rect.x + rect.width / 2
-        const cy = rect.y + rect.height / 2
-        const dist = Math.hypot(cx - centerX, cy - centerY)
-        if (dist < bestDist) {
-          bestDist = dist
-          bestCard = rect
-          bestApproxCount = approx.rows
-        }
-      }
-
-      approx.delete()
     }
 
     if (bestCard) {
@@ -146,27 +194,46 @@ self.onmessage = function (event) {
       let cardW = bestCard.width
       let cardH = bestCard.height
 
-      // Title is always at the top of the detected bounding rect
-      let titleX = cardX + Math.round(cardW * TITLE_X_INSET)
-      let titleY = cardY + Math.round(cardH * TITLE_Y_RATIO)
-      let titleW = Math.round(cardW * (1 - 2 * TITLE_X_INSET))
-      let titleH = Math.round(cardH * TITLE_H_RATIO)
+      let title, art
+      if (rotation === 90) {
+        // Card is landscape — title is along the left or right short edge
+        // We'll report the raw landscape rect and let the main thread handle rotation
+        // Compute regions as if rotated to portrait (swap W/H for ratio calculations)
+        const portraitW = cardH
+        const portraitH = cardW
 
-      // Clamp to image bounds
-      titleX = Math.max(0, Math.min(titleX, imageData.width - 1))
-      titleY = Math.max(0, Math.min(titleY, imageData.height - 1))
-      titleW = Math.min(titleW, imageData.width - titleX)
-      titleH = Math.min(titleH, imageData.height - titleY)
+        // Title along the top of the "virtual portrait" = left edge of landscape
+        title = clampRect({
+          x: cardX,
+          y: cardY + Math.round(portraitW * TITLE_X_INSET),
+          width: Math.round(portraitH * TITLE_H_RATIO),
+          height: Math.round(portraitW * (1 - 2 * TITLE_X_INSET)),
+        }, imageData.width, imageData.height)
+
+        art = clampRect({
+          x: cardX + Math.round(portraitH * ART_Y_RATIO),
+          y: cardY + Math.round(portraitW * ART_X_INSET),
+          width: Math.round(portraitH * ART_H_RATIO),
+          height: Math.round(portraitW * (1 - 2 * ART_X_INSET)),
+        }, imageData.width, imageData.height)
+      } else {
+        const regions = extractRegions(cardX, cardY, cardW, cardH, imageData.width, imageData.height)
+        title = regions.title
+        art = regions.art
+      }
 
       const cardArea = cardW * cardH
-      console.log(`${LOG} Card: ${cardW}x${cardH} at (${cardX},${cardY}), vertices: ${bestApproxCount}, area: ${(cardArea / imgArea * 100).toFixed(1)}%, dist: ${bestDist.toFixed(0)}`)
-      console.log(`${LOG} Title: ${titleW}x${titleH} at (${titleX},${titleY})`)
+      console.log(`${LOG} Card: ${cardW}x${cardH} at (${cardX},${cardY}), vertices: ${bestApproxCount}, area: ${(cardArea / imgArea * 100).toFixed(1)}%, dist: ${bestDist.toFixed(0)}, rotation: ${rotation}`)
+      console.log(`${LOG} Title: ${title.width}x${title.height} at (${title.x},${title.y})`)
+      console.log(`${LOG} Art: ${art.width}x${art.height} at (${art.x},${art.y})`)
 
       self.postMessage({
         type: "cardDetected",
         requestId,
         card: { x: cardX, y: cardY, width: cardW, height: cardH },
-        title: { x: titleX, y: titleY, width: titleW, height: titleH },
+        title,
+        art,
+        rotation,
       })
     } else {
       console.log(`${LOG} No card found (${contours.size()} contours checked)`)

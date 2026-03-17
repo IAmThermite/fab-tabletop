@@ -6,24 +6,67 @@ defmodule Tabletop.Cards do
   import Ecto.Query, warn: false
   alias Tabletop.Repo
 
-  alias Tabletop.Cards.Card
+  alias Tabletop.Cards.{Card, OcrNormalizer}
 
   def find_by_name(name) do
     Repo.get_by(Card, name: name)
   end
 
-  def fuzzy_match_name(name) do
-    pattern = "%#{name}%"
+  def fuzzy_match_name(ocr_text) do
+    normalized = OcrNormalizer.normalize(ocr_text)
+    tokens = OcrNormalizer.tokens(ocr_text)
 
-    Repo.all(
-      from c in Card,
-        where: ilike(c.name, ^pattern),
-        order_by: [asc: c.name],
-        limit: 10
+    from(c in Card,
+      select: %{
+        id: c.id,
+        name: c.name,
+        score:
+          fragment(
+            """
+            similarity(?, ?) * 3
+            + cardinality(? && ?::text[])
+            + cardinality(
+                ARRAY(SELECT dmetaphone(unnest(?)))
+                && ARRAY(SELECT dmetaphone(unnest(?::text[])))
+              )
+            """,
+            c.normalized_name,
+            ^normalized,
+            c.tokens,
+            ^tokens,
+            c.tokens,
+            ^tokens
+          )
+      },
+      where:
+        fragment("similarity(?, ?) > 0.1", c.normalized_name, ^normalized) or
+          fragment("? && ?::text[]", c.tokens, ^tokens) or
+          fragment(
+            "ARRAY(SELECT dmetaphone(unnest(?))) && ARRAY(SELECT dmetaphone(unnest(?::text[])))",
+            c.tokens,
+            ^tokens
+          ),
+      order_by: [
+        desc:
+          fragment(
+            """
+            similarity(?, ?) * 3
+            + cardinality(? && ?::text[])
+            + cardinality(
+                ARRAY(SELECT dmetaphone(unnest(?)))
+                && ARRAY(SELECT dmetaphone(unnest(?::text[])))
+              )
+            """,
+            c.normalized_name,
+            ^normalized,
+            c.tokens,
+            ^tokens,
+            c.tokens,
+            ^tokens
+          )
+      ],
+      limit: 5
     )
-  end
-
-  def populate_cards do
-    Tabletop.CardImporter.import()
+    |> Repo.all()
   end
 end

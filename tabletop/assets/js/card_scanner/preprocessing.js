@@ -84,6 +84,28 @@ export function preprocessForOCR(imageData) {
   }
   grayCtx.putImageData(grayImgData, 0, 0)
 
+  // Step 2b: Adaptive threshold on the sharpened grayscale (no upscale)
+  const sharpThreshCanvas = document.createElement("canvas")
+  sharpThreshCanvas.width = w
+  sharpThreshCanvas.height = h
+  const sharpThreshCtx = sharpThreshCanvas.getContext("2d")
+  const sharpThreshData = sharpThreshCtx.createImageData(w, h)
+  const stSAT = integralImage(sharpened, w, h)
+  const stRadius = Math.max(4, Math.round(w / 10))
+  const stBias = 15
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x
+      const mean = localMeanFromSAT(stSAT, w, h, x, y, stRadius)
+      const v = sharpened[i] < (mean - stBias) ? 0 : 255
+      sharpThreshData.data[i * 4] = v
+      sharpThreshData.data[i * 4 + 1] = v
+      sharpThreshData.data[i * 4 + 2] = v
+      sharpThreshData.data[i * 4 + 3] = 255
+    }
+  }
+  sharpThreshCtx.putImageData(sharpThreshData, 0, 0)
+
   // Step 3: Upscale (nearest neighbour — no smoothing, keeps edges sharp)
   const outW = w * UPSCALE
   const outH = h * UPSCALE
@@ -124,7 +146,28 @@ export function preprocessForOCR(imageData) {
   }
   upCtx.putImageData(upData, 0, 0)
 
-  return { processedCanvas: upCanvas, rawCanvas, grayCanvas, upGrayCanvas }
+  return { processedCanvas: upCanvas, rawCanvas, grayCanvas, upGrayCanvas, sharpThreshCanvas }
+}
+
+// Rotate a canvas 90 degrees CW or CCW
+export function rotateCanvas90(canvas, direction = "cw") {
+  const rotated = document.createElement("canvas")
+  rotated.width = canvas.height
+  rotated.height = canvas.width
+  const ctx = rotated.getContext("2d")
+  ctx.translate(rotated.width / 2, rotated.height / 2)
+  ctx.rotate(direction === "cw" ? Math.PI / 2 : -Math.PI / 2)
+  ctx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2)
+  return rotated
+}
+
+// Convert ImageData to a canvas
+export function imageDataToCanvas(imageData) {
+  const c = document.createElement("canvas")
+  c.width = imageData.width
+  c.height = imageData.height
+  c.getContext("2d").putImageData(imageData, 0, 0)
+  return c
 }
 
 // Crop margins from processed image (removes edge noise artifacts)

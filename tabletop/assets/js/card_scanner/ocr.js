@@ -42,7 +42,7 @@ function getWorker() {
     // PSM 7 = single text line
     await worker.setParameters({
       tessedit_pageseg_mode: "7",
-      tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+      tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 '-",
     })
     return worker
   })()
@@ -59,7 +59,16 @@ export async function runOCR(canvas) {
   const dataUrl = canvas.toDataURL("image/png")
   const result = await worker.recognize(dataUrl, "eng")
   const text = result.data.text.trim().replace(/\n/g, " ").replace(/\s+/g, " ")
-  const confidence = result.data.confidence
-  console.log(`${LOG} OCR result: "${text}" (confidence: ${confidence})`)
+
+  // Page-level confidence is unreliable in PSM 7 (single line) — use word-level mean
+  const words = result.data.words || []
+  let confidence = 0
+  if (words.length > 0) {
+    confidence = words.reduce((sum, w) => sum + w.confidence, 0) / words.length
+  } else if (result.data.confidence > 0) {
+    confidence = result.data.confidence
+  }
+
+  console.log(`${LOG} OCR result: "${text}" (confidence: ${confidence.toFixed(1)}, words: ${words.length})`)
   return { text, confidence }
 }

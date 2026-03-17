@@ -8,6 +8,7 @@ defmodule Tabletop.Cards.Card do
 
   schema "cards" do
     field :name, :string
+    field :print_id, :string
     field :normalized_name, :string
     field :tokens, {:array, :string}, default: []
     field :image_url, :string
@@ -17,12 +18,18 @@ defmodule Tabletop.Cards.Card do
   end
 
   @doc false
-  def changeset(card, attrs) do
+  def import_changeset(card, attrs) do
     card
-    |> cast(attrs, [:name, :image_url])
-    |> validate_required([:name, :image_url])
+    |> cast(attrs, [:name, :print_id, :image_url])
+    |> validate_required([:name, :print_id, :image_url])
     |> put_normalized_fields()
     |> put_image_phash()
+  end
+
+  def generated_changeset(card, attrs) do
+    card
+    |> cast(attrs, [:name, :print_id, :image_url, :tokens, :normalized_name, :image_phash])
+    |> validate_required([:name, :print_id, :image_url, :tokens, :normalized_name, :image_phash])
   end
 
   defp put_normalized_fields(changeset) do

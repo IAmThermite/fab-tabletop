@@ -4,6 +4,7 @@ defmodule Tabletop.Repo.Migrations.CreateCards do
   def up do
     create table(:cards) do
       add :name, :string
+      add :print_id, :string
       add :image_url, :string
       add :normalized_name, :string
       add :tokens, {:array, :string}, default: []
@@ -13,6 +14,7 @@ defmodule Tabletop.Repo.Migrations.CreateCards do
     end
 
     create index(:cards, [:name])
+    create unique_index(:cards, [:print_id])
     create index(:cards, [:normalized_name])
     create index(:cards, [:image_phash])
   end

@@ -12,6 +12,14 @@ defmodule Tabletop.Cards do
     Repo.get_by(Card, name: name)
   end
 
+  def find_by_print_id(print_id) do
+    Repo.get_by(Card, print_id: print_id)
+  end
+
+  def list_cards do
+    Repo.all(Card)
+  end
+
   def fuzzy_match_name(ocr_text) do
     normalized = OcrNormalizer.normalize(ocr_text)
     tokens = OcrNormalizer.tokens(ocr_text)
@@ -68,5 +76,17 @@ defmodule Tabletop.Cards do
       limit: 5
     )
     |> Repo.all()
+  end
+
+  def card_as_json_string(card) do
+    %{
+      name: card.name,
+      print_id: card.print_id,
+      normalized_name: card.normalized_name,
+      tokens: card.tokens,
+      image_url: card.image_url,
+      image_phash: card.image_phash
+    }
+    |> Jason.encode!()
   end
 end

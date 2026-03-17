@@ -48,4 +48,4 @@ user2_scope = Scope.for_user(user2)
   })
 
 # populate card database
-Tabletop.Cards.Importer.import()
+Tabletop.Cards.Importer.import_from_generated_data()

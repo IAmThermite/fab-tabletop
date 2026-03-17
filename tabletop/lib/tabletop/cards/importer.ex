@@ -1,4 +1,4 @@
-defmodule Tabletop.CardImporter do
+defmodule Tabletop.Cards.Importer do
   @moduledoc """
   A module to import card data from JSON files into the database.
   """
@@ -23,8 +23,7 @@ defmodule Tabletop.CardImporter do
   end
 
   defp maybe_insert_card(nil, card_struct) do
-    card_struct
-    |> Tabletop.Repo.insert()
+    {:ok, _card} = Tabletop.Repo.insert(card_struct)
   end
 
   # skip if card already exists

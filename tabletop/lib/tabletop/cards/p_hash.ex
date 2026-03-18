@@ -7,7 +7,7 @@ defmodule Tabletop.Cards.PHash do
   2. Resize to 32x32 grayscale
   3. 2D DCT
   4. Take top-left 8x8 low-frequency block (excluding DC)
-  5. Threshold against median -> 64-bit hash -> 16-char hex string
+  5. Threshold against median -> 64-bit hash
 
   Uses ImageMagick `convert` for image decoding/cropping/resizing,
   which supports webp, png, jpg, gif, etc.
@@ -32,9 +32,9 @@ defmodule Tabletop.Cards.PHash do
 
   @doc """
   Downloads the image at `image_url`, crops the art region, and computes
-  a 16-char hex pHash string. Returns `nil` on failure.
+  a 64-bit integer pHash. Returns `nil` on failure.
   """
-  @spec compute(String.t()) :: String.t() | nil
+  @spec compute(String.t()) :: integer() | nil
   def compute(image_url) do
     with {:ok, body} <- download(image_url),
          {:ok, gray} <- decode_art_region(body) do
@@ -47,7 +47,7 @@ defmodule Tabletop.Cards.PHash do
   @doc """
   Computes pHash from a local file path. Returns `nil` on failure.
   """
-  @spec compute_from_file(String.t()) :: String.t() | nil
+  @spec compute_from_file(String.t()) :: integer() | nil
   def compute_from_file(path) do
     with {:ok, body} <- File.read(path),
          {:ok, gray} <- decode_art_region(body) do
@@ -82,14 +82,11 @@ defmodule Tabletop.Cards.PHash do
   end
 
   @doc """
-  Computes hamming distance between two hex hash strings (0-64).
+  Computes hamming distance between two integer pHashes (0-64).
   """
-  @spec hamming_distance(String.t(), String.t()) :: non_neg_integer()
-  def hamming_distance(a, b) when byte_size(a) == 16 and byte_size(b) == 16 do
-    a_int = String.to_integer(a, 16)
-    b_int = String.to_integer(b, 16)
-    xor = Bitwise.bxor(a_int, b_int)
-    popcount(xor, 0)
+  @spec hamming_distance(integer(), integer()) :: non_neg_integer()
+  def hamming_distance(a, b) when is_integer(a) and is_integer(b) do
+    Bitwise.bxor(a, b) |> popcount(0)
   end
 
   def hamming_distance(_, _), do: 64
@@ -237,12 +234,6 @@ defmodule Tabletop.Cards.PHash do
 
     bits = [0 | Enum.map(coeffs, fn c -> if c > median, do: 1, else: 0 end)]
 
-    bits
-    |> Enum.chunk_every(4)
-    |> Enum.map(fn nibble ->
-      value = Enum.reduce(nibble, 0, fn bit, acc -> acc * 2 + bit end)
-      Integer.to_string(value, 16) |> String.downcase()
-    end)
-    |> Enum.join()
+    Enum.reduce(bits, 0, fn bit, acc -> acc * 2 + bit end)
   end
 end

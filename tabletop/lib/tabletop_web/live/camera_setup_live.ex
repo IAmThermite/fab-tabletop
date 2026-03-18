@@ -1,5 +1,6 @@
 defmodule TabletopWeb.CameraSetupLive do
   use TabletopWeb, :live_view
+  use TabletopWeb.CardLookup
 
   alias Tabletop.Fab.GameState
 
@@ -67,6 +68,11 @@ defmodule TabletopWeb.CameraSetupLive do
           <div id="test-status" phx-update="ignore" class="badge badge-sm badge-outline">
             Initializing...
           </div>
+
+          <label class="flex items-center gap-2 cursor-pointer text-sm" title="Show OCR debug overlay on card scan">
+            <span class="label-text">Debug scan</span>
+            <input id="debug-scan-toggle" type="checkbox" class="toggle toggle-sm" />
+          </label>
 
           <button id="setup-done-btn" type="button" class="btn btn-primary btn-sm">
             Save & Continue
@@ -182,7 +188,8 @@ defmodule TabletopWeb.CameraSetupLive do
     </Layouts.game>
 
     <script :type={ColocatedHook} name=".CameraSetup">
-      import { captureAndOCR, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
+      import { setupCardLookup, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
+      import { isDebugEnabled, setDebugEnabled } from "@/js/card_scanner/debug.js"
 
       export default {
         mounted() {
@@ -199,6 +206,7 @@ defmodule TabletopWeb.CameraSetupLive do
           const rotationSlider = document.getElementById("rotation-slider")
           const rotationValueEl = document.getElementById("rotation-value")
           const doneBtn = document.getElementById("setup-done-btn")
+          const debugToggle = document.getElementById("debug-scan-toggle")
 
           let stream = null
           let animFrameId = null
@@ -208,6 +216,9 @@ defmodule TabletopWeb.CameraSetupLive do
           let micEnabled = true
 
           // Load saved settings from localStorage
+          debugToggle.checked = isDebugEnabled()
+          debugToggle.addEventListener("change", () => setDebugEnabled(debugToggle.checked))
+
           const savedZoom = localStorage.getItem("tabletop:camera-zoom") || "1"
           const savedRotation = localStorage.getItem("tabletop:camera-rotation") || "0"
           zoomSlider.value = savedZoom
@@ -363,62 +374,8 @@ defmodule TabletopWeb.CameraSetupLive do
 
           // Card lookup — click on canvas to OCR card name
           const gameArea = document.getElementById("game-area")
-          let _loadingEl = null
-
-          const showLoading = (x, y) => {
-            hideLoading()
-            const rect = gameArea.getBoundingClientRect()
-            _loadingEl = document.createElement("div")
-            _loadingEl.className = "absolute z-50 flex items-center gap-2 px-3 py-2 bg-base-200 border border-base-300 rounded-lg shadow-lg text-sm"
-            _loadingEl.style.left = (x - rect.left) + "px"
-            _loadingEl.style.top = (y - rect.top - 40) + "px"
-            _loadingEl.style.transform = "translateX(-50%)"
-            _loadingEl.innerHTML = '<span class="loading loading-spinner loading-sm"></span><span>Scanning card...</span>'
-            gameArea.appendChild(_loadingEl)
-          }
-
-          const hideLoading = () => {
-            if (_loadingEl) { _loadingEl.remove(); _loadingEl = null }
-          }
-
-          const showToast = (msg) => {
-            const toast = document.createElement("div")
-            toast.className = "absolute bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-error text-error-content rounded-lg text-sm shadow-lg"
-            toast.textContent = msg
-            gameArea.appendChild(toast)
-            setTimeout(() => toast.remove(), 3000)
-          }
-
           preloadTesseract()
-
-          gameArea.addEventListener("click", async (e) => {
-            if (e.target !== canvasEl) return
-
-            showLoading(e.clientX, e.clientY)
-
-            try {
-              const text = await captureAndOCR(
-                canvasEl, e.clientX, e.clientY, false,
-                gameArea
-              )
-              hideLoading()
-
-              if (text) {
-                const rect = gameArea.getBoundingClientRect()
-                this.pushEvent("open_card", {
-                  name: text,
-                  x: e.clientX - rect.left + 10,
-                  y: e.clientY - rect.top - 50,
-                })
-              } else {
-                showToast("No text detected in that region.")
-              }
-            } catch (err) {
-              console.error("[CardLookup] OCR error:", err)
-              hideLoading()
-              showToast("OCR failed. Try again.")
-            }
-          })
+          setupCardLookup(this, canvasEl, gameArea)
 
           this.cleanup = () => {
             if (animFrameId) cancelAnimationFrame(animFrameId)
@@ -558,41 +515,12 @@ defmodule TabletopWeb.CameraSetupLive do
     {:noreply, assign(socket, :on_hits_open, !socket.assigns.on_hits_open)}
   end
 
-  def handle_event("open_card", %{"name" => name, "x" => x, "y" => y}, socket) do
-    card = %{
-      id: System.unique_integer([:positive]) |> Integer.to_string(),
-      name: name,
-      x: x,
-      y: y,
-      details: lookup_card(name)
-    }
-
-    {:noreply, assign(socket, :open_cards, socket.assigns.open_cards ++ [card])}
-  end
-
-  def handle_event("close_card", %{"id" => id}, socket) do
-    cards = Enum.reject(socket.assigns.open_cards, &(&1.id == id))
-    {:noreply, assign(socket, :open_cards, cards)}
-  end
-
   defp apply_action(socket, {:ok, new_state, _broadcast_msg}) do
     {:noreply, assign(socket, :game_state, new_state)}
   end
 
   defp apply_action(socket, {:error, _reason}) do
     {:noreply, socket}
-  end
-
-  defp lookup_card(name) do
-    %{
-      name: name,
-      type: "Action",
-      cost: "2",
-      power: "3",
-      defense: "2",
-      text: "Stub card for \"#{name}\". Replace with real card lookup.",
-      image_url: "https://placehold.co/300x420?text=#{URI.encode(name)}"
-    }
   end
 
   defp validate_damage_type("physical"), do: :physical

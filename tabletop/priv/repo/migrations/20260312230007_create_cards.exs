@@ -8,7 +8,7 @@ defmodule Tabletop.Repo.Migrations.CreateCards do
       add :image_url, :string
       add :normalized_name, :string
       add :tokens, {:array, :string}, default: []
-      add :image_phash, :string
+      add :image_phash, :bigint
 
       timestamps(type: :utc_datetime)
     end

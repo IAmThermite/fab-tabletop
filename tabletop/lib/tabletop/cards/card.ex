@@ -12,7 +12,7 @@ defmodule Tabletop.Cards.Card do
     field :normalized_name, :string
     field :tokens, {:array, :string}, default: []
     field :image_url, :string
-    field :image_phash, :string
+    field :image_phash, :integer
 
     timestamps(type: :utc_datetime)
   end

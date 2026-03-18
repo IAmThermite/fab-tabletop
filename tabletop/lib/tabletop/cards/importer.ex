@@ -15,8 +15,6 @@ defmodule Tabletop.Cards.Importer do
   def import_and_generate do
     Path.wildcard("priv/cards/raw/*.json")
     |> Enum.with_index(fn file, file_index ->
-      Logger.info("Starting processing #{file}")
-
       {:ok, content} = File.read(file)
       {:ok, all_card_data} = Jason.decode(content)
 

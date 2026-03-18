@@ -16,8 +16,19 @@ defmodule Tabletop.Cards do
     Repo.get_by(Card, print_id: print_id)
   end
 
-  def list_cards do
-    Repo.all(Card)
+  def find_by_p_hash_similarity(image_phash, threshold \\ 5) do
+    hash =
+      case image_phash do
+        h when is_binary(h) -> String.to_integer(h)
+        h -> h
+      end
+
+    from(c in Card,
+      where: fragment("bit_count(? # ?)", c.image_phash, ^hash) < ^threshold,
+      order_by: fragment("bit_count(? # ?)", c.image_phash, ^hash),
+      limit: 5
+    )
+    |> Repo.all()
   end
 
   def fuzzy_match_name(ocr_text) do
@@ -32,10 +43,17 @@ defmodule Tabletop.Cards do
           fragment(
             """
             similarity(?, ?) * 3
-            + cardinality(? && ?::text[])
+            + cardinality(?::text[] && ?::text[])
             + cardinality(
-                ARRAY(SELECT dmetaphone(unnest(?)))
-                && ARRAY(SELECT dmetaphone(unnest(?::text[])))
+                ARRAY(
+                  SELECT dmetaphone(word)
+                  FROM unnest(?::text[]) AS word
+                )
+                &&
+                ARRAY(
+                  SELECT dmetaphone(word)
+                  FROM unnest(?::text[]) AS word
+                )
               )
             """,
             c.normalized_name,
@@ -48,9 +66,19 @@ defmodule Tabletop.Cards do
       },
       where:
         fragment("similarity(?, ?) > 0.1", c.normalized_name, ^normalized) or
-          fragment("? && ?::text[]", c.tokens, ^tokens) or
+          fragment("?::text[] && ?::text[]", c.tokens, ^tokens) or
           fragment(
-            "ARRAY(SELECT dmetaphone(unnest(?))) && ARRAY(SELECT dmetaphone(unnest(?::text[])))",
+            """
+            ARRAY(
+              SELECT dmetaphone(word)
+              FROM unnest(?::text[]) AS word
+            )
+            &&
+            ARRAY(
+              SELECT dmetaphone(word)
+              FROM unnest(?::text[]) AS word
+            )
+            """,
             c.tokens,
             ^tokens
           ),
@@ -59,10 +87,17 @@ defmodule Tabletop.Cards do
           fragment(
             """
             similarity(?, ?) * 3
-            + cardinality(? && ?::text[])
+            + cardinality(?::text[] && ?::text[])
             + cardinality(
-                ARRAY(SELECT dmetaphone(unnest(?)))
-                && ARRAY(SELECT dmetaphone(unnest(?::text[])))
+                ARRAY(
+                  SELECT dmetaphone(word)
+                  FROM unnest(?::text[]) AS word
+                )
+                &&
+                ARRAY(
+                  SELECT dmetaphone(word)
+                  FROM unnest(?::text[]) AS word
+                )
               )
             """,
             c.normalized_name,
@@ -76,6 +111,10 @@ defmodule Tabletop.Cards do
       limit: 5
     )
     |> Repo.all()
+  end
+
+  def list_cards do
+    Repo.all(Card)
   end
 
   def card_as_json_string(card) do

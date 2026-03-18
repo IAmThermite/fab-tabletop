@@ -81,29 +81,22 @@ export function computePHash(canvas) {
     ? (sorted[mid - 1] + sorted[mid]) / 2
     : sorted[mid]
 
-  // Build 64-bit hash (DC bit is always 0)
-  let hash = ""
-  let bits = ""
-  bits += "0" // DC coefficient placeholder
+  // Build 64-bit hash as BigInt (DC bit is always 0)
+  let hash = 0n
+  hash |= 0n // DC coefficient placeholder (bit 63 = 0)
   for (const c of coeffs) {
-    bits += c > median ? "1" : "0"
-  }
-
-  // Convert 64 bits to 16-char hex
-  for (let i = 0; i < 64; i += 4) {
-    hash += parseInt(bits.slice(i, i + 4), 2).toString(16)
+    hash = (hash << 1n) | (c > median ? 1n : 0n)
   }
 
   return hash
 }
 
 export function hammingDistance(a, b) {
-  if (a.length !== b.length) return 64
   let dist = 0
-  for (let i = 0; i < a.length; i++) {
-    const x = parseInt(a[i], 16) ^ parseInt(b[i], 16)
-    // Count bits in nibble
-    dist += ((x >> 3) & 1) + ((x >> 2) & 1) + ((x >> 1) & 1) + (x & 1)
+  let xor = a ^ b
+  while (xor !== 0n) {
+    xor &= xor - 1n
+    dist++
   }
   return dist
 }

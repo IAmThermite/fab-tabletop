@@ -6,7 +6,7 @@
 
 import { preprocessForOCR, cropMargins, rotateCanvas90, imageDataToCanvas } from "./preprocessing"
 import { preloadOCR, runOCR } from "./ocr"
-import { showDebugPanel, showBoundingBox } from "./debug"
+import { showDebugPanel, showBoundingBox, isDebugEnabled } from "./debug"
 import { computePHash } from "./p_hash"
 
 const LOG = "[CardScanner]"
@@ -72,6 +72,95 @@ function detectCard(imageData) {
 export function preloadTesseract() {
   preloadOCR()
   getWorker()
+}
+
+/**
+ * Attach card-lookup click handling to a game area.
+ *
+ * @param {object} hook        - The LiveView hook instance (for pushEvent).
+ * @param {HTMLCanvasElement} canvasEl  - Canvas to OCR from.
+ * @param {HTMLElement} gameArea       - Container for loading/toast overlays.
+ * @param {object} opts
+ * @param {() => boolean} [opts.isFlipped]  - Returns true if video is flipped.
+ * @param {() => boolean} [opts.guardFn]    - Returns false to skip the click (e.g. not yet connected).
+ */
+export function setupCardLookup(hook, canvasEl, gameArea, opts = {}) {
+  const isFlipped = opts.isFlipped ?? (() => false)
+  const guardFn = opts.guardFn ?? (() => true)
+
+  let _loadingEl = null
+
+  const showLoading = (x, y) => {
+    hideLoading()
+    const rect = gameArea.getBoundingClientRect()
+    _loadingEl = document.createElement("div")
+    _loadingEl.className = "absolute z-50 flex items-center gap-2 px-3 py-2 bg-base-200 border border-base-300 rounded-lg shadow-lg text-sm"
+    _loadingEl.style.left = (x - rect.left) + "px"
+    _loadingEl.style.top = (y - rect.top - 40) + "px"
+    _loadingEl.style.transform = "translateX(-50%)"
+    _loadingEl.innerHTML = '<span class="loading loading-spinner loading-sm"></span><span>Scanning card...</span>'
+    gameArea.appendChild(_loadingEl)
+  }
+
+  const hideLoading = () => {
+    if (_loadingEl) { _loadingEl.remove(); _loadingEl = null }
+  }
+
+  const showToast = (msg) => {
+    const toast = document.createElement("div")
+    toast.className = "absolute bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-error text-error-content rounded-lg text-sm shadow-lg"
+    toast.textContent = msg
+    gameArea.appendChild(toast)
+    setTimeout(() => toast.remove(), 3000)
+  }
+
+  gameArea.addEventListener("click", async (e) => {
+    if (e.target !== canvasEl) return
+    if (!guardFn()) return
+
+    showLoading(e.clientX, e.clientY)
+
+    try {
+      const result = await captureAndOCR(
+        canvasEl, e.clientX, e.clientY, isFlipped(),
+        gameArea
+      )
+      hideLoading()
+
+      if (result) {
+        const rect = gameArea.getBoundingClientRect()
+
+        const ocrCandidates = [
+          { label: "gray", text: result.grayText, confidence: result.grayConfidence },
+          { label: "upGray", text: result.upGrayText, confidence: result.upGrayConfidence },
+          { label: "sharpThresh", text: result.sharpThreshText, confidence: result.sharpThreshConfidence },
+          { label: "thresh", text: result.threshText, confidence: result.threshConfidence },
+        ].filter(c => c.confidence > 40 && c.text)
+
+        const payload = {
+          ocr_candidates: ocrCandidates,
+          x: e.clientX - rect.left + 10,
+          y: e.clientY - rect.top - 50,
+        }
+
+        if (result.artHash != null) {
+          payload.phash = result.artHash.toString()
+        }
+
+        if (ocrCandidates.length > 0 || payload.phash != null) {
+          hook.pushEvent("open_card", payload)
+        } else {
+          showToast("Could not detect card, try again.")
+        }
+      } else {
+        showToast("Could not detect card, try again.")
+      }
+    } catch (err) {
+      console.error("[CardLookup] OCR error:", err)
+      hideLoading()
+      showToast("OCR failed. Try again.")
+    }
+  })
 }
 
 function captureRegion(ctx, canvasEl, canvasX, canvasY, w, h, yBias = 0.5) {
@@ -202,7 +291,7 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
   const detectCapture = captureRegion(ctx, canvasEl, canvasX, canvasY, detectW, detectH, 0.15)
 
   if (detectCapture) {
-    if (container) {
+    if (container && isDebugEnabled()) {
       fadeBox(showBoundingBox(
         container, rect,
         detectCapture.sx / scaleX, detectCapture.sy / scaleY,
@@ -227,7 +316,7 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
       console.log(`${LOG} Art: ${absArt.width}x${absArt.height}`)
 
       // Show card bounding box (blue)
-      if (container) {
+      if (container && isDebugEnabled()) {
         fadeBox(showBoundingBox(
           container, rect,
           absCard.x / scaleX, absCard.y / scaleY,
@@ -244,7 +333,7 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
 
       // OCR on detected title region
       if (absTitle.width > 10 && absTitle.height > 5) {
-        if (container) {
+        if (container && isDebugEnabled()) {
           fadeBox(showBoundingBox(
             container, rect,
             absTitle.x / scaleX, absTitle.y / scaleY,
@@ -274,7 +363,7 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
 
       // Extract art region and compute perceptual hash
       if (absArt.width > 20 && absArt.height > 20) {
-        if (container) {
+        if (container && isDebugEnabled()) {
           fadeBox(showBoundingBox(
             container, rect,
             absArt.x / scaleX, absArt.y / scaleY,
@@ -319,7 +408,7 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
     const capture = await captureBestFrame(ctx, canvasEl, canvasX, canvasY, fallbackW, fallbackH)
 
     if (capture) {
-      if (container) {
+      if (container && isDebugEnabled()) {
         fadeBox(showBoundingBox(
           container, rect,
           capture.sx / scaleX, capture.sy / scaleY,
@@ -332,9 +421,9 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
     }
   }
 
-  if (!result) return ""
+  if (!result) return null
 
-  showDebugPanel(result, result.text, result.confidence)
+  if (isDebugEnabled()) showDebugPanel(result, result.text, result.confidence)
 
-  return result.text
+  return result
 }

@@ -132,7 +132,7 @@
           >
             <div class="card-popout-header flex items-center justify-between px-3 py-2 bg-base-200 cursor-grab active:cursor-grabbing touch-none">
               <span class="font-semibold text-sm truncate flex-1">
-                {card.details.name}
+                {card.card.name}
               </span>
               <button
                 type="button"
@@ -146,20 +146,10 @@
             </div>
             <div class="p-3 space-y-2">
               <img
-                src={card.details.image_url}
-                alt={card.details.name}
+                src={card.card.image_url}
+                alt={card.card.name}
                 class="w-full rounded"
               />
-              <div class="flex justify-between text-xs">
-                <span class="opacity-70">Type:</span>
-                <span class="font-medium">{card.details.type}</span>
-              </div>
-              <div class="flex gap-3 text-xs">
-                <span>Cost: <strong>{card.details.cost}</strong></span>
-                <span>Power: <strong>{card.details.power}</strong></span>
-                <span>Def: <strong>{card.details.defense}</strong></span>
-              </div>
-              <p class="text-xs opacity-85 leading-snug">{card.details.text}</p>
             </div>
           </div>
         <% end %>
@@ -174,6 +164,10 @@
           <label class="flex items-center justify-between cursor-pointer">
             <span class="label-text">Flip opponent's view</span>
             <input id="flip-opponent-toggle" type="checkbox" class="toggle" />
+          </label>
+          <label class="flex items-center justify-between cursor-pointer">
+            <span class="label-text">Card scan debug overlay</span>
+            <input id="debug-scan-toggle" type="checkbox" class="toggle" />
           </label>
           <.link navigate={~p"/camera-setup"} class="btn btn-outline btn-sm w-full">
             Reconfigure Camera
@@ -215,7 +209,8 @@
 
   <script :type={ColocatedHook} name=".GameVideo">
     import WebRTCManager from "@/js/webrtc.js"
-    import { captureAndOCR, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
+    import { setupCardLookup, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
+    import { isDebugEnabled, setDebugEnabled } from "@/js/card_scanner/debug.js"
 
     export default {
       mounted() {
@@ -237,6 +232,7 @@
         const settingsBtn = document.getElementById("settings-btn")
         const settingsDialog = document.getElementById("settings-dialog")
         const flipToggle = document.getElementById("flip-opponent-toggle")
+        const debugToggle = document.getElementById("debug-scan-toggle")
 
         // Load flip preference from localStorage
         const FLIP_KEY = "tabletop:flip-opponent"
@@ -245,6 +241,9 @@
         if (savedFlip) {
           canvasEl.style.transform = "rotate(180deg)"
         }
+
+        // Load debug preference from localStorage (default off)
+        debugToggle.checked = isDebugEnabled()
 
         // Render local video preview with saved camera transforms
         const savedZoom = parseFloat(localStorage.getItem("tabletop:camera-zoom") || "1")
@@ -360,60 +359,9 @@
 
         // Card lookup — click on remote canvas to OCR card name
         const gameArea = document.getElementById("game-area")
-        let _loadingEl = null
-
-        const showLoading = (x, y) => {
-          hideLoading()
-          const rect = gameArea.getBoundingClientRect()
-          _loadingEl = document.createElement("div")
-          _loadingEl.className = "absolute z-50 flex items-center gap-2 px-3 py-2 bg-base-200 border border-base-300 rounded-lg shadow-lg text-sm"
-          _loadingEl.style.left = (x - rect.left) + "px"
-          _loadingEl.style.top = (y - rect.top - 40) + "px"
-          _loadingEl.style.transform = "translateX(-50%)"
-          _loadingEl.innerHTML = '<span class="loading loading-spinner loading-sm"></span><span>Scanning card...</span>'
-          gameArea.appendChild(_loadingEl)
-        }
-
-        const hideLoading = () => {
-          if (_loadingEl) { _loadingEl.remove(); _loadingEl = null }
-        }
-
-        const showToast = (msg) => {
-          const toast = document.createElement("div")
-          toast.className = "absolute bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-error text-error-content rounded-lg text-sm shadow-lg"
-          toast.textContent = msg
-          gameArea.appendChild(toast)
-          setTimeout(() => toast.remove(), 3000)
-        }
-
-        gameArea.addEventListener("click", async (e) => {
-          if (e.target !== canvasEl) return
-          if (this.webrtc._status !== "connected") return
-
-          showLoading(e.clientX, e.clientY)
-
-          try {
-            const text = await captureAndOCR(
-              canvasEl, e.clientX, e.clientY, flipToggle.checked,
-              gameArea
-            )
-            hideLoading()
-
-            if (text) {
-              const rect = gameArea.getBoundingClientRect()
-              this.pushEvent("open_card", {
-                name: text,
-                x: e.clientX - rect.left + 10,
-                y: e.clientY - rect.top - 50,
-              })
-            } else {
-              showToast("No text detected in that region.")
-            }
-          } catch (err) {
-            console.error("[CardLookup] OCR error:", err)
-            hideLoading()
-            showToast("OCR failed. Try again.")
-          }
+        setupCardLookup(this, canvasEl, gameArea, {
+          isFlipped: () => flipToggle.checked,
+          guardFn: () => this.webrtc._status === "connected",
         })
 
         // Settings dialog
@@ -426,6 +374,11 @@
           const flipped = flipToggle.checked
           canvasEl.style.transform = flipped ? "rotate(180deg)" : ""
           localStorage.setItem(FLIP_KEY, flipped)
+        })
+
+        // Debug scan overlay toggle
+        debugToggle.addEventListener("change", () => {
+          setDebugEnabled(debugToggle.checked)
         })
 
         // Preview modal — expanded local canvas

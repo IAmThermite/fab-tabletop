@@ -1,5 +1,6 @@
 defmodule TabletopWeb.GameLive.Show do
   use TabletopWeb, :live_view
+  use TabletopWeb.CardLookup
 
   alias Tabletop.Games
   alias Tabletop.Games.LeaveTimer
@@ -129,23 +130,6 @@ defmodule TabletopWeb.GameLive.Show do
     {:noreply, assign(socket, :preview_open, !socket.assigns.preview_open)}
   end
 
-  def handle_event("open_card", %{"name" => name, "x" => x, "y" => y}, socket) do
-    card = %{
-      id: System.unique_integer([:positive]) |> Integer.to_string(),
-      name: name,
-      x: x,
-      y: y,
-      details: lookup_card(name)
-    }
-
-    {:noreply, assign(socket, :open_cards, socket.assigns.open_cards ++ [card])}
-  end
-
-  def handle_event("close_card", %{"id" => id}, socket) do
-    cards = Enum.reject(socket.assigns.open_cards, &(&1.id == id))
-    {:noreply, assign(socket, :open_cards, cards)}
-  end
-
   def handle_event("leave_game", _params, socket) do
     LeaveTimer.cancel_leave(socket.assigns.game.id, socket.assigns.user_id)
     Games.terminate_game(socket.assigns.current_scope, socket.assigns.game)
@@ -208,19 +192,6 @@ defmodule TabletopWeb.GameLive.Show do
   defp apply_my_action(socket, {:error, reason}) do
     IO.inspect(reason, label: "Action error")
     {:noreply, socket}
-  end
-
-  # Stub card lookup — replace with real card database query later
-  defp lookup_card(name) do
-    %{
-      name: name,
-      type: "Action",
-      cost: "2",
-      power: "3",
-      defense: "2",
-      text: "Stub card for \"#{name}\". Replace with real card lookup.",
-      image_url: "https://placehold.co/300x420?text=#{URI.encode(name)}"
-    }
   end
 
   defp validate_damage_type("physical"), do: :physical

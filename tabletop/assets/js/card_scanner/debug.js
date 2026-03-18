@@ -1,5 +1,15 @@
 // Debug preview panel — shows raw, grayscale, and threshold images + OCR result
 
+const DEBUG_KEY = "tabletop:card-debug"
+
+export function isDebugEnabled() {
+  return localStorage.getItem(DEBUG_KEY) === "true"
+}
+
+export function setDebugEnabled(enabled) {
+  localStorage.setItem(DEBUG_KEY, enabled ? "true" : "false")
+}
+
 let _debugPanel = null
 
 export function showDebugPanel(result, ocrText, confidence) {

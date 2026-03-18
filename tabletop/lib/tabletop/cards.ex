@@ -16,68 +16,39 @@ defmodule Tabletop.Cards do
     Repo.get_by(Card, print_id: print_id)
   end
 
-  def find_by_p_hash_similarity(image_phash, threshold \\ 5) do
-    hash =
-      case image_phash do
-        h when is_binary(h) -> String.to_integer(h)
-        h -> h
-      end
-
+  def find_by_p_hash_similarity(image_phash, threshold \\ 10) do
     from(c in Card,
-      where: fragment("bit_count(? # ?)", c.image_phash, ^hash) < ^threshold,
-      order_by: fragment("bit_count(? # ?)", c.image_phash, ^hash),
+      where:
+        fragment("bit_count((? # ?)::bit(64))", c.image_phash, ^image_phash) < ^threshold,
+      order_by: fragment("bit_count((? # ?)::bit(64))", c.image_phash, ^image_phash),
       limit: 5
     )
     |> Repo.all()
+    |> IO.inspect(label: "find_by_p_hash_similarity")
   end
+
+  @score_sql """
+  similarity(?, ?) * 3
+  + (SELECT count(*) FROM unnest(?::text[]) a(w) WHERE w = ANY(?::text[]))
+  + (SELECT count(*) FROM (
+       SELECT dmetaphone(w) FROM unnest(?::text[]) a(w)
+       INTERSECT
+       SELECT dmetaphone(w) FROM unnest(?::text[]) b(w)
+     ) s)
+  """
 
   def fuzzy_match_name(ocr_text) do
     normalized = OcrNormalizer.normalize(ocr_text)
     tokens = OcrNormalizer.tokens(ocr_text)
 
     from(c in Card,
-      select: %{
-        id: c.id,
-        name: c.name,
-        score:
-          fragment(
-            """
-            similarity(?, ?) * 3
-            + cardinality(?::text[] && ?::text[])
-            + cardinality(
-                ARRAY(
-                  SELECT dmetaphone(word)
-                  FROM unnest(?::text[]) AS word
-                )
-                &&
-                ARRAY(
-                  SELECT dmetaphone(word)
-                  FROM unnest(?::text[]) AS word
-                )
-              )
-            """,
-            c.normalized_name,
-            ^normalized,
-            c.tokens,
-            ^tokens,
-            c.tokens,
-            ^tokens
-          )
-      },
       where:
         fragment("similarity(?, ?) > 0.1", c.normalized_name, ^normalized) or
           fragment("?::text[] && ?::text[]", c.tokens, ^tokens) or
           fragment(
             """
-            ARRAY(
-              SELECT dmetaphone(word)
-              FROM unnest(?::text[]) AS word
-            )
-            &&
-            ARRAY(
-              SELECT dmetaphone(word)
-              FROM unnest(?::text[]) AS word
-            )
+            ARRAY(SELECT dmetaphone(w) FROM unnest(?::text[]) a(w))
+            && ARRAY(SELECT dmetaphone(w) FROM unnest(?::text[]) b(w))
             """,
             c.tokens,
             ^tokens
@@ -85,21 +56,7 @@ defmodule Tabletop.Cards do
       order_by: [
         desc:
           fragment(
-            """
-            similarity(?, ?) * 3
-            + cardinality(?::text[] && ?::text[])
-            + cardinality(
-                ARRAY(
-                  SELECT dmetaphone(word)
-                  FROM unnest(?::text[]) AS word
-                )
-                &&
-                ARRAY(
-                  SELECT dmetaphone(word)
-                  FROM unnest(?::text[]) AS word
-                )
-              )
-            """,
+            @score_sql,
             c.normalized_name,
             ^normalized,
             c.tokens,
@@ -111,6 +68,7 @@ defmodule Tabletop.Cards do
       limit: 5
     )
     |> Repo.all()
+    |> IO.inspect(label: "fuzzy_match_name")
   end
 
   def list_cards do

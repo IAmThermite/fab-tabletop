@@ -139,49 +139,7 @@ defmodule TabletopWeb.CameraSetupLive do
 
             <.game_tiles game_state={@game_state} context={:remote} />
 
-            <%!-- Card lookup popouts --%>
-            <%= for card <- @open_cards do %>
-              <div
-                id={"card-popout-#{card.id}"}
-                phx-hook=".DraggableCardPopout"
-                data-x={card.x}
-                data-y={card.y}
-                class="absolute z-30 w-64 bg-base-100 border border-base-300 rounded-lg shadow-xl overflow-hidden"
-                style="left: 0; top: 0;"
-              >
-                <div class="card-popout-header flex items-center justify-between px-3 py-2 bg-base-200 cursor-grab active:cursor-grabbing touch-none">
-                  <span class="font-semibold text-sm truncate flex-1">
-                    {card.details.name}
-                  </span>
-                  <button
-                    type="button"
-                    phx-click="close_card"
-                    phx-value-id={card.id}
-                    class="btn btn-circle btn-xs btn-error ml-2"
-                    title="Close"
-                  >
-                    <.icon name="hero-x-mark" class="size-3" />
-                  </button>
-                </div>
-                <div class="p-3 space-y-2">
-                  <img
-                    src={card.details.image_url}
-                    alt={card.details.name}
-                    class="w-full rounded"
-                  />
-                  <div class="flex justify-between text-xs">
-                    <span class="opacity-70">Type:</span>
-                    <span class="font-medium">{card.details.type}</span>
-                  </div>
-                  <div class="flex gap-3 text-xs">
-                    <span>Cost: <strong>{card.details.cost}</strong></span>
-                    <span>Power: <strong>{card.details.power}</strong></span>
-                    <span>Def: <strong>{card.details.defense}</strong></span>
-                  </div>
-                  <p class="text-xs opacity-85 leading-snug">{card.details.text}</p>
-                </div>
-              </div>
-            <% end %>
+            <.card_popouts open_cards={@open_cards} />
           </div>
         </div>
       </div>
@@ -390,59 +348,6 @@ defmodule TabletopWeb.CameraSetupLive do
       }
     </script>
 
-    <script :type={ColocatedHook} name=".DraggableCardPopout">
-      export default {
-        mounted() {
-          const el = this.el
-          const header = el.querySelector(".card-popout-header")
-          const container = el.parentElement
-
-          const initX = parseFloat(el.dataset.x || "10")
-          const initY = parseFloat(el.dataset.y || "10")
-          const maxX = container.clientWidth - el.offsetWidth
-          const maxY = container.clientHeight - el.offsetHeight
-          el.style.left = Math.max(0, Math.min(initX, maxX)) + "px"
-          el.style.top = Math.max(0, Math.min(initY, maxY)) + "px"
-
-          let offsetX = 0
-          let offsetY = 0
-
-          header.addEventListener("pointerdown", (e) => {
-            if (e.target.closest("button")) return
-            e.preventDefault()
-            header.setPointerCapture(e.pointerId)
-            offsetX = e.clientX - el.getBoundingClientRect().left
-            offsetY = e.clientY - el.getBoundingClientRect().top
-            header.style.cursor = "grabbing"
-
-            container.querySelectorAll("[id^='card-popout-']").forEach((p) => {
-              p.style.zIndex = "30"
-            })
-            el.style.zIndex = "31"
-          })
-
-          header.addEventListener("pointermove", (e) => {
-            if (!header.hasPointerCapture(e.pointerId)) return
-            const rect = container.getBoundingClientRect()
-            let newX = e.clientX - rect.left - offsetX
-            let newY = e.clientY - rect.top - offsetY
-            newX = Math.max(0, Math.min(newX, container.clientWidth - el.offsetWidth))
-            newY = Math.max(0, Math.min(newY, container.clientHeight - el.offsetHeight))
-            el.style.left = newX + "px"
-            el.style.top = newY + "px"
-          })
-
-          const onPointerEnd = (e) => {
-            if (!header.hasPointerCapture(e.pointerId)) return
-            header.releasePointerCapture(e.pointerId)
-            header.style.cursor = "grab"
-          }
-
-          header.addEventListener("pointerup", onPointerEnd)
-          header.addEventListener("pointercancel", onPointerEnd)
-        },
-      }
-    </script>
     """
   end
 

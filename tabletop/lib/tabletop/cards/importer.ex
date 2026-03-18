@@ -8,33 +8,73 @@ defmodule Tabletop.Cards.Importer do
   alias Tabletop.Cards
   alias Tabletop.Cards.Card
 
+  @fetch_concurrency 10
+  @phash_concurrency 15
+  @task_timeout :timer.seconds(60)
+
   def import_and_generate do
-    # read each json file in priv/cards/raw and insert into the database
-    #
     Path.wildcard("priv/cards/raw/*.json")
-    |> Enum.with_index(fn file, index ->
+    |> Enum.with_index(fn file, file_index ->
+      Logger.info("Starting processing #{file}")
+
       {:ok, content} = File.read(file)
       {:ok, all_card_data} = Jason.decode(content)
 
-      all_card_data["results"]
-      |> Enum.flat_map(fn card_data ->
-        fetch_card_prints(card_data["card_id"])
-      end)
-      |> Enum.map(fn card_data ->
-        import_changeset_from_json(card_data)
+      card_ids =
+        all_card_data["results"]
+        |> Enum.map(& &1["card_id"])
+        |> Enum.uniq()
+
+      Logger.info("Processing file #{file} with #{length(card_ids)} unique card IDs")
+
+      faces =
+        card_ids
+        |> Task.async_stream(&fetch_card_prints/1,
+          max_concurrency: @fetch_concurrency,
+          timeout: @task_timeout,
+          on_timeout: :kill_task
+        )
+        |> Enum.flat_map(fn
+          {:ok, prints} -> prints
+          {:exit, _reason} -> []
+        end)
+
+      Logger.info("Fetched #{length(Enum.concat(faces))} unique card faces for #{length(card_ids)} card IDs in file #{file}")
+
+      faces
+      |> Task.async_stream(&import_changeset_from_json/1,
+        max_concurrency: @phash_concurrency,
+        timeout: @task_timeout,
+        on_timeout: :kill_task
+      )
+      |> Enum.flat_map(fn
+        {:ok, changeset} -> [changeset]
+        {:exit, _reason} -> []
       end)
       |> Enum.uniq_by(& &1.changes.image_phash)
-      |> Enum.map(fn card_changeset ->
-        existing_card = Cards.find_by_print_id(card_changeset.changes.print_id)
-        maybe_insert_card(existing_card, card_changeset)
+      |> then(fn unique_cards ->
+        Logger.info("Generated #{length(unique_cards)} unique cards from file #{file}")
+        unique_cards
       end)
+      |> Enum.chunk_every(100)
+      |> Enum.with_index(fn chunk, chunk_index ->
+        Logger.info("Processing chunk #{chunk_index + 1} from file #{file}")
+
+        chunk
+        |> Enum.map(fn card_changeset ->
+          existing_card = Cards.find_by_print_id(card_changeset.changes.print_id)
+          maybe_insert_card(existing_card, card_changeset)
+        end)
+      end)
+      |> List.flatten
       |> Enum.map(fn {:ok, card} -> Cards.card_as_json_string(card) end)
       |> Enum.join(",")
       |> then(fn json_array ->
         "[#{json_array}]"
       end)
       |> then(fn json ->
-        File.write!("priv/cards/generated/cards-#{index}.json", json)
+        Logger.info("Writing generated data for file #{file_index + 1} with #{length(faces)} faces")
+        File.write!("priv/cards/generated/cards-#{file_index+1}.json", json)
       end)
     end)
   end
@@ -64,7 +104,7 @@ defmodule Tabletop.Cards.Importer do
 
   defp fetch_card_prints(card_id) do
     # fetch the card prints from the API and return the list of print ids
-    url = "https://api.cardvault.fabtcg.com/carddb/api/v1/card_id/#{card_id}"
+    url = "https://api.cardvault.fabtcg.com/carddb/api/v1/card_id/#{card_id}/"
 
     {:ok, %{status: 200, body: body}} =
       Req.get(url, receive_timeout: 15_000, retry: :transient, max_retries: 2)

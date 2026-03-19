@@ -5,6 +5,7 @@ defmodule Tabletop.Repo.Migrations.CreateCards do
     create table(:cards) do
       add :name, :string
       add :print_id, :string
+      add :pitch, :integer
       add :image_url, :string
       add :normalized_name, :string
       add :tokens, {:array, :string}, default: []

@@ -69,7 +69,10 @@ defmodule TabletopWeb.CameraSetupLive do
             Initializing...
           </div>
 
-          <label class="flex items-center gap-2 cursor-pointer text-sm" title="Show OCR debug overlay on card scan">
+          <label
+            class="flex items-center gap-2 cursor-pointer text-sm"
+            title="Show OCR debug overlay on card scan"
+          >
             <span class="label-text">Debug scan</span>
             <input id="debug-scan-toggle" type="checkbox" class="toggle toggle-sm" />
           </label>
@@ -347,7 +350,6 @@ defmodule TabletopWeb.CameraSetupLive do
         },
       }
     </script>
-
     """
   end
 

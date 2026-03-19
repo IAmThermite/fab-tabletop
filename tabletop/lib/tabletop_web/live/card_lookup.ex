@@ -2,8 +2,8 @@ defmodule TabletopWeb.CardLookup do
   @moduledoc """
   Shared card lookup behaviour for LiveViews that support click-to-identify cards.
 
-  Injects `handle_event` clauses for `open_card` and `close_card`, plus the
-  `assign_open_card/4` private helper.
+  Injects `handle_event` clauses for `open_card`, `close_card`, and `switch_pitch`,
+  plus the `assign_open_card/5` private helper.
 
   The host LiveView must initialise `open_cards: []` in its mount.
 
@@ -22,6 +22,12 @@ defmodule TabletopWeb.CardLookup do
         phash =
           case Map.get(params, "phash") do
             s when is_binary(s) -> String.to_integer(s)
+            _ -> nil
+          end
+
+        detected_pitch =
+          case Map.get(params, "detected_pitch") do
+            p when p in [1, 2, 3] -> p
             _ -> nil
           end
 
@@ -44,7 +50,16 @@ defmodule TabletopWeb.CardLookup do
             possible_cards
           end
 
-        assign_open_card(socket, possible_cards, x, y)
+        # Sort pitch-matched cards to front
+        possible_cards =
+          if detected_pitch do
+            {matching, rest} = Enum.split_with(possible_cards, &(&1.pitch == detected_pitch))
+            matching ++ rest
+          else
+            possible_cards
+          end
+
+        assign_open_card(socket, possible_cards, x, y, detected_pitch)
       end
 
       def handle_event("close_card", %{"id" => id}, socket) do
@@ -52,16 +67,50 @@ defmodule TabletopWeb.CardLookup do
         {:noreply, assign(socket, :open_cards, cards)}
       end
 
-      defp assign_open_card(socket, [], _x, _y), do: {:noreply, socket}
+      def handle_event("switch_pitch", %{"id" => id, "pitch" => pitch}, socket) do
+        pitch = if is_binary(pitch), do: String.to_integer(pitch), else: pitch
 
-      defp assign_open_card(socket, possible_cards, x, y) do
+        cards =
+          Enum.map(socket.assigns.open_cards, fn open_card ->
+            if open_card.id == id do
+              case Enum.find(open_card.pitch_variants, &(&1.pitch == pitch)) do
+                nil -> open_card
+                variant -> %{open_card | card: variant}
+              end
+            else
+              open_card
+            end
+          end)
+
+        {:noreply, assign(socket, :open_cards, cards)}
+      end
+
+      defp assign_open_card(socket, [], _x, _y, _detected_pitch), do: {:noreply, socket}
+
+      defp assign_open_card(socket, possible_cards, x, y, detected_pitch) do
         card = List.first(possible_cards)
+        pitch_variants = Tabletop.Cards.find_pitch_variants(card)
+
+        # Select the displayed card: use detected pitch, default to red (pitch 1), or the match
+        selected_card =
+          cond do
+            pitch_variants == [] ->
+              card
+
+            detected_pitch ->
+              Enum.find(pitch_variants, card, &(&1.pitch == detected_pitch))
+
+            true ->
+              # Default to red (pitch 1) if available
+              Enum.find(pitch_variants, card, &(&1.pitch == 1))
+          end
 
         new_card = %{
           id: System.unique_integer([:positive]) |> Integer.to_string(),
           x: x,
           y: y,
-          card: card
+          card: selected_card,
+          pitch_variants: pitch_variants
         }
 
         {:noreply, assign(socket, :open_cards, socket.assigns.open_cards ++ [new_card])}

@@ -34,9 +34,9 @@ defmodule Tabletop.Cards.PHash do
   Downloads the image at `image_url`, crops the art region, and computes
   a 64-bit integer pHash. Returns `nil` on failure.
   """
-  @spec compute(String.t()) :: integer() | nil
-  def compute(image_url) do
-    with {:ok, body} <- download(image_url),
+  @spec compute(String.t(), keyword()) :: integer() | nil
+  def compute(image_url, req_options \\ []) do
+    with {:ok, body} <- download(image_url, req_options),
          {:ok, gray} <- decode_art_region(body) do
       gray |> dct_2d() |> hash_from_dct()
     else
@@ -68,11 +68,17 @@ defmodule Tabletop.Cards.PHash do
         {:ok, w, h} ->
           geometry = art_geometry(w, h)
 
-          case System.cmd("convert", ["#{tmp_path}[0]", "-crop", geometry, "+repage", output_path],
+          case System.cmd(
+                 "convert",
+                 ["#{tmp_path}[0]", "-crop", geometry, "+repage", output_path],
                  stderr_to_stdout: true
                ) do
-            {_, 0} -> :ok
-            {err, _} -> Logger.warning("PHash: convert crop failed: #{err}"); :error
+            {_, 0} ->
+              :ok
+
+            {err, _} ->
+              Logger.warning("PHash: convert crop failed: #{err}")
+              :error
           end
 
         :error ->
@@ -96,8 +102,8 @@ defmodule Tabletop.Cards.PHash do
 
   # --- Image download ---
 
-  defp download(url) do
-    case Req.get(url, receive_timeout: 15_000, retry: :transient, max_retries: 2) do
+  defp download(url, req_options) do
+    case Req.get(url, [receive_timeout: 15_000, retry: :transient, max_retries: 2] ++ req_options) do
       {:ok, %{status: 200, body: body}} when is_binary(body) ->
         {:ok, body}
 
@@ -125,9 +131,13 @@ defmodule Tabletop.Cards.PHash do
                "convert",
                [
                  "#{tmp_path}[0]",
-                 "-crop", geometry, "+repage",
-                 "-resize", "#{n}x#{n}!",
-                 "-depth", "8",
+                 "-crop",
+                 geometry,
+                 "+repage",
+                 "-resize",
+                 "#{n}x#{n}!",
+                 "-depth",
+                 "8",
                  "rgb:-"
                ],
                stderr_to_stdout: true
@@ -152,8 +162,12 @@ defmodule Tabletop.Cards.PHash do
     case System.cmd("identify", ["-format", "%w %h", "#{path}[0]"], stderr_to_stdout: true) do
       {output, 0} ->
         case String.split(String.trim(output)) do
-          [w_str, h_str] -> {:ok, String.to_integer(w_str), String.to_integer(h_str)}
-          _ -> Logger.warning("PHash: unexpected identify output: #{output}"); :error
+          [w_str, h_str] ->
+            {:ok, String.to_integer(w_str), String.to_integer(h_str)}
+
+          _ ->
+            Logger.warning("PHash: unexpected identify output: #{output}")
+            :error
         end
 
       {err, _} ->

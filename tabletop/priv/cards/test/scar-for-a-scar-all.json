@@ -1,0 +1,137 @@
+{
+  "results": [
+    {
+      "card_id": "scar-for-a-scar-1",
+      "print_id": "I-WTR191",
+      "face_id": "I-WTR191",
+      "is_published": true,
+      "published_at": null,
+      "printed_name": "Scar for a Scar",
+      "printed_name_html": [
+        "<p>Scar for a Scar</p>\n"
+      ],
+      "printed_typebox": "Ninja Action - Attack",
+      "printed_typebox_html": [
+        "<p>Ninja Action - Attack</p>\n"
+      ],
+      "printed_pitch": 1,
+      "printed_cost": "0",
+      "printed_power": "4",
+      "printed_defense": "2",
+      "printed_intellect": "",
+      "printed_life": "",
+      "printed_rules_text": "When you play Scar for a Scar, if you have less {h} than an opposing hero, it gains **go again**.",
+      "printed_flavor_text": "",
+      "printed_artist": "Arif Wijaya",
+      "printed_traitbox": "",
+      "orientation": "vertical",
+      "core_talent": null,
+      "languages": {
+        "it": "IT_1HP396",
+        "es": "ES_1HP396",
+        "de": "DE_1HP396",
+        "fr": "FR_AGB012",
+        "en": "1HP396",
+        "ja": "JA_AGB012"
+      },
+      "faces": [
+        {
+          "layout_position": 10,
+          "image": {
+            "small": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/small/I-WTR191.webp",
+            "normal": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/normal/I-WTR191.webp",
+            "large": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/I-WTR191.webp"
+          }
+        }
+      ]
+    },
+    {
+      "card_id": "scar-for-a-scar-2",
+      "print_id": "UPR210",
+      "face_id": "UPR210",
+      "is_published": true,
+      "published_at": null,
+      "printed_name": "Scar for a Scar",
+      "printed_name_html": [
+        "<p>Scar for a Scar</p>\n"
+      ],
+      "printed_typebox": "Generic Action - Attack",
+      "printed_typebox_html": [
+        "<p>Generic Action - Attack</p>\n"
+      ],
+      "printed_pitch": 2,
+      "printed_cost": "0",
+      "printed_power": "3",
+      "printed_defense": "2",
+      "printed_intellect": "",
+      "printed_life": "",
+      "printed_rules_text": "When you play Scar for a Scar, if you have less {g} than an opposing hero, it gains **go again**.",
+      "printed_flavor_text": "",
+      "printed_artist": "Arif Wijaya",
+      "printed_traitbox": "",
+      "orientation": "vertical",
+      "core_talent": null,
+      "languages": {
+        "it": "IT_1HP397",
+        "es": "ES_1HP397",
+        "de": "DE_1HP397",
+        "fr": "FR_1HP397",
+        "en": "1HP397"
+      },
+      "faces": [
+        {
+          "layout_position": 10,
+          "image": {
+            "small": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/small/UPR210.webp",
+            "normal": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/normal/UPR210.webp",
+            "large": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/UPR210.webp"
+          }
+        }
+      ]
+    },
+    {
+      "card_id": "scar-for-a-scar-3",
+      "print_id": "UPR211",
+      "face_id": "UPR211",
+      "is_published": true,
+      "published_at": null,
+      "printed_name": "Scar for a Scar",
+      "printed_name_html": [
+        "<p>Scar for a Scar</p>\n"
+      ],
+      "printed_typebox": "Generic Action - Attack",
+      "printed_typebox_html": [
+        "<p>Generic Action - Attack</p>\n"
+      ],
+      "printed_pitch": 3,
+      "printed_cost": "0",
+      "printed_power": "2",
+      "printed_defense": "2",
+      "printed_intellect": "",
+      "printed_life": "",
+      "printed_rules_text": "When you play Scar for a Scar, if you have less {g} than an opposing hero, it gains **go again**.",
+      "printed_flavor_text": "",
+      "printed_artist": "Arif Wijaya",
+      "printed_traitbox": "",
+      "orientation": "vertical",
+      "core_talent": null,
+      "languages": {
+        "it": "IT_1HP398",
+        "es": "ES_1HP398",
+        "de": "DE_1HP398",
+        "fr": "FR_1HP398",
+        "en": "1HP398"
+      },
+      "faces": [
+        {
+          "layout_position": 10,
+          "image": {
+            "small": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/small/UPR211.webp",
+            "normal": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/normal/UPR211.webp",
+            "large": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/UPR211.webp"
+          }
+        }
+      ]
+    }
+  ]
+}

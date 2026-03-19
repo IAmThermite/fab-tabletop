@@ -13,22 +13,23 @@ defmodule Tabletop.Cards.Card do
     field :tokens, {:array, :string}, default: []
     field :image_url, :string
     field :image_phash, :integer
+    field :pitch, :integer
 
     timestamps(type: :utc_datetime)
   end
 
   @doc false
-  def import_changeset(card, attrs) do
+  def import_changeset(card, attrs, opts \\ []) do
     card
-    |> cast(attrs, [:name, :print_id, :image_url])
+    |> cast(attrs, [:name, :print_id, :image_url, :pitch])
     |> validate_required([:name, :print_id, :image_url])
     |> put_normalized_fields()
-    |> put_image_phash()
+    |> put_image_phash(opts)
   end
 
   def generated_changeset(card, attrs) do
     card
-    |> cast(attrs, [:name, :print_id, :image_url, :tokens, :normalized_name, :image_phash])
+    |> cast(attrs, [:name, :print_id, :image_url, :tokens, :normalized_name, :image_phash, :pitch])
     |> validate_required([:name, :print_id, :image_url, :tokens, :normalized_name, :image_phash])
   end
 
@@ -48,13 +49,14 @@ defmodule Tabletop.Cards.Card do
     end
   end
 
-  defp put_image_phash(changeset) do
+  defp put_image_phash(changeset, opts) do
     case get_change(changeset, :image_url) do
       nil ->
         changeset
 
       image_url ->
-        phash = Tabletop.Cards.PHash.compute(image_url)
+        req_options = Keyword.get(opts, :req_options, [])
+        phash = Tabletop.Cards.PHash.compute(image_url, req_options)
         put_change(changeset, :image_phash, phash)
     end
   end

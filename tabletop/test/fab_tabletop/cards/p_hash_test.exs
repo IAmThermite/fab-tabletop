@@ -3,25 +3,33 @@ defmodule Tabletop.Cards.PHashTest do
 
   alias Tabletop.Cards.PHash
 
-  @fixture_path "priv/cards/scar-for-a-scar.webp"
+  # Each entry: {fixture_path, expected_hash}
+  # Add new test cases here when importing new card sets.
+  @hash_cases [
+    {"priv/cards/test/scar-for-a-scar-1.webp", 2_807_610_692_119_649_180},
+    {"priv/cards/test/scar-for-a-scar-2.webp", 2_806_500_152_224_861_084},
+    {"priv/cards/test/scar-for-a-scar-3.webp", 2_806_500_152_224_861_084},
+  ]
+
+  @fixture_path "priv/cards/test/scar-for-a-scar-1.webp"
   @art_output_path "/tmp/test_scar_art_crop.png"
 
   describe "compute_from_file/1" do
-    test "produces a 16-char hex hash from a webp image" do
+    for {path, expected_hash} <- @hash_cases do
+      test "computes expected hash for #{Path.basename(path, ".webp")}" do
+        assert PHash.compute_from_file(unquote(path)) == unquote(expected_hash)
+      end
+    end
+
+    test "produces a 64-bit integer hash" do
       hash = PHash.compute_from_file(@fixture_path)
-      assert is_binary(hash)
-      assert String.length(hash) == 16
-      assert String.match?(hash, ~r/^[0-9a-f]{16}$/)
+      assert is_integer(hash)
     end
 
     test "is deterministic" do
       h1 = PHash.compute_from_file(@fixture_path)
       h2 = PHash.compute_from_file(@fixture_path)
       assert h1 == h2
-    end
-
-    test "computes expected hash for scar-for-a-scar" do
-      assert PHash.compute_from_file(@fixture_path) == "26f6a30c93615b9c"
     end
 
     test "returns nil for invalid file" do
@@ -50,10 +58,10 @@ defmodule Tabletop.Cards.PHashTest do
     end
 
     test "completely different hashes have high distance" do
-      assert PHash.hamming_distance("0000000000000000", "ffffffffffffffff") == 64
+      assert PHash.hamming_distance(0x0000000000000000, 0xFFFFFFFFFFFFFFFF) == 64
     end
 
-    test "returns 64 for mismatched lengths" do
+    test "returns 64 for non-integer inputs" do
       assert PHash.hamming_distance("abc", "def") == 64
     end
   end

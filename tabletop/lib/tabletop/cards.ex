@@ -18,8 +18,7 @@ defmodule Tabletop.Cards do
 
   def find_by_p_hash_similarity(image_phash, threshold \\ 10) do
     from(c in Card,
-      where:
-        fragment("bit_count((? # ?)::bit(64))", c.image_phash, ^image_phash) < ^threshold,
+      where: fragment("bit_count((? # ?)::bit(64))", c.image_phash, ^image_phash) < ^threshold,
       order_by: fragment("bit_count((? # ?)::bit(64))", c.image_phash, ^image_phash),
       limit: 5
     )
@@ -27,14 +26,18 @@ defmodule Tabletop.Cards do
     |> IO.inspect(label: "find_by_p_hash_similarity")
   end
 
+  # Scoring formula:
+  # - Trigram similarity of the full normalized name (good for close matches)
+  # - Fraction of the card's tokens found in OCR tokens × 4 (robust to OCR noise/extra words)
+  # - Phonetic matches (catches misspellings like CASARD→GUARD)
   @score_sql """
-  similarity(?, ?) * 3
-  + (SELECT count(*) FROM unnest(?::text[]) a(w) WHERE w = ANY(?::text[]))
-  + (SELECT count(*) FROM (
+  similarity(?, ?) * 2
+  + (SELECT count(*)::float / GREATEST(array_length(?, 1), 1) FROM unnest(?::text[]) a(w) WHERE w = ANY(?::text[])) * 4
+  + (SELECT count(*)::float / GREATEST(array_length(?, 1), 1) FROM (
        SELECT dmetaphone(w) FROM unnest(?::text[]) a(w)
        INTERSECT
        SELECT dmetaphone(w) FROM unnest(?::text[]) b(w)
-     ) s)
+     ) s) * 2
   """
 
   def fuzzy_match_name(ocr_text) do
@@ -60,7 +63,9 @@ defmodule Tabletop.Cards do
             c.normalized_name,
             ^normalized,
             c.tokens,
+            c.tokens,
             ^tokens,
+            c.tokens,
             c.tokens,
             ^tokens
           )
@@ -75,6 +80,14 @@ defmodule Tabletop.Cards do
     Repo.all(Card)
   end
 
+  def find_pitch_variants(card) do
+    from(c in Card,
+      where: c.normalized_name == ^card.normalized_name and not is_nil(c.pitch),
+      order_by: c.pitch
+    )
+    |> Repo.all()
+  end
+
   def card_as_json_string(card) do
     %{
       name: card.name,
@@ -82,7 +95,8 @@ defmodule Tabletop.Cards do
       normalized_name: card.normalized_name,
       tokens: card.tokens,
       image_url: card.image_url,
-      image_phash: card.image_phash
+      image_phash: card.image_phash,
+      pitch: card.pitch
     }
     |> Jason.encode!()
   end

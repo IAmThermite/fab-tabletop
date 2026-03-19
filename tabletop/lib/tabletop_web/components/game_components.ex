@@ -417,6 +417,11 @@ defmodule TabletopWeb.GameComponents do
   defp tile_color_class(%{owner: "opponent", type: :effect}),
     do: "bg-secondary/60 text-secondary-content border border-secondary"
 
+  defp pitch_color_class(1), do: "bg-red-500"
+  defp pitch_color_class(2), do: "bg-yellow-400"
+  defp pitch_color_class(3), do: "bg-blue-500"
+  defp pitch_color_class(_), do: "bg-base-300"
+
   attr :open_cards, :list, required: true
 
   def card_popouts(assigns) do
@@ -450,6 +455,27 @@ defmodule TabletopWeb.GameComponents do
             alt={card.card.name}
             class="w-full rounded"
           />
+          <%= if length(Map.get(card, :pitch_variants, [])) > 1 do %>
+            <div class="flex items-center justify-center gap-2 pt-1">
+              <%= for variant <- card.pitch_variants do %>
+                <button
+                  type="button"
+                  phx-click="switch_pitch"
+                  phx-value-id={card.id}
+                  phx-value-pitch={variant.pitch}
+                  class={[
+                    "w-6 h-6 rounded-full border-2 transition-transform",
+                    pitch_color_class(variant.pitch),
+                    if(variant.pitch == card.card.pitch,
+                      do: "scale-125 border-base-content",
+                      else: "border-transparent opacity-60 hover:opacity-100"
+                    )
+                  ]}
+                  title={"Pitch #{variant.pitch}"}
+                />
+              <% end %>
+            </div>
+          <% end %>
         </div>
       </div>
     <% end %>

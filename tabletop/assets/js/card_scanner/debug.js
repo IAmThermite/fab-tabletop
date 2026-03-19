@@ -92,7 +92,7 @@ export function showDebugPanel(result, ocrText, confidence) {
     cardCol.style.cssText = "display: flex; flex-direction: column; gap: 2px; border-left: 1px solid rgba(255,255,255,0.15); padding-left: 8px;"
     const cardLbl = document.createElement("span")
     cardLbl.style.cssText = "font-size: 10px; opacity: 0.7;"
-    cardLbl.textContent = result.rotation ? `Card (rotated ${result.rotation}\u00b0)` : "Card capture"
+    cardLbl.textContent = result.angle ? `Card (deskewed ${Math.abs(result.angle).toFixed(1)}\u00b0)` : "Card capture"
     cardCol.appendChild(cardLbl)
     const cardImg = document.createElement("img")
     cardImg.src = result.cardCanvas.toDataURL()
@@ -114,7 +114,7 @@ export function showDebugPanel(result, ocrText, confidence) {
     artCol.style.cssText = "display: flex; flex-direction: column; gap: 2px; border-left: 1px solid rgba(255,255,255,0.15); padding-left: 8px;"
     const artLbl = document.createElement("span")
     artLbl.style.cssText = "font-size: 10px; opacity: 0.7;"
-    artLbl.textContent = result.rotation ? `Art (rotated ${result.rotation}\u00b0)` : "Art region"
+    artLbl.textContent = "Art region"
     artCol.appendChild(artLbl)
     const artImg = document.createElement("img")
     artImg.src = result.artCanvas.toDataURL()
@@ -140,7 +140,7 @@ export function showDebugPanel(result, ocrText, confidence) {
 
   const resultEl = document.createElement("div")
   resultEl.style.cssText = "margin-top: 4px; padding: 4px 6px; background: rgba(255,255,255,0.1); border-radius: 4px;"
-  const rotationLabel = result.rotation ? ` | rotation: ${result.rotation}\u00b0` : ""
+  const rotationLabel = result.angle ? ` | angle: ${Math.abs(result.angle).toFixed(1)}\u00b0` : ""
   const hashLabel = result.artHash ? ` | pHash: ${result.artHash}` : ""
   resultEl.innerHTML = `
     <div style="opacity: 0.7; font-size: 10px;">Best result (confidence: ${confidence ?? "?"}${rotationLabel}${hashLabel})</div>
@@ -150,6 +150,57 @@ export function showDebugPanel(result, ocrText, confidence) {
 
   // Append to body so LiveView patches don't remove it
   document.body.appendChild(_debugPanel)
+}
+
+/**
+ * Draw a quadrilateral outline over the detected card corners.
+ * quad: array of 4 {x, y} points in the detect-region's canvas pixel space.
+ * detectRegion: {sx, sy} offset of the detect region in canvas pixels.
+ */
+export function showCardQuad(canvasRect, quad, detectRegion, scaleX, scaleY, isFlipped) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+  svg.style.cssText = `
+    position: fixed;
+    left: ${canvasRect.left}px; top: ${canvasRect.top}px;
+    width: ${canvasRect.width}px; height: ${canvasRect.height}px;
+    pointer-events: none; z-index: 9998; overflow: visible;
+  `
+
+  const points = quad.map(({ x, y }) => {
+    // Translate from detect-region coords back to full canvas pixel coords
+    let cx = (x + detectRegion.sx) / scaleX
+    let cy = (y + detectRegion.sy) / scaleY
+    if (isFlipped) {
+      cx = canvasRect.width - cx
+      cy = canvasRect.height - cy
+    }
+    return `${cx},${cy}`
+  }).join(" ")
+
+  const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon")
+  poly.setAttribute("points", points)
+  poly.setAttribute("fill", "none")
+  poly.setAttribute("stroke", "oklch(0.85 0.20 145)")
+  poly.setAttribute("stroke-width", "2")
+  poly.setAttribute("stroke-linejoin", "round")
+  svg.appendChild(poly)
+
+  const label = document.createElementNS("http://www.w3.org/2000/svg", "text")
+  const firstPt = quad[0]
+  let lx = (firstPt.x + detectRegion.sx) / scaleX
+  const ly = (firstPt.y + detectRegion.sy) / scaleY - 6
+  if (isFlipped) lx = canvasRect.width - lx
+  label.setAttribute("x", lx)
+  label.setAttribute("y", ly)
+  label.setAttribute("fill", "oklch(0.85 0.20 145)")
+  label.setAttribute("font-size", "10")
+  label.setAttribute("font-weight", "600")
+  label.setAttribute("font-family", "monospace")
+  label.textContent = "Card"
+  svg.appendChild(label)
+
+  document.body.appendChild(svg)
+  return svg
 }
 
 export function showBoundingBox(_container, canvasRect, cssX, cssY, cssW, cssH, isFlipped, color, label) {

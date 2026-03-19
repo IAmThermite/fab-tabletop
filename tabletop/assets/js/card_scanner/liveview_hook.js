@@ -4,9 +4,9 @@
 // 1. Run OpenCV to detect the card, extract title for OCR and art for pHash
 // 2. If OpenCV fails, fall back to a small fixed-region OCR around the click
 
-import { preprocessForOCR, cropMargins, rotateCanvas90, imageDataToCanvas } from "./preprocessing"
+import { preprocessForOCR, cropMargins, imageDataToCanvas } from "./preprocessing"
 import { preloadOCR, runOCR } from "./ocr"
-import { showDebugPanel, showBoundingBox, isDebugEnabled } from "./debug"
+import { showDebugPanel, showBoundingBox, showCardQuad, isDebugEnabled } from "./debug"
 import { computePHash } from "./p_hash"
 
 const LOG = "[CardScanner]"
@@ -54,12 +54,11 @@ function detectCard(imageData) {
       worker.removeEventListener("message", handler)
 
       if (event.data.type === "cardDetected") {
-        resolve({
-          card: event.data.card,
-          title: event.data.title,
-          art: event.data.art,
-          rotation: event.data.rotation || 0,
-        })
+        const { card, cardImageData, quad, title, art, angle } = event.data
+        // Reconstruct ImageData from the transferred buffer
+        const cardPixels = new Uint8ClampedArray(cardImageData)
+        const deskewedImageData = new ImageData(cardPixels, card.width, card.height)
+        resolve({ card, deskewedImageData, quad, title, art, angle })
       } else {
         resolve(null)
       }
@@ -145,6 +144,10 @@ export function setupCardLookup(hook, canvasEl, gameArea, opts = {}) {
 
         if (result.artHash != null) {
           payload.phash = result.artHash.toString()
+        }
+
+        if (result.detectedPitch != null) {
+          payload.detected_pitch = result.detectedPitch
         }
 
         if (ocrCandidates.length > 0 || payload.phash != null) {
@@ -261,6 +264,60 @@ async function processAndOCR(imageData) {
   }
 }
 
+// Detect pitch color from the colored strip at the top of a deskewed card
+// Returns { pitch: 1|2|3, confidence: number } or null if uncertain
+function detectPitchColor(imageData, cardW, cardH) {
+  const data = imageData.data
+  // Sample the pitch strip: Y 1%-4%, X 25%-75% (avoids corners/edges)
+  const y0 = Math.round(cardH * 0.01)
+  const y1 = Math.round(cardH * 0.04)
+  const x0 = Math.round(cardW * 0.25)
+  const x1 = Math.round(cardW * 0.75)
+
+  let redVotes = 0, yellowVotes = 0, blueVotes = 0, totalVotes = 0
+
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = (y * cardW + x) * 4
+      const r = data[i], g = data[i + 1], b = data[i + 2]
+
+      // RGB to HSV
+      const max = Math.max(r, g, b), min = Math.min(r, g, b)
+      const delta = max - min
+      const v = max / 255
+      const s = max === 0 ? 0 : delta / max
+
+      if (s < 0.20 || v < 0.15) continue // Skip neutral/dark pixels
+
+      let h = 0
+      if (delta > 0) {
+        if (max === r) h = 60 * (((g - b) / delta) % 6)
+        else if (max === g) h = 60 * ((b - r) / delta + 2)
+        else h = 60 * ((r - g) / delta + 4)
+        if (h < 0) h += 360
+      }
+
+      totalVotes++
+      if (h < 25 || h > 340) redVotes++
+      else if (h >= 25 && h <= 65) yellowVotes++
+      else if (h >= 190 && h <= 260) blueVotes++
+    }
+  }
+
+  if (totalVotes === 0) return null
+
+  const redRatio = redVotes / totalVotes
+  const yellowRatio = yellowVotes / totalVotes
+  const blueRatio = blueVotes / totalVotes
+
+  const threshold = 0.60
+  if (redRatio > threshold) return { pitch: 1, confidence: redRatio }
+  if (yellowRatio > threshold) return { pitch: 2, confidence: yellowRatio }
+  if (blueRatio > threshold) return { pitch: 3, confidence: blueRatio }
+
+  return null
+}
+
 function fadeBox(box) {
   setTimeout(() => {
     box.style.opacity = "0"
@@ -303,82 +360,31 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
     const detected = await detectCard(detectCapture.imageData)
 
     if (detected) {
-      const { card, title, art, rotation } = detected
-      const ox = detectCapture.sx
-      const oy = detectCapture.sy
+      const { card, deskewedImageData, quad, title, art, angle } = detected
 
-      const absCard = { x: card.x + ox, y: card.y + oy, width: card.width, height: card.height }
-      const absTitle = { x: title.x + ox, y: title.y + oy, width: title.width, height: title.height }
-      const absArt = { x: art.x + ox, y: art.y + oy, width: art.width, height: art.height }
-
-      console.log(`${LOG} Card: ${absCard.width}x${absCard.height} at (${absCard.x},${absCard.y}), rotation: ${rotation}`)
-      console.log(`${LOG} Title: ${absTitle.width}x${absTitle.height}`)
-      console.log(`${LOG} Art: ${absArt.width}x${absArt.height}`)
-
-      // Show card bounding box (blue)
-      if (container && isDebugEnabled()) {
-        fadeBox(showBoundingBox(
-          container, rect,
-          absCard.x / scaleX, absCard.y / scaleY,
-          absCard.width / scaleX, absCard.height / scaleY,
-          isFlipped, "oklch(0.70 0.15 250)", rotation ? `Card ↻${rotation}°` : "Card",
-        ))
+      if (container && isDebugEnabled() && quad) {
+        fadeBox(showCardQuad(rect, quad, detectCapture, scaleX, scaleY, isFlipped))
       }
 
-      // Capture full card region for debug
-      let cardCanvas = imageDataToCanvas(ctx.getImageData(absCard.x, absCard.y, absCard.width, absCard.height))
-      if (rotation === 90) {
-        cardCanvas = rotateCanvas90(cardCanvas, "cw")
-      }
+      console.log(`${LOG} Card: ${card.width}x${card.height}, angle: ${angle.toFixed(1)}°`)
+      console.log(`${LOG} Title: ${title.width}x${title.height} at (${title.x},${title.y})`)
+      console.log(`${LOG} Art: ${art.width}x${art.height} at (${art.x},${art.y})`)
 
-      // OCR on detected title region
-      if (absTitle.width > 10 && absTitle.height > 5) {
-        if (container && isDebugEnabled()) {
-          fadeBox(showBoundingBox(
-            container, rect,
-            absTitle.x / scaleX, absTitle.y / scaleY,
-            absTitle.width / scaleX, absTitle.height / scaleY,
-            isFlipped, "oklch(0.75 0.18 55)", "Title",
-          ))
-        }
+      // The worker already deskewed the card — work from the straightened image
+      const cardCanvas = imageDataToCanvas(deskewedImageData)
+      const cardCtx = cardCanvas.getContext("2d")
 
-        let titleImageData = ctx.getImageData(absTitle.x, absTitle.y, absTitle.width, absTitle.height)
-
-        if (rotation === 90) {
-          const titleCanvas = imageDataToCanvas(titleImageData)
-          const cwCanvas = rotateCanvas90(titleCanvas, "cw")
-          const ccwCanvas = rotateCanvas90(titleCanvas, "ccw")
-          const [cwResult, ccwResult] = await Promise.all([
-            processAndOCR(cwCanvas.getContext("2d").getImageData(0, 0, cwCanvas.width, cwCanvas.height)),
-            processAndOCR(ccwCanvas.getContext("2d").getImageData(0, 0, ccwCanvas.width, ccwCanvas.height)),
-          ])
-          console.log(`${LOG} Title OCR (CW): "${cwResult.text}" (${cwResult.confidence})`)
-          console.log(`${LOG} Title OCR (CCW): "${ccwResult.text}" (${ccwResult.confidence})`)
-          result = cwResult.confidence >= ccwResult.confidence ? { ...cwResult, rotation } : { ...ccwResult, rotation }
-        } else {
-          result = await processAndOCR(titleImageData)
-          console.log(`${LOG} Title OCR: "${result.text}" (${result.confidence})`)
-        }
+      // OCR on title region (already upright from the deskewed card)
+      if (title.width > 10 && title.height > 5) {
+        const titleImageData = cardCtx.getImageData(title.x, title.y, title.width, title.height)
+        result = await processAndOCR(titleImageData)
+        console.log(`${LOG} Title OCR: "${result.text}" (${result.confidence})`)
       }
 
       // Extract art region and compute perceptual hash
-      if (absArt.width > 20 && absArt.height > 20) {
-        if (container && isDebugEnabled()) {
-          fadeBox(showBoundingBox(
-            container, rect,
-            absArt.x / scaleX, absArt.y / scaleY,
-            absArt.width / scaleX, absArt.height / scaleY,
-            isFlipped, "oklch(0.70 0.15 195)", "Art",
-          ))
-        }
-
-        const artImageData = ctx.getImageData(absArt.x, absArt.y, absArt.width, absArt.height)
-        let artCanvas = imageDataToCanvas(artImageData)
-
-        if (rotation === 90) {
-          artCanvas = rotateCanvas90(artCanvas, "cw")
-        }
-
+      if (art.width > 20 && art.height > 20) {
+        const artImageData = cardCtx.getImageData(art.x, art.y, art.width, art.height)
+        const artCanvas = imageDataToCanvas(artImageData)
         const artHash = computePHash(artCanvas)
         console.log(`${LOG} Art pHash: ${artHash}`)
 
@@ -388,12 +394,21 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
         }
       }
 
-      // Attach card-level debug info to result (create stub if OCR didn't produce one)
+      // Detect pitch color from the strip at the top of the card
+      const pitchResult = detectPitchColor(deskewedImageData, card.width, card.height)
+      if (pitchResult) {
+        console.log(`${LOG} Pitch: ${pitchResult.pitch} (confidence: ${(pitchResult.confidence * 100).toFixed(0)}%)`)
+      }
+
+      // Attach card-level debug info
       if (!result) {
         result = { text: "", confidence: 0 }
       }
       result.cardCanvas = cardCanvas
-      result.rotation = rotation
+      result.angle = angle
+      if (pitchResult) {
+        result.detectedPitch = pitchResult.pitch
+      }
     } else {
       console.log(`${LOG} OpenCV found no card`)
     }

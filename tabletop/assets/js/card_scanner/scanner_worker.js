@@ -49,7 +49,7 @@ function onReady(module) {
 const MIN_CARD_AREA_RATIO = 0.02
 const MAX_CARD_AREA_RATIO = 0.60
 
-// Portrait card aspect ratio: height/width ~1.2 to 1.8 (standard is ~1.4)
+// Portrait card aspect ratio: long/short ~1.2 to 2.0 (standard FaB is ~1.4)
 const MIN_ASPECT = 1.1
 const MAX_ASPECT = 2.0
 
@@ -59,76 +59,101 @@ const TITLE_H_RATIO = 0.04
 const TITLE_X_INSET = 0.19
 
 // Art region: main illustration area
-const ART_Y_RATIO = 0.11
-const ART_H_RATIO = 0.505
-const ART_X_INSET = 0.06
+const ART_Y_RATIO = 0.16
+const ART_H_RATIO = 0.42
+const ART_X_INSET = 0.10
 
-function clampRect(rect, imgW, imgH) {
-  let { x, y, width, height } = rect
-  x = Math.max(0, Math.min(x, imgW - 1))
-  y = Math.max(0, Math.min(y, imgH - 1))
-  width = Math.min(width, imgW - x)
-  height = Math.min(height, imgH - y)
-  return { x, y, width, height }
+/**
+ * Use approxPolyDP to find the best 4-point polygon approximation of a contour.
+ * Returns null if no good quad is found, or an array of 4 {x,y} points.
+ */
+function findQuad(cv, contour) {
+  const peri = cv.arcLength(contour, true)
+
+  // Try a range of epsilon values to find a good 4-sided polygon
+  for (let eps = 0.02; eps <= 0.10; eps += 0.01) {
+    const approx = new cv.Mat()
+    cv.approxPolyDP(contour, approx, eps * peri, true)
+
+    if (approx.rows === 4) {
+      const pts = []
+      for (let i = 0; i < 4; i++) {
+        pts.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] })
+      }
+      approx.delete()
+      return pts
+    }
+    approx.delete()
+  }
+  return null
 }
 
-function extractRegions(cardX, cardY, cardW, cardH, imgW, imgH) {
-  const title = clampRect({
-    x: cardX + Math.round(cardW * TITLE_X_INSET),
-    y: cardY + Math.round(cardH * TITLE_Y_RATIO),
-    width: Math.round(cardW * (1 - 2 * TITLE_X_INSET)),
-    height: Math.round(cardH * TITLE_H_RATIO),
-  }, imgW, imgH)
+/**
+ * Order 4 corner points as [top-left, top-right, bottom-right, bottom-left].
+ * Uses sum (x+y) and difference (x-y) method which is robust to any rotation.
+ */
+function orderCorners(pts) {
+  const sums = pts.map(p => p.x + p.y)
+  const diffs = pts.map(p => p.x - p.y)
 
-  const art = clampRect({
-    x: cardX + Math.round(cardW * ART_X_INSET),
-    y: cardY + Math.round(cardH * ART_Y_RATIO),
-    width: Math.round(cardW * (1 - 2 * ART_X_INSET)),
-    height: Math.round(cardH * ART_H_RATIO),
-  }, imgW, imgH)
+  // Top-left has smallest sum, bottom-right has largest sum
+  const tl = pts[sums.indexOf(Math.min(...sums))]
+  const br = pts[sums.indexOf(Math.max(...sums))]
+  // Top-right has largest diff, bottom-left has smallest diff
+  const tr = pts[diffs.indexOf(Math.max(...diffs))]
+  const bl = pts[diffs.indexOf(Math.min(...diffs))]
 
-  return { title, art }
+  return [tl, tr, br, bl]
 }
 
-function findBestContour(contours, imgArea, centerX, centerY, minAspect, maxAspect) {
-  let bestCard = null
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+function findBestContour(cv, contours, imgArea, centerX, centerY) {
+  let bestQuad = null
   let bestDist = Infinity
-  let bestApproxCount = 0
+  let bestArea = 0
 
   for (let i = 0; i < contours.size(); i++) {
-    let cnt = contours.get(i)
-    let area = cv.contourArea(cnt)
+    const cnt = contours.get(i)
+    const area = cv.contourArea(cnt)
 
     if (area < imgArea * MIN_CARD_AREA_RATIO) continue
     if (area > imgArea * MAX_CARD_AREA_RATIO) continue
 
-    let peri = cv.arcLength(cnt, true)
-    let approx = new cv.Mat()
-    cv.approxPolyDP(cnt, approx, 0.02 * peri, true)
+    const quad = findQuad(cv, cnt)
+    if (!quad) continue
 
-    let rect = cv.boundingRect(cnt)
+    // Check aspect ratio using the actual corner distances
+    const ordered = orderCorners(quad)
+    const widthTop = dist(ordered[0], ordered[1])
+    const widthBot = dist(ordered[3], ordered[2])
+    const heightLeft = dist(ordered[0], ordered[3])
+    const heightRight = dist(ordered[1], ordered[2])
 
-    let aspect = rect.height / rect.width
-    if (aspect < minAspect || aspect > maxAspect) {
-      approx.delete()
-      continue
+    const avgW = (widthTop + widthBot) / 2
+    const avgH = (heightLeft + heightRight) / 2
+    const longSide = Math.max(avgW, avgH)
+    const shortSide = Math.min(avgW, avgH)
+
+    if (shortSide < 1) continue
+    const aspect = longSide / shortSide
+    if (aspect < MIN_ASPECT || aspect > MAX_ASPECT) continue
+
+    // Prefer contour closest to center of the image
+    const cx = quad.reduce((s, p) => s + p.x, 0) / 4
+    const cy = quad.reduce((s, p) => s + p.y, 0) / 4
+    const d = Math.hypot(cx - centerX, cy - centerY)
+
+    if (d < bestDist) {
+      bestDist = d
+      bestQuad = ordered
+      bestArea = area
     }
-
-    if (approx.rows >= 4 && approx.rows <= 12) {
-      const cx = rect.x + rect.width / 2
-      const cy = rect.y + rect.height / 2
-      const dist = Math.hypot(cx - centerX, cy - centerY)
-      if (dist < bestDist) {
-        bestDist = dist
-        bestCard = rect
-        bestApproxCount = approx.rows
-      }
-    }
-
-    approx.delete()
   }
 
-  return { bestCard, bestDist, bestApproxCount }
+  return { bestQuad, bestDist, bestArea }
 }
 
 self.onmessage = function (event) {
@@ -168,73 +193,104 @@ self.onmessage = function (event) {
     const centerX = imageData.width / 2
     const centerY = imageData.height / 2
 
-    // Pass 1: Look for portrait-oriented cards
-    let { bestCard, bestDist, bestApproxCount } = findBestContour(
-      contours, imgArea, centerX, centerY, MIN_ASPECT, MAX_ASPECT
+    let { bestQuad, bestDist } = findBestContour(
+      cv, contours, imgArea, centerX, centerY
     )
-    let rotation = 0
 
-    // Pass 2: If no portrait card found, look for landscape (90-degree rotated)
-    if (!bestCard) {
-      const landscape = findBestContour(
-        contours, imgArea, centerX, centerY, 1 / MAX_ASPECT, 1 / MIN_ASPECT
-      )
-      if (landscape.bestCard) {
-        bestCard = landscape.bestCard
-        bestDist = landscape.bestDist
-        bestApproxCount = landscape.bestApproxCount
-        rotation = 90
-        console.log(`${LOG} Detected landscape card (90° rotation)`)
-      }
-    }
+    if (bestQuad) {
+      // bestQuad is ordered [TL, TR, BR, BL]
+      // Determine orientation: is the card portrait or landscape?
+      const widthTop = dist(bestQuad[0], bestQuad[1])
+      const heightLeft = dist(bestQuad[0], bestQuad[3])
 
-    if (bestCard) {
-      let cardX = bestCard.x
-      let cardY = bestCard.y
-      let cardW = bestCard.width
-      let cardH = bestCard.height
-
-      let title, art
-      if (rotation === 90) {
-        // Card is landscape — title is along the left or right short edge
-        // We'll report the raw landscape rect and let the main thread handle rotation
-        // Compute regions as if rotated to portrait (swap W/H for ratio calculations)
-        const portraitW = cardH
-        const portraitH = cardW
-
-        // Title along the top of the "virtual portrait" = left edge of landscape
-        title = clampRect({
-          x: cardX,
-          y: cardY + Math.round(portraitW * TITLE_X_INSET),
-          width: Math.round(portraitH * TITLE_H_RATIO),
-          height: Math.round(portraitW * (1 - 2 * TITLE_X_INSET)),
-        }, imageData.width, imageData.height)
-
-        art = clampRect({
-          x: cardX + Math.round(portraitH * ART_Y_RATIO),
-          y: cardY + Math.round(portraitW * ART_X_INSET),
-          width: Math.round(portraitH * ART_H_RATIO),
-          height: Math.round(portraitW * (1 - 2 * ART_X_INSET)),
-        }, imageData.width, imageData.height)
+      let cardW, cardH, srcCorners
+      if (heightLeft >= widthTop) {
+        // Already portrait: top edge is the short side
+        cardW = Math.round(widthTop)
+        cardH = Math.round(heightLeft)
+        srcCorners = bestQuad // TL, TR, BR, BL maps to upright
       } else {
-        const regions = extractRegions(cardX, cardY, cardW, cardH, imageData.width, imageData.height)
-        title = regions.title
-        art = regions.art
+        // Landscape: the "top" of the card is actually the left edge
+        // Rotate the mapping: BL→TL, TL→TR, TR→BR, BR→BL
+        cardW = Math.round(heightLeft)
+        cardH = Math.round(widthTop)
+        srcCorners = [bestQuad[3], bestQuad[0], bestQuad[1], bestQuad[2]]
+      }
+
+      // Compute approximate angle for logging
+      const dx = bestQuad[1].x - bestQuad[0].x
+      const dy = bestQuad[1].y - bestQuad[0].y
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI)
+
+      // Source points (the detected corners in the original image)
+      let srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+        srcCorners[0].x, srcCorners[0].y,
+        srcCorners[1].x, srcCorners[1].y,
+        srcCorners[2].x, srcCorners[2].y,
+        srcCorners[3].x, srcCorners[3].y,
+      ])
+
+      // Destination points (upright rectangle)
+      let dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+        0, 0,
+        cardW, 0,
+        cardW, cardH,
+        0, cardH,
+      ])
+
+      // Perspective warp to deskew the card
+      let M = cv.getPerspectiveTransform(srcPts, dstPts)
+      let warped = new cv.Mat()
+      cv.warpPerspective(src, warped, M, new cv.Size(cardW, cardH))
+
+      // Extract the deskewed card as RGBA ImageData
+      let warpedRGBA = new cv.Mat()
+      if (warped.channels() === 4) {
+        warpedRGBA = warped
+      } else if (warped.channels() === 3) {
+        cv.cvtColor(warped, warpedRGBA, cv.COLOR_RGB2RGBA)
+      } else {
+        cv.cvtColor(warped, warpedRGBA, cv.COLOR_GRAY2RGBA)
+      }
+
+      const cardData = new Uint8ClampedArray(warpedRGBA.data)
+
+      // Extract title and art regions from the deskewed card
+      const title = {
+        x: Math.round(cardW * TITLE_X_INSET),
+        y: Math.round(cardH * TITLE_Y_RATIO),
+        width: Math.round(cardW * (1 - 2 * TITLE_X_INSET)),
+        height: Math.round(cardH * TITLE_H_RATIO),
+      }
+
+      const art = {
+        x: Math.round(cardW * ART_X_INSET),
+        y: Math.round(cardH * ART_Y_RATIO),
+        width: Math.round(cardW * (1 - 2 * ART_X_INSET)),
+        height: Math.round(cardH * ART_H_RATIO),
       }
 
       const cardArea = cardW * cardH
-      console.log(`${LOG} Card: ${cardW}x${cardH} at (${cardX},${cardY}), vertices: ${bestApproxCount}, area: ${(cardArea / imgArea * 100).toFixed(1)}%, dist: ${bestDist.toFixed(0)}, rotation: ${rotation}`)
+      console.log(`${LOG} Card: ${cardW}x${cardH}, angle: ${angle.toFixed(1)}°, area: ${(cardArea / imgArea * 100).toFixed(1)}%, dist: ${bestDist.toFixed(0)}`)
       console.log(`${LOG} Title: ${title.width}x${title.height} at (${title.x},${title.y})`)
       console.log(`${LOG} Art: ${art.width}x${art.height} at (${art.x},${art.y})`)
 
       self.postMessage({
         type: "cardDetected",
         requestId,
-        card: { x: cardX, y: cardY, width: cardW, height: cardH },
+        card: { width: cardW, height: cardH },
+        cardImageData: cardData.buffer,
+        quad: bestQuad,
         title,
         art,
-        rotation,
-      })
+        angle,
+      }, [cardData.buffer])
+
+      srcPts.delete()
+      dstPts.delete()
+      M.delete()
+      if (warpedRGBA !== warped) warpedRGBA.delete()
+      warped.delete()
     } else {
       console.log(`${LOG} No card found (${contours.size()} contours checked)`)
       self.postMessage({ type: "noCard", requestId })

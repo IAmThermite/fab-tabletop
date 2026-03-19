@@ -6,9 +6,9 @@ defmodule Tabletop.Cards.PHashTest do
   # Each entry: {fixture_path, expected_hash}
   # Add new test cases here when importing new card sets.
   @hash_cases [
-    {"priv/cards/test/scar-for-a-scar-1.webp", 2_807_610_692_119_649_180},
-    {"priv/cards/test/scar-for-a-scar-2.webp", 2_806_500_152_224_861_084},
-    {"priv/cards/test/scar-for-a-scar-3.webp", 2_806_500_152_224_861_084},
+    {"priv/cards/test/scar-for-a-scar-1.webp", 2_806_554_061_580_624_742},
+    {"priv/cards/test/scar-for-a-scar-2.webp", 2_806_484_800_938_009_442},
+    {"priv/cards/test/scar-for-a-scar-3.webp", 2_806_484_800_938_009_442},
   ]
 
   @fixture_path "priv/cards/test/scar-for-a-scar-1.webp"

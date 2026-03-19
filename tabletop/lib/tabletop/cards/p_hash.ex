@@ -18,10 +18,10 @@ defmodule Tabletop.Cards.PHash do
   @hash_size 8
   @dct_size 32
 
-  # Art region ratios — must match scanner_worker.js
-  @art_y_ratio 0.12
-  @art_h_ratio 0.48
-  @art_x_inset 0.09
+  # these rations were determined by measuring a sample of cards and visually verifying the crop region
+  @art_y_ratio 0.16
+  @art_h_ratio 0.42
+  @art_x_inset 0.10
 
   # Precompute cosine table: cos((2j+1) * i * pi / (2*N))
   @cos_table (for i <- 0..(@dct_size - 1),

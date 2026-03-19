@@ -494,8 +494,19 @@ defmodule TabletopWeb.GameComponents do
           el.style.left = Math.max(0, Math.min(initX, maxX)) + "px"
           el.style.top = Math.max(0, Math.min(initY, maxY)) + "px"
 
+          // Track position so updated() can restore it after LiveView re-renders
+          this._currentLeft = el.style.left
+          this._currentTop = el.style.top
+
           let offsetX = 0
           let offsetY = 0
+
+          this.updated = () => {
+            // LiveView re-renders reset the inline style to "left: 0; top: 0;".
+            // Reapply the last known position so the popout doesn't jump on pitch switch.
+            el.style.left = this._currentLeft
+            el.style.top = this._currentTop
+          }
 
           header.addEventListener("pointerdown", (e) => {
             if (e.target.closest("button")) return
@@ -520,6 +531,8 @@ defmodule TabletopWeb.GameComponents do
             newY = Math.max(0, Math.min(newY, container.clientHeight - el.offsetHeight))
             el.style.left = newX + "px"
             el.style.top = newY + "px"
+            this._currentLeft = el.style.left
+            this._currentTop = el.style.top
           })
 
           const onPointerEnd = (e) => {

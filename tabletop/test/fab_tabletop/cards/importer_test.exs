@@ -58,6 +58,18 @@ defmodule Tabletop.Cards.ImporterTest do
   end
 
   describe "import_changeset_from_json/1" do
+    setup do
+      Req.Test.stub(Tabletop.Cards.ImporterTest, fn conn ->
+        body = File.read!("#{@test_fixture_dir}/scar-for-a-scar-1.webp")
+
+        conn
+        |> Plug.Conn.put_resp_content_type("image/webp")
+        |> Plug.Conn.send_resp(200, body)
+      end)
+
+      {:ok, req_options: [plug: {Req.Test, Tabletop.Cards.ImporterTest}]}
+    end
+
     # Helper: get deduped faces from the API fixture (same structure import pipeline uses)
     defp deduped_faces do
       {:ok, content} = File.read("#{@test_fixture_dir}/scar-for-a-scar-1.json")
@@ -65,14 +77,14 @@ defmodule Tabletop.Cards.ImporterTest do
       Importer.dedupe_card_prints(data["results"])
     end
 
-    test "extracts pitch from face JSON" do
+    test "extracts pitch from face JSON", %{req_options: req_options} do
       for face <- deduped_faces() do
-        changeset = Importer.import_changeset_from_json(face)
+        changeset = Importer.import_changeset_from_json(face, req_options)
         assert changeset.changes.pitch == face["printed_pitch"]
       end
     end
 
-    test "handles nil pitch" do
+    test "handles nil pitch", %{req_options: req_options} do
       face_json = %{
         "printed_name" => "Some Hero",
         "face_id" => "TEST001",
@@ -80,22 +92,22 @@ defmodule Tabletop.Cards.ImporterTest do
         "image" => %{"large" => "https://example.com/test.webp"}
       }
 
-      changeset = Importer.import_changeset_from_json(face_json)
+      changeset = Importer.import_changeset_from_json(face_json, req_options)
       assert changeset.changes[:pitch] == nil
     end
 
-    test "extracts name, print_id, and image_url" do
+    test "extracts name, print_id, and image_url", %{req_options: req_options} do
       face = List.first(deduped_faces())
-      changeset = Importer.import_changeset_from_json(face)
+      changeset = Importer.import_changeset_from_json(face, req_options)
 
       assert changeset.changes.name == "Scar for a Scar"
       assert changeset.changes.print_id == face["face_id"]
       assert changeset.changes.image_url == get_in(face, ["image", "large"])
     end
 
-    test "generates normalized_name and tokens" do
+    test "generates normalized_name and tokens", %{req_options: req_options} do
       face = List.first(deduped_faces())
-      changeset = Importer.import_changeset_from_json(face)
+      changeset = Importer.import_changeset_from_json(face, req_options)
 
       assert changeset.changes.normalized_name == "SCAR FOR A SCAR"
       assert changeset.changes.tokens == ["scar", "for", "a", "scar"]

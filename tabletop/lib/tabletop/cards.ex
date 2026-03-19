@@ -12,11 +12,15 @@ defmodule Tabletop.Cards do
     Repo.get_by(Card, name: name)
   end
 
+  def find_all_by_name(name) do
+    Repo.all(from c in Card, where: c.name == ^name)
+  end
+
   def find_by_print_id(print_id) do
     Repo.get_by(Card, print_id: print_id)
   end
 
-  def find_by_p_hash_similarity(image_phash, threshold \\ 10) do
+  def find_by_p_hash_similarity(image_phash, threshold \\ 15) do
     from(c in Card,
       where: fragment("bit_count((? # ?)::bit(64))", c.image_phash, ^image_phash) < ^threshold,
       order_by: fragment("bit_count((? # ?)::bit(64))", c.image_phash, ^image_phash),
@@ -83,6 +87,7 @@ defmodule Tabletop.Cards do
   def find_pitch_variants(card) do
     from(c in Card,
       where: c.normalized_name == ^card.normalized_name and not is_nil(c.pitch),
+      distinct: c.pitch,
       order_by: c.pitch
     )
     |> Repo.all()

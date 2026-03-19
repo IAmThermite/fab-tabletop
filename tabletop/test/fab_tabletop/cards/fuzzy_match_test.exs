@@ -88,9 +88,9 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
     end
 
     test "excludes cards outside the threshold" do
-      # 15 bits flipped — beyond the default threshold of 10
-      # bxor(1_484_317_916_512_072_972, 0b111_1111_1111_1111) => 1_484_317_916_512_078_579
-      far_hash = 1_484_317_916_512_078_579
+      # 20 bits flipped — beyond the default threshold of 15
+      # bxor(1_484_317_916_512_072_972, (1 <<< 20) - 1) => 1_484_317_916_512_701_171
+      far_hash = 1_484_317_916_512_701_171
 
       %Card{}
       |> Card.generated_changeset(%{
@@ -104,7 +104,7 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
       |> Repo.insert!()
 
       results = Cards.find_by_p_hash_similarity(far_hash)
-      assert results == [], "Expected no results for 15-bit difference, got: #{inspect(results)}"
+      assert results == [], "Expected no results for 20-bit difference, got: #{inspect(results)}"
     end
 
     test "returns empty list when no cards are close" do

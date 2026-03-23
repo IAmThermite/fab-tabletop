@@ -172,7 +172,16 @@ defmodule TabletopWeb.GameComponents do
 
       <div class="flex-1"></div>
 
-      <button type="button" class="btn">Card search</button>
+      <form phx-change="search_card" class="relative">
+        <input
+          type="text"
+          placeholder="Search card..."
+          phx-debounce="1000"
+          name="query"
+          class="input input-bordered input-sm w-full pr-7 text-xs"
+        />
+        <.icon name="hero-magnifying-glass" class="size-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-40 pointer-events-none" />
+      </form>
 
       <%!-- Player life --%>
       <div class="bg-warning text-warning-content rounded p-2 text-center">
@@ -432,18 +441,26 @@ defmodule TabletopWeb.GameComponents do
         phx-hook=".DraggableCardPopout"
         data-x={card.x}
         data-y={card.y}
-        class="absolute z-30 w-64 bg-base-100 border border-base-300 rounded-lg shadow-xl overflow-hidden"
+        class="absolute z-30 w-80 bg-base-100 border border-base-300 rounded-lg shadow-xl overflow-hidden"
         style="left: 0; top: 0;"
       >
         <div class="card-popout-header flex items-center justify-between px-3 py-2 bg-base-200 cursor-grab active:cursor-grabbing touch-none">
-          <span class="font-semibold text-sm truncate flex-1">
-            {card.card.name}
-          </span>
+          <form phx-change="search_card" class="flex-1 min-w-0">
+            <input type="hidden" name="_id" value={card.id} />
+            <input
+              type="text"
+              value={card.card.name}
+              phx-debounce="1000"
+              name="query"
+              class="font-semibold text-sm bg-transparent border-none outline-none w-full cursor-text"
+              title="Edit to search for a different card"
+            />
+          </form>
           <button
             type="button"
             phx-click="close_card"
             phx-value-id={card.id}
-            class="btn btn-circle btn-xs btn-error ml-2"
+            class="btn btn-circle btn-xs btn-error ml-2 flex-shrink-0"
             title="Close"
           >
             <.icon name="hero-x-mark" class="size-3" />
@@ -509,7 +526,7 @@ defmodule TabletopWeb.GameComponents do
           }
 
           header.addEventListener("pointerdown", (e) => {
-            if (e.target.closest("button")) return
+            if (e.target.closest("button, input")) return
             e.preventDefault()
             header.setPointerCapture(e.pointerId)
             offsetX = e.clientX - el.getBoundingClientRect().left

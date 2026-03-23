@@ -13,15 +13,48 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
     {
       "BEY RALLY THE COAST CASARD",
       "Rally the Coast Guard",
-      %{
-        "name" => "Rally the Coast Guard",
-        "print_id" => "SEA225",
-        "image_url" => "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/SEA225.webp",
-        "normalized_name" => "RALLY THE COAST GUARD",
-        "tokens" => ["rally", "the", "coast", "guard"],
-        "image_phash" => 1_484_317_916_512_072_972,
-        "pitch" => 3
-      }
+      [
+        %{
+          "name" => "Rally the Coast Guard",
+          "print_id" => "SEA225",
+          "image_url" => "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/SEA225.webp",
+          "normalized_name" => "RALLY THE COAST GUARD",
+          "tokens" => ["rally", "the", "coast", "guard"],
+          "image_phash" => 1_484_317_916_512_072_972,
+          "pitch" => 3
+        }
+      ]
+    },
+    {
+      # Exact short name should rank above longer cards sharing that prefix
+      "Bravo",
+      "Bravo",
+      [
+        %{
+          "name" => "Bravo",
+          "print_id" => "HER010",
+          "image_url" => "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/HER010.webp",
+          "normalized_name" => "BRAVO",
+          "tokens" => ["bravo"],
+          "image_phash" => 1_000_000_000_000_000_001
+        },
+        %{
+          "name" => "Bravo, Showstopper",
+          "print_id" => "HER011",
+          "image_url" => "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/HER011.webp",
+          "normalized_name" => "BRAVO SHOWSTOPPER",
+          "tokens" => ["bravo", "showstopper"],
+          "image_phash" => 1_000_000_000_000_000_002
+        },
+        %{
+          "name" => "Bravo, Flattering Showman",
+          "print_id" => "GEM077",
+          "image_url" => "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/GEM077.webp",
+          "normalized_name" => "BRAVO FLATTERING SHOWMAN",
+          "tokens" => ["bravo", "flattering", "showman"],
+          "image_phash" => 1_000_000_000_000_000_003
+        }
+      ]
     },
   ]
 
@@ -152,13 +185,15 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
   end
 
   describe "fuzzy_match_name/1" do
-    for {ocr_text, expected_name, seed_attrs} <- @ocr_cases do
+    for {ocr_text, expected_name, seed_cards} <- @ocr_cases do
       @ocr_text ocr_text
       @expected_name expected_name
-      @seed_attrs seed_attrs
+      @seed_cards seed_cards
 
       test "resolves #{inspect(ocr_text)} to #{inspect(expected_name)}" do
-        %Card{} |> Card.generated_changeset(@seed_attrs) |> Repo.insert!()
+        for attrs <- @seed_cards do
+          %Card{} |> Card.generated_changeset(attrs) |> Repo.insert!()
+        end
 
         results = Cards.fuzzy_match_name(@ocr_text)
         names = Enum.map(results, & &1.name)

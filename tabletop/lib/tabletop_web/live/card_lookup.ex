@@ -2,8 +2,8 @@ defmodule TabletopWeb.CardLookup do
   @moduledoc """
   Shared card lookup behaviour for LiveViews that support click-to-identify cards.
 
-  Injects `handle_event` clauses for `open_card`, `close_card`, and `switch_pitch`,
-  plus the `assign_open_card/5` private helper.
+  Injects `handle_event` clauses for `open_card`, `close_card`, `switch_pitch`,
+  and `search_card`, plus private helpers.
 
   The host LiveView must initialise `open_cards: []` in its mount.
 
@@ -59,7 +59,45 @@ defmodule TabletopWeb.CardLookup do
             possible_cards
           end
 
-        assign_open_card(socket, possible_cards, x, y, detected_pitch)
+        case build_open_card(possible_cards, x, y, detected_pitch) do
+          nil -> {:noreply, socket}
+          new_card -> {:noreply, assign(socket, :open_cards, socket.assigns.open_cards ++ [new_card])}
+        end
+      end
+
+      # Search from within an existing popout — replaces that popout's card in place
+      def handle_event("search_card", %{"query" => query, "_id" => id}, socket) do
+        case String.trim(query) do
+          "" ->
+            {:noreply, socket}
+
+          trimmed ->
+            existing = Enum.find(socket.assigns.open_cards, &(&1.id == id))
+            x = if existing, do: existing.x, else: 20
+            y = if existing, do: existing.y, else: 20
+
+            case build_open_card(Tabletop.Cards.fuzzy_match_name(trimmed), x, y, nil) do
+              nil ->
+                {:noreply, socket}
+
+              new_card ->
+                cards =
+                  if existing do
+                    Enum.map(socket.assigns.open_cards, fn c ->
+                      if c.id == id, do: %{new_card | id: id}, else: c
+                    end)
+                  else
+                    socket.assigns.open_cards ++ [new_card]
+                  end
+
+                {:noreply, assign(socket, :open_cards, cards)}
+            end
+        end
+      end
+
+      # Search from the sidebar — opens a new popout
+      def handle_event("search_card", %{"query" => query}, socket) do
+        handle_event("search_card", %{"query" => query, "_id" => "__new__"}, socket)
       end
 
       def handle_event("close_card", %{"id" => id}, socket) do
@@ -85,13 +123,12 @@ defmodule TabletopWeb.CardLookup do
         {:noreply, assign(socket, :open_cards, cards)}
       end
 
-      defp assign_open_card(socket, [], _x, _y, _detected_pitch), do: {:noreply, socket}
+      defp build_open_card([], _x, _y, _detected_pitch), do: nil
 
-      defp assign_open_card(socket, possible_cards, x, y, detected_pitch) do
+      defp build_open_card(possible_cards, x, y, detected_pitch) do
         card = List.first(possible_cards)
-        pitch_variants = Tabletop.Cards.find_pitch_variants(card)
+        pitch_variants = Tabletop.Cards.find_pitch_variants(card, card.set_code)
 
-        # Select the displayed card: use detected pitch, default to red (pitch 1), or the match
         selected_card =
           cond do
             pitch_variants == [] ->
@@ -101,19 +138,16 @@ defmodule TabletopWeb.CardLookup do
               Enum.find(pitch_variants, card, &(&1.pitch == detected_pitch))
 
             true ->
-              # Default to red (pitch 1) if available
               Enum.find(pitch_variants, card, &(&1.pitch == 1))
           end
 
-        new_card = %{
+        %{
           id: System.unique_integer([:positive]) |> Integer.to_string(),
           x: x,
           y: y,
           card: selected_card,
           pitch_variants: pitch_variants
         }
-
-        {:noreply, assign(socket, :open_cards, socket.assigns.open_cards ++ [new_card])}
       end
     end
   end

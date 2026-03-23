@@ -32,11 +32,15 @@ defmodule Tabletop.Cards do
 
   # Scoring formula:
   # - Trigram similarity of the full normalized name (good for close matches)
-  # - Fraction of the card's tokens found in OCR tokens × 4 (robust to OCR noise/extra words)
+  # - Token overlap: product of (card tokens found in query) × (query tokens found in card) × 4
+  #   Using the product rewards complete mutual coverage — "Bravo" scores 1.0 against the card
+  #   "Bravo" but only 0.5 against "Bravo, Flattering Showman" (which has 2 extra tokens the query lacks)
   # - Phonetic matches (catches misspellings like CASARD→GUARD)
   @score_sql """
   similarity(?, ?) * 2
-  + (SELECT count(*)::float / GREATEST(array_length(?, 1), 1) FROM unnest(?::text[]) a(w) WHERE w = ANY(?::text[])) * 4
+  + (SELECT count(*)::float / GREATEST(array_length(?, 1), 1) FROM unnest(?::text[]) a(w) WHERE w = ANY(?::text[]))
+    * (SELECT count(*)::float / GREATEST(array_length(?::text[], 1), 1) FROM unnest(?::text[]) a(w) WHERE w = ANY(?::text[]))
+    * 4
   + (SELECT count(*)::float / GREATEST(array_length(?, 1), 1) FROM (
        SELECT dmetaphone(w) FROM unnest(?::text[]) a(w)
        INTERSECT
@@ -66,12 +70,15 @@ defmodule Tabletop.Cards do
             @score_sql,
             c.normalized_name,
             ^normalized,
-            c.tokens,
-            c.tokens,
-            ^tokens,
-            c.tokens,
-            c.tokens,
-            ^tokens
+            c.tokens,        # card coverage: denominator (card token count)
+            c.tokens,        # card coverage: iterate card tokens
+            ^tokens,         # card coverage: match against query tokens
+            ^tokens,         # query coverage: denominator (query token count)
+            ^tokens,         # query coverage: iterate query tokens
+            c.tokens,        # query coverage: match against card tokens
+            c.tokens,        # phonetic: denominator
+            c.tokens,        # phonetic: card tokens
+            ^tokens          # phonetic: query tokens
           )
       ],
       limit: 5
@@ -84,7 +91,7 @@ defmodule Tabletop.Cards do
     Repo.all(Card)
   end
 
-  def find_pitch_variants(card) do
+  def find_pitch_variants(card, preferred_set_code \\ nil) do
     from(c in Card,
       where: c.normalized_name == ^card.normalized_name and not is_nil(c.pitch),
       distinct: c.pitch,

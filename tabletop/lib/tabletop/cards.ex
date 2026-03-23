@@ -94,10 +94,13 @@ defmodule Tabletop.Cards do
   def find_pitch_variants(card, preferred_set_code \\ nil) do
     from(c in Card,
       where: c.normalized_name == ^card.normalized_name and not is_nil(c.pitch),
-      distinct: c.pitch,
-      order_by: c.pitch
+      order_by: [
+        {:asc, c.pitch},
+        {:asc, fragment("CASE WHEN ? = ? THEN 0 ELSE 1 END", c.set_code, ^preferred_set_code)}
+      ]
     )
     |> Repo.all()
+    |> Enum.uniq_by(& &1.pitch)
   end
 
   def card_as_json_string(card) do
@@ -108,7 +111,8 @@ defmodule Tabletop.Cards do
       tokens: card.tokens,
       image_url: card.image_url,
       image_phash: card.image_phash,
-      pitch: card.pitch
+      pitch: card.pitch,
+      set_code: card.set_code
     }
     |> Jason.encode!()
   end

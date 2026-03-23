@@ -91,14 +91,20 @@ defmodule Tabletop.Cards.Importer do
 
   # read from generated/cards.json and insert into the database
   def import_from_generated_data do
-    {:ok, content} = File.read("priv/cards/generated/cards.json")
-    {:ok, all_card_data} = Jason.decode(content)
+    Path.wildcard("priv/cards/generated/*.json")
+    |> Enum.each(fn file ->
+      Logger.info("Importing cards from file #{file}")
+      {:ok, content} = File.read(file)
+      {:ok, all_card_data} = Jason.decode(content)
 
-    Enum.each(all_card_data, fn card_data ->
-      {:ok, _card} =
-        %Card{}
-        |> Card.generated_changeset(card_data)
-        |> Tabletop.Repo.insert()
+      Enum.each(all_card_data, fn card_data ->
+        case %Card{}
+          |> Card.generated_changeset(card_data)
+          |> Tabletop.Repo.insert() do
+          {:ok, _card} -> :ok
+          {:error, changeset} -> Logger.error("Failed to insert card: #{inspect(changeset)}")
+        end
+      end)
     end)
   end
 
@@ -125,11 +131,14 @@ defmodule Tabletop.Cards.Importer do
   def dedupe_card_prints(results) do
     results
     |> Enum.flat_map(& &1["card_prints"])
-    |> Enum.flat_map(& &1["faces"])
+    |> Enum.flat_map(fn card_print ->
+      set_code = get_in(card_print, ["print_set", "set_code"])
+      Enum.map(card_print["faces"], &Map.put(&1, "set_code", set_code))
+    end)
     |> Enum.uniq_by(& &1["face_id"])
     |> Enum.reject(&(&1["face_language"] != "en"))
     |> Enum.reject(&(&1["finish_type"] != "regular"))
-    |> Enum.reject(&(&1["art_type"] != "regular"))
+    |> Enum.reject(&(&1["art_type"] not in ["regular", "extended-art"]))
   end
 
   defp maybe_insert_card(nil, card_changeset) do
@@ -147,10 +156,11 @@ defmodule Tabletop.Cards.Importer do
     image_url = get_in(face_json, ["image", "large"])
     print_id = face_json["face_id"]
     pitch = face_json["printed_pitch"]
+    set_code = face_json["set_code"]
 
     %Card{}
     |> Card.import_changeset(
-      %{name: name, image_url: image_url, print_id: print_id, pitch: pitch},
+      %{name: name, image_url: image_url, print_id: print_id, pitch: pitch, set_code: set_code},
       req_options: req_options
     )
   end

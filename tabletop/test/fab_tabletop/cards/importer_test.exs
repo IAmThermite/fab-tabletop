@@ -37,13 +37,13 @@ defmodule Tabletop.Cards.ImporterTest do
       assert Enum.all?(faces, &(&1["finish_type"] == "regular"))
     end
 
-    test "filters non-regular art types" do
+    test "filters non-regular and non-extended-art types" do
       {:ok, content} = File.read("#{@test_fixture_dir}/scar-for-a-scar-1.json")
       {:ok, data} = Jason.decode(content)
 
       faces = Importer.dedupe_card_prints(data["results"])
 
-      assert Enum.all?(faces, &(&1["art_type"] == "regular"))
+      assert Enum.all?(faces, &(&1["art_type"] in ["regular", "extended-art"]))
     end
 
     test "dedupes by face_id" do

@@ -12,7 +12,10 @@ To make the Combat Chain easy to read, players can enable draggable Tiles to hel
 When you add Tiles to the Combat Chain you can move them about from your preview screen and you opponent will see your updates.
 You will also see your opponents life and when they are attacking, their Combat Chain effects.
 
-The Game view uses Phoenix LiveView to update state across clients and 
+You can click on the title of your opponents card which will then attempt to look up that card and attempt to recognise the card
+which will then be displayed in a small modal so that the card can be inspected closer.
+
+The Game view uses Phoenix LiveView to update state across clients and for card recognition.
 
 ### Card Recognition
 

@@ -7,6 +7,12 @@ defmodule TabletopWeb.GameComponents do
 
   alias Phoenix.LiveView.ColocatedHook
   import TabletopWeb.CoreComponents, only: [icon: 1]
+  import Phoenix.HTML, only: [raw: 1]
+
+  use Phoenix.VerifiedRoutes,
+    endpoint: TabletopWeb.Endpoint,
+    router: TabletopWeb.Router,
+    statics: TabletopWeb.static_paths()
 
   attr :game_state, :any, required: true
   attr :abilities_open, :boolean, default: false
@@ -430,6 +436,76 @@ defmodule TabletopWeb.GameComponents do
   defp pitch_color_class(2), do: "bg-yellow-400"
   defp pitch_color_class(3), do: "bg-blue-500"
   defp pitch_color_class(_), do: "bg-base-300"
+
+  attr :qr_svg, :string, required: true
+  attr :show_reconfigure_link, :boolean, default: true
+
+  def settings_dialog(assigns) do
+    ~H"""
+    <dialog id="settings-dialog" class="modal">
+      <div class="modal-box">
+        <h3 class="text-lg font-bold">Settings</h3>
+        <div class="py-4 space-y-4">
+          <label class="flex items-center justify-between cursor-pointer">
+            <span class="label-text">Flip opponent's view</span>
+            <input id="flip-opponent-toggle" type="checkbox" class="toggle" />
+          </label>
+          <label class="flex items-center justify-between cursor-pointer">
+            <span class="label-text">Card scan debug overlay</span>
+            <input id="debug-scan-toggle" type="checkbox" class="toggle" />
+          </label>
+
+          <div class="divider text-xs">Camera Source</div>
+          <div id="camera-source-section" class="space-y-2">
+            <div class="flex gap-2">
+              <button
+                id="use-webcam-btn"
+                type="button"
+                class="btn btn-sm flex-1 btn-active"
+              >
+                <.icon name="hero-video-camera" class="size-4" /> Webcam
+              </button>
+              <button
+                id="use-phone-camera-btn"
+                type="button"
+                class="btn btn-sm flex-1 btn-outline"
+                disabled
+              >
+                <.icon name="hero-device-phone-mobile" class="size-4" /> Phone
+              </button>
+            </div>
+            <div id="phone-camera-status" class="text-center">
+              <span class="badge badge-sm badge-outline">Phone not connected</span>
+            </div>
+          </div>
+
+          <div class="divider text-xs">Phone Camera</div>
+          <div id="phone-camera-qr-section">
+            <p class="text-sm mb-3">Scan to connect your phone as a camera</p>
+            <div class="flex justify-center">
+              {raw(@qr_svg)}
+            </div>
+            <p class="text-xs text-center mt-2 opacity-60">
+              Scan with your phone to connect
+            </p>
+          </div>
+
+          <.link :if={@show_reconfigure_link} navigate={~p"/camera-setup"} class="btn btn-outline btn-sm w-full">
+            Reconfigure Camera
+          </.link>
+        </div>
+        <div class="modal-action">
+          <form method="dialog">
+            <button class="btn">Close</button>
+          </form>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+      </form>
+    </dialog>
+    """
+  end
 
   attr :open_cards, :list, required: true
 

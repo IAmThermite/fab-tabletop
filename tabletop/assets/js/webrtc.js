@@ -104,6 +104,65 @@ export default class WebRTCManager {
     return this.micEnabled
   }
 
+  async setExternalVideoSource(stream) {
+    this._externalStream = stream
+
+    // Update local preview to show the external source
+    this.localVideoEl.srcObject = stream
+    this.localVideoEl.play().catch(() => {})
+
+    // Rebuild the transformed stream from the new source
+    this._stopLocalTransform()
+    this._streamForPeer = this._createTransformedStream()
+
+    // Replace the video track on the peer connection
+    if (this.peerConnection) {
+      const newVideoTrack = this._streamForPeer.getVideoTracks()[0]
+      const sender = this.peerConnection
+        .getSenders()
+        .find((s) => s.track?.kind === "video")
+      if (sender && newVideoTrack) {
+        await sender.replaceTrack(newVideoTrack)
+      }
+    }
+  }
+
+  async clearExternalVideoSource() {
+    if (!this._externalStream) return
+    this._externalStream = null
+
+    // Restore the original webcam stream
+    this.localVideoEl.srcObject = this.localStream
+    this.localVideoEl.play().catch(() => {})
+
+    // Rebuild the transformed stream from the webcam
+    this._stopLocalTransform()
+    this._streamForPeer = this._createTransformedStream()
+
+    // Replace the video track back to the webcam
+    if (this.peerConnection) {
+      const newVideoTrack = this._streamForPeer.getVideoTracks()[0]
+      const sender = this.peerConnection
+        .getSenders()
+        .find((s) => s.track?.kind === "video")
+      if (sender && newVideoTrack) {
+        await sender.replaceTrack(newVideoTrack)
+      }
+    }
+  }
+
+  _stopLocalTransform() {
+    if (this._localAnimFrameId) {
+      cancelAnimationFrame(this._localAnimFrameId)
+      this._localAnimFrameId = null
+    }
+    if (this._canvasStream) {
+      this._canvasStream.getTracks().forEach((t) => t.stop())
+      this._canvasStream = null
+    }
+    this._localCanvasEl = null
+  }
+
   _broadcastMediaStatus() {
     if (this.channel) {
       this.channel.push("media_status", {
@@ -257,17 +316,20 @@ export default class WebRTCManager {
   }
 
   _createTransformedStream() {
+    const sourceStream = this._externalStream || this.localStream
+    if (!sourceStream) return null
+
     const zoom = parseFloat(localStorage.getItem("tabletop:camera-zoom") || "1")
     const rotation = parseFloat(localStorage.getItem("tabletop:camera-rotation") || "0")
 
     // No transforms needed — use raw stream directly
     if (zoom === 1 && rotation === 0) {
-      return this.localStream
+      return sourceStream
     }
 
     // Create a hidden canvas to render transformed video
     this._localCanvasEl = document.createElement("canvas")
-    const videoTrack = this.localStream.getVideoTracks()[0]
+    const videoTrack = sourceStream.getVideoTracks()[0]
     const settings = videoTrack.getSettings()
     this._localCanvasEl.width = settings.width || 1280
     this._localCanvasEl.height = settings.height || 720
@@ -316,10 +378,10 @@ export default class WebRTCManager {
     // Capture stream from canvas at 30fps
     this._canvasStream = this._localCanvasEl.captureStream(30)
 
-    // Combine canvas video track with original audio tracks
+    // Combine canvas video track with audio tracks from the active source
     const combinedStream = new MediaStream()
     this._canvasStream.getVideoTracks().forEach(t => combinedStream.addTrack(t))
-    this.localStream.getAudioTracks().forEach(t => combinedStream.addTrack(t))
+    sourceStream.getAudioTracks().forEach(t => combinedStream.addTrack(t))
 
     return combinedStream
   }

@@ -4,6 +4,7 @@
     phx-hook=".GameVideo"
     data-game-id={@game.id}
     data-user-token={@user_token}
+    data-camera-relay-token={@camera_relay_token}
     class="flex flex-col h-full"
   >
     <%!-- Top bar --%>
@@ -124,33 +125,7 @@
       </div>
     </div>
 
-    <%!-- Settings dialog --%>
-    <dialog id="settings-dialog" class="modal">
-      <div class="modal-box">
-        <h3 class="text-lg font-bold">Settings</h3>
-        <div class="py-4 space-y-4">
-          <label class="flex items-center justify-between cursor-pointer">
-            <span class="label-text">Flip opponent's view</span>
-            <input id="flip-opponent-toggle" type="checkbox" class="toggle" />
-          </label>
-          <label class="flex items-center justify-between cursor-pointer">
-            <span class="label-text">Card scan debug overlay</span>
-            <input id="debug-scan-toggle" type="checkbox" class="toggle" />
-          </label>
-          <.link navigate={~p"/camera-setup"} class="btn btn-outline btn-sm w-full">
-            Reconfigure Camera
-          </.link>
-        </div>
-        <div class="modal-action">
-          <form method="dialog">
-            <button class="btn">Close</button>
-          </form>
-        </div>
-      </div>
-      <form method="dialog" class="modal-backdrop">
-        <button>close</button>
-      </form>
-    </dialog>
+    <.settings_dialog qr_svg={@qr_svg} />
 
     <%!-- Preview expansion overlay --%>
     <div
@@ -177,6 +152,7 @@
 
   <script :type={ColocatedHook} name=".GameVideo">
     import WebRTCManager from "@/js/webrtc.js"
+    import CameraRelayReceiver from "@/js/camera_relay_receiver.js"
     import { setupCardLookup, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
     import { isDebugEnabled, setDebugEnabled } from "@/js/card_scanner/debug.js"
 
@@ -349,6 +325,67 @@
           setDebugEnabled(debugToggle.checked)
         })
 
+        // --- Phone Camera Relay ---
+        const relayToken = this.el.dataset.cameraRelayToken
+        const phoneStatusEl = document.getElementById("phone-camera-status")
+        const usePhoneBtn = document.getElementById("use-phone-camera-btn")
+        const useWebcamBtn = document.getElementById("use-webcam-btn")
+
+        let phoneStream = null
+        this._usingPhone = false
+
+        const updateSourceButtons = () => {
+          if (this._usingPhone) {
+            usePhoneBtn.classList.add("btn-active")
+            usePhoneBtn.classList.remove("btn-outline")
+            useWebcamBtn.classList.remove("btn-active")
+            useWebcamBtn.classList.add("btn-outline")
+          } else {
+            useWebcamBtn.classList.add("btn-active")
+            useWebcamBtn.classList.remove("btn-outline")
+            usePhoneBtn.classList.remove("btn-active")
+            usePhoneBtn.classList.add("btn-outline")
+          }
+          usePhoneBtn.disabled = !phoneStream
+        }
+
+        this.cameraRelay = new CameraRelayReceiver({
+          token,
+          relayToken,
+          onStream: (stream) => {
+            phoneStream = stream
+            phoneStatusEl.innerHTML = '<span class="badge badge-sm badge-success">Phone connected</span>'
+            usePhoneBtn.disabled = false
+            updateSourceButtons()
+          },
+          onDisconnect: () => {
+            phoneStream = null
+            phoneStatusEl.innerHTML = '<span class="badge badge-sm badge-outline">Phone not connected</span>'
+            if (this._usingPhone) {
+              this.webrtc.clearExternalVideoSource()
+              this._usingPhone = false
+            }
+            updateSourceButtons()
+          },
+        })
+        this.cameraRelay.start()
+
+        usePhoneBtn.addEventListener("click", () => {
+          if (phoneStream && !this._usingPhone) {
+            this.webrtc.setExternalVideoSource(phoneStream)
+            this._usingPhone = true
+            updateSourceButtons()
+          }
+        })
+
+        useWebcamBtn.addEventListener("click", () => {
+          if (this._usingPhone) {
+            this.webrtc.clearExternalVideoSource()
+            this._usingPhone = false
+            updateSourceButtons()
+          }
+        })
+
         // Preview modal — expanded local canvas
         // The modal is server-controlled via :if={@preview_open}, so we watch
         // for the expanded canvas entering/leaving the DOM via MutationObserver.
@@ -429,6 +466,9 @@
         }
         if (this._previewObserver) {
           this._previewObserver.disconnect()
+        }
+        if (this.cameraRelay) {
+          this.cameraRelay.disconnect()
         }
         if (this.webrtc) {
           this.webrtc.disconnect()

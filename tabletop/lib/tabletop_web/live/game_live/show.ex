@@ -27,6 +27,10 @@ defmodule TabletopWeb.GameLive.Show do
       end
 
       user_token = Phoenix.Token.sign(socket, "user socket", user_id)
+      camera_relay_token = Phoenix.Token.sign(socket, "camera relay", user_id)
+
+      qr_url = "#{TabletopWeb.Endpoint.url()}/phone-camera/#{camera_relay_token}"
+      qr_svg = qr_url |> EQRCode.encode() |> EQRCode.svg(width: 200)
 
       {:ok,
        socket
@@ -34,6 +38,8 @@ defmodule TabletopWeb.GameLive.Show do
        |> assign(:game, game)
        |> assign(:user_token, user_token)
        |> assign(:user_id, user_id)
+       |> assign(:camera_relay_token, camera_relay_token)
+       |> assign(:qr_svg, qr_svg)
        |> assign(:peer_connected, false)
        |> assign(:game_state, GameState.new())
        |> assign(:abilities_open, false)

@@ -22,6 +22,10 @@ defmodule TabletopWeb.Router do
 
     # get("/", PageController, :home)
     get("/about", PageController, :about)
+
+    live_session :phone_camera do
+      live "/phone-camera/:token", PhoneCameraLive, :index
+    end
   end
 
   # Other scopes may use custom stacks.

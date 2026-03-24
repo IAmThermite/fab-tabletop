@@ -12,6 +12,8 @@ defmodule TabletopWeb.CameraSetupLive do
         id="camera-setup"
         phx-hook=".CameraSetup"
         data-redirect={@redirect_to}
+        data-user-token={@user_token}
+        data-camera-relay-token={@camera_relay_token}
         class="flex flex-col h-full"
       >
         <%!-- Top bar --%>
@@ -69,13 +71,14 @@ defmodule TabletopWeb.CameraSetupLive do
             Initializing...
           </div>
 
-          <label
-            class="flex items-center gap-2 cursor-pointer text-sm"
-            title="Show OCR debug overlay on card scan"
+          <button
+            id="settings-btn"
+            type="button"
+            class="btn btn-circle btn-sm"
+            title="Settings"
           >
-            <span class="label-text">Debug scan</span>
-            <input id="debug-scan-toggle" type="checkbox" class="toggle toggle-sm" />
-          </label>
+            <.icon name="hero-cog-6-tooth" class="size-5" />
+          </button>
 
           <button id="setup-done-btn" type="button" class="btn btn-primary btn-sm">
             Save & Continue
@@ -145,12 +148,15 @@ defmodule TabletopWeb.CameraSetupLive do
             <.card_popouts open_cards={@open_cards} />
           </div>
         </div>
+
+        <.settings_dialog qr_svg={@qr_svg} show_reconfigure_link={false} />
       </div>
     </Layouts.game>
 
     <script :type={ColocatedHook} name=".CameraSetup">
       import { setupCardLookup, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
       import { isDebugEnabled, setDebugEnabled } from "@/js/card_scanner/debug.js"
+      import CameraRelayReceiver from "@/js/camera_relay_receiver.js"
 
       export default {
         mounted() {
@@ -168,6 +174,9 @@ defmodule TabletopWeb.CameraSetupLive do
           const rotationValueEl = document.getElementById("rotation-value")
           const doneBtn = document.getElementById("setup-done-btn")
           const debugToggle = document.getElementById("debug-scan-toggle")
+          const settingsBtn = document.getElementById("settings-btn")
+          const settingsDialog = document.getElementById("settings-dialog")
+          const flipToggle = document.getElementById("flip-opponent-toggle")
 
           let stream = null
           let animFrameId = null
@@ -176,9 +185,19 @@ defmodule TabletopWeb.CameraSetupLive do
           let cameraEnabled = true
           let micEnabled = true
 
+          // Settings dialog
+          settingsBtn.addEventListener("click", () => settingsDialog.showModal())
+
           // Load saved settings from localStorage
           debugToggle.checked = isDebugEnabled()
           debugToggle.addEventListener("change", () => setDebugEnabled(debugToggle.checked))
+
+          // Flip toggle (load preference but no canvas to flip on setup page)
+          const FLIP_KEY = "tabletop:flip-opponent"
+          flipToggle.checked = localStorage.getItem(FLIP_KEY) === "true"
+          flipToggle.addEventListener("change", () => {
+            localStorage.setItem(FLIP_KEY, flipToggle.checked)
+          })
 
           const savedZoom = localStorage.getItem("tabletop:camera-zoom") || "1"
           const savedRotation = localStorage.getItem("tabletop:camera-rotation") || "0"
@@ -338,10 +357,76 @@ defmodule TabletopWeb.CameraSetupLive do
           preloadTesseract()
           setupCardLookup(this, canvasEl, gameArea)
 
+          // --- Phone Camera Relay ---
+          const token = el.dataset.userToken
+          const relayToken = el.dataset.cameraRelayToken
+          const phoneStatusEl = document.getElementById("phone-camera-status")
+          const usePhoneBtn = document.getElementById("use-phone-camera-btn")
+          const useWebcamBtn = document.getElementById("use-webcam-btn")
+
+          let phoneStream = null
+          this._usingPhone = false
+
+          const updateSourceButtons = () => {
+            if (this._usingPhone) {
+              usePhoneBtn.classList.add("btn-active")
+              usePhoneBtn.classList.remove("btn-outline")
+              useWebcamBtn.classList.remove("btn-active")
+              useWebcamBtn.classList.add("btn-outline")
+            } else {
+              useWebcamBtn.classList.add("btn-active")
+              useWebcamBtn.classList.remove("btn-outline")
+              usePhoneBtn.classList.remove("btn-active")
+              usePhoneBtn.classList.add("btn-outline")
+            }
+            usePhoneBtn.disabled = !phoneStream
+          }
+
+          this.cameraRelay = new CameraRelayReceiver({
+            token,
+            relayToken,
+            onStream: (remoteStream) => {
+              phoneStream = remoteStream
+              phoneStatusEl.innerHTML = '<span class="badge badge-sm badge-success">Phone connected</span>'
+              usePhoneBtn.disabled = false
+              updateSourceButtons()
+            },
+            onDisconnect: () => {
+              phoneStream = null
+              phoneStatusEl.innerHTML = '<span class="badge badge-sm badge-outline">Phone not connected</span>'
+              if (this._usingPhone) {
+                // Switch back to webcam
+                videoEl.srcObject = stream
+                this._usingPhone = false
+              }
+              updateSourceButtons()
+            },
+          })
+          this.cameraRelay.start()
+
+          usePhoneBtn.addEventListener("click", () => {
+            if (phoneStream && !this._usingPhone) {
+              videoEl.srcObject = phoneStream
+              videoEl.play().catch(() => {})
+              this._usingPhone = true
+              updateSourceButtons()
+            }
+          })
+
+          useWebcamBtn.addEventListener("click", () => {
+            if (this._usingPhone) {
+              videoEl.srcObject = stream
+              videoEl.play().catch(() => {})
+              this._usingPhone = false
+              updateSourceButtons()
+            }
+          })
+
           this.cleanup = () => {
             if (animFrameId) cancelAnimationFrame(animFrameId)
             if (audioContext) audioContext.close()
             if (stream) stream.getTracks().forEach(t => t.stop())
+            if (this.cameraRelay) this.cameraRelay.disconnect()
           }
         },
 
@@ -355,10 +440,21 @@ defmodule TabletopWeb.CameraSetupLive do
 
   @impl true
   def mount(params, _session, socket) do
+    scope = socket.assigns.current_scope
+    user_id = scope.user.id
+
+    user_token = Phoenix.Token.sign(socket, "user socket", user_id)
+    camera_relay_token = Phoenix.Token.sign(socket, "camera relay", user_id)
+    qr_url = "#{TabletopWeb.Endpoint.url()}/phone-camera/#{camera_relay_token}"
+    qr_svg = qr_url |> EQRCode.encode() |> EQRCode.svg(width: 200)
+
     {:ok,
      socket
      |> assign(:page_title, "Camera Setup")
      |> assign(:redirect_to, params["redirect"])
+     |> assign(:user_token, user_token)
+     |> assign(:camera_relay_token, camera_relay_token)
+     |> assign(:qr_svg, qr_svg)
      |> assign(:game_state, GameState.new())
      |> assign(:abilities_open, false)
      |> assign(:on_hits_open, false)

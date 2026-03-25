@@ -50,8 +50,15 @@ defmodule Tabletop.Cards do
 
   def fuzzy_match_name(ocr_text) do
     normalized = OcrNormalizer.normalize(ocr_text)
-    tokens = OcrNormalizer.tokens(ocr_text)
 
+    if String.length(normalized) < 3 do
+      []
+    else
+      fuzzy_match_normalized(normalized, OcrNormalizer.tokens(ocr_text))
+    end
+  end
+
+  defp fuzzy_match_normalized(normalized, tokens) do
     from(c in Card,
       where:
         fragment("similarity(?, ?) > 0.1", c.normalized_name, ^normalized) or
@@ -70,15 +77,24 @@ defmodule Tabletop.Cards do
             @score_sql,
             c.normalized_name,
             ^normalized,
-            c.tokens,        # card coverage: denominator (card token count)
-            c.tokens,        # card coverage: iterate card tokens
-            ^tokens,         # card coverage: match against query tokens
-            ^tokens,         # query coverage: denominator (query token count)
-            ^tokens,         # query coverage: iterate query tokens
-            c.tokens,        # query coverage: match against card tokens
-            c.tokens,        # phonetic: denominator
-            c.tokens,        # phonetic: card tokens
-            ^tokens          # phonetic: query tokens
+            # card coverage: denominator (card token count)
+            c.tokens,
+            # card coverage: iterate card tokens
+            c.tokens,
+            # card coverage: match against query tokens
+            ^tokens,
+            # query coverage: denominator (query token count)
+            ^tokens,
+            # query coverage: iterate query tokens
+            ^tokens,
+            # query coverage: match against card tokens
+            c.tokens,
+            # phonetic: denominator
+            c.tokens,
+            # phonetic: card tokens
+            c.tokens,
+            # phonetic: query tokens
+            ^tokens
           )
       ],
       limit: 5

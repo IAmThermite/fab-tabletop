@@ -548,6 +548,17 @@ defmodule TabletopWeb.GameComponents do
             alt={card.card.name}
             class="w-full rounded"
           />
+          <%= if length(Map.get(card, :alternate_matches, [])) > 0 do %>
+            <form phx-change="switch_match" class="pt-1">
+              <input type="hidden" name="card_id" value={card.id} />
+              <select name="normalized_name" class="select select-bordered select-xs w-full">
+                <option value="" selected>{card.card.name}</option>
+                <%= for alt <- card.alternate_matches do %>
+                  <option value={alt.normalized_name}>{alt.name}</option>
+                <% end %>
+              </select>
+            </form>
+          <% end %>
           <%= if length(Map.get(card, :pitch_variants, [])) > 1 do %>
             <div class="flex items-center justify-center gap-2 pt-1">
               <%= for variant <- card.pitch_variants do %>
@@ -569,16 +580,79 @@ defmodule TabletopWeb.GameComponents do
               <% end %>
             </div>
           <% end %>
+          <div class="card-popout-debug hidden border-t border-base-300 pt-2 mt-1 space-y-1 font-mono text-[10px] opacity-80">
+            <div class="font-semibold text-[11px] opacity-60">Server (card DB)</div>
+            <div><span class="opacity-50">phash:</span> {card.card.image_phash}</div>
+            <div><span class="opacity-50">normalized:</span> {card.card.normalized_name}</div>
+            <div><span class="opacity-50">tokens:</span> {Enum.join(card.card.tokens, ", ")}</div>
+            <%= if debug = Map.get(card, :debug) do %>
+              <div class="font-semibold text-[11px] opacity-60 pt-1">Client (scan)</div>
+              <div><span class="opacity-50">match method:</span> {debug.match_method}</div>
+              <%= if debug[:detected_pitch] do %>
+                <div>
+                  <span class="opacity-50">detected pitch:</span>
+                  <span class={[
+                    "inline-block w-3 h-3 rounded-full align-middle ml-1",
+                    pitch_color_class(debug.detected_pitch)
+                  ]} />
+                  <span class="ml-1">{debug.detected_pitch}</span>
+                </div>
+              <% end %>
+              <%= if debug.phash do %>
+                <% distance = if card.card.image_phash, do: Tabletop.Cards.PHash.hamming_distance(debug.phash, card.card.image_phash), else: nil %>
+                <div>
+                  <span class="opacity-50">client phash:</span> {debug.phash}
+                  <%= if distance do %>
+                    <span class={[
+                      "ml-1",
+                      cond do
+                        distance < 5 -> "text-success"
+                        distance < 15 -> "text-warning"
+                        true -> "text-error"
+                      end
+                    ]}>
+                      (distance: {distance})
+                    </span>
+                  <% end %>
+                </div>
+              <% end %>
+              <%= for candidate <- debug.ocr_candidates do %>
+                <div>
+                  <span class="opacity-50">ocr:</span> "{candidate["text"]}"
+                  <%= if candidate["confidence"] do %>
+                    <span class={[
+                      "ml-1",
+                      cond do
+                        candidate["confidence"] >= 65 -> "text-success"
+                        candidate["confidence"] >= 40 -> "text-warning"
+                        true -> "text-error"
+                      end
+                    ]}>
+                      ({round(candidate["confidence"])})
+                    </span>
+                  <% end %>
+                </div>
+              <% end %>
+            <% end %>
+          </div>
         </div>
       </div>
     <% end %>
 
     <script :type={ColocatedHook} name=".DraggableCardPopout">
+      import { isDebugEnabled } from "@/js/card_scanner/debug.js"
+
       export default {
         mounted() {
           const el = this.el
           const header = el.querySelector(".card-popout-header")
           const container = el.parentElement
+
+          // Show debug section if debug mode is enabled
+          const debugSection = el.querySelector(".card-popout-debug")
+          if (debugSection && isDebugEnabled()) {
+            debugSection.classList.remove("hidden")
+          }
 
           const initX = parseFloat(el.dataset.x || "10")
           const initY = parseFloat(el.dataset.y || "10")
@@ -599,6 +673,9 @@ defmodule TabletopWeb.GameComponents do
             // Reapply the last known position so the popout doesn't jump on pitch switch.
             el.style.left = this._currentLeft
             el.style.top = this._currentTop
+            // Re-apply debug visibility after re-render
+            const dbg = el.querySelector(".card-popout-debug")
+            if (dbg && isDebugEnabled()) dbg.classList.remove("hidden")
           }
 
           header.addEventListener("pointerdown", (e) => {

@@ -140,10 +140,12 @@ export function showDebugPanel(result, ocrText, confidence) {
 
   const resultEl = document.createElement("div")
   resultEl.style.cssText = "margin-top: 4px; padding: 4px 6px; background: rgba(255,255,255,0.1); border-radius: 4px;"
+  const methodLabels = { "title_bar": "Title bar OCR", "card_art": "Card art pHash", "title_bar + card_art": "Title bar + Card art" }
+  const methodLabel = result.detectMethod ? ` | method: ${methodLabels[result.detectMethod] || result.detectMethod}` : ""
   const rotationLabel = result.angle ? ` | angle: ${Math.abs(result.angle).toFixed(1)}\u00b0` : ""
   const hashLabel = result.artHash ? ` | pHash: ${result.artHash}` : ""
   resultEl.innerHTML = `
-    <div style="opacity: 0.7; font-size: 10px;">Best result (confidence: ${confidence ?? "?"}${rotationLabel}${hashLabel})</div>
+    <div style="opacity: 0.7; font-size: 10px;">Best result (confidence: ${confidence ?? "?"}${methodLabel}${rotationLabel}${hashLabel})</div>
     <div style="font-size: 13px; font-weight: bold; margin-top: 2px;">${ocrText || "<em style='opacity:0.5'>no text detected</em>"}</div>
   `
   _debugPanel.appendChild(resultEl)

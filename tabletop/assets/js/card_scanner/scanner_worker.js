@@ -174,28 +174,56 @@ self.onmessage = function (event) {
     edges = new cv.Mat()
 
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
-    cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0)
-    cv.Canny(blurred, edges, 30, 100)
-
-    kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3))
-    cv.dilate(edges, edges, kernel)
-    cv.dilate(edges, edges, kernel)
-
-    contours = new cv.MatVector()
-    hierarchy = new cv.Mat()
-
-    cv.findContours(
-      edges, contours, hierarchy,
-      cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE,
-    )
 
     const imgArea = imageData.width * imageData.height
     const centerX = imageData.width / 2
     const centerY = imageData.height / 2
 
-    let { bestQuad, bestDist } = findBestContour(
-      cv, contours, imgArea, centerX, centerY
-    )
+    // Try multiple edge detection strategies to handle different lighting
+    const strategies = [
+      { blur: 5, cannyLow: 30, cannyHigh: 100, dilations: 2 },
+      { blur: 5, cannyLow: 15, cannyHigh: 60,  dilations: 2 },
+      { blur: 3, cannyLow: 50, cannyHigh: 150, dilations: 1 },
+      { blur: 7, cannyLow: 20, cannyHigh: 80,  dilations: 3 },
+    ]
+
+    let bestQuad = null
+    let bestDist = Infinity
+
+    for (const strat of strategies) {
+      cv.GaussianBlur(gray, blurred, new cv.Size(strat.blur, strat.blur), 0)
+      cv.Canny(blurred, edges, strat.cannyLow, strat.cannyHigh)
+
+      kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3))
+      for (let d = 0; d < strat.dilations; d++) {
+        cv.dilate(edges, edges, kernel)
+      }
+      kernel.delete()
+      kernel = null
+
+      contours = new cv.MatVector()
+      hierarchy = new cv.Mat()
+
+      cv.findContours(
+        edges, contours, hierarchy,
+        cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE,
+      )
+
+      const result = findBestContour(cv, contours, imgArea, centerX, centerY)
+
+      contours.delete()
+      hierarchy.delete()
+      contours = null
+      hierarchy = null
+
+      if (result.bestQuad && result.bestDist < bestDist) {
+        bestQuad = result.bestQuad
+        bestDist = result.bestDist
+      }
+
+      // Good enough — stop early
+      if (bestQuad && bestDist < Math.min(imageData.width, imageData.height) * 0.15) break
+    }
 
     if (bestQuad) {
       // bestQuad is ordered [TL, TR, BR, BL]
@@ -292,7 +320,7 @@ self.onmessage = function (event) {
       if (warpedRGBA !== warped) warpedRGBA.delete()
       warped.delete()
     } else {
-      console.log(`${LOG} No card found (${contours.size()} contours checked)`)
+      console.log(`${LOG} No card found after ${strategies.length} strategies`)
       self.postMessage({ type: "noCard", requestId })
     }
   } catch (err) {

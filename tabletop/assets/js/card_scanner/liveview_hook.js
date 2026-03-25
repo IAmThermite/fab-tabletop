@@ -16,10 +16,6 @@ const BOX_LINGER_MS = 3000
 const DETECT_W_RATIO = 0.15
 const DETECT_H_RATIO = 0.30
 
-// Fallback OCR region: small strip assuming click is on card title center
-const FALLBACK_W_RATIO = 0.10
-const FALLBACK_H_RATIO = 0.03
-
 let _worker = null
 let _requestCounter = 0
 
@@ -55,6 +51,7 @@ function detectCard(imageData) {
 
       if (event.data.type === "cardDetected") {
         const { card, cardImageData, quad, title, art, angle } = event.data
+        if (!card.width || !card.height) { resolve(null); return }
         // Reconstruct ImageData from the transferred buffer
         const cardPixels = new Uint8ClampedArray(cardImageData)
         const deskewedImageData = new ImageData(cardPixels, card.width, card.height)
@@ -134,7 +131,7 @@ export function setupCardLookup(hook, canvasEl, gameArea, opts = {}) {
           { label: "upGray", text: result.upGrayText, confidence: result.upGrayConfidence },
           { label: "sharpThresh", text: result.sharpThreshText, confidence: result.sharpThreshConfidence },
           { label: "thresh", text: result.threshText, confidence: result.threshConfidence },
-        ].filter(c => c.confidence > 40 && c.text)
+        ].filter(c => c.confidence > 40 && c.text && c.text.replace(/[^a-zA-Z]/g, "").length >= 3)
 
         const payload = {
           ocr_candidates: ocrCandidates,
@@ -173,57 +170,6 @@ function captureRegion(ctx, canvasEl, canvasX, canvasY, w, h, yBias = 0.5) {
   const sh = Math.min(h, canvasEl.height - sy)
   if (sw <= 0 || sh <= 0) return null
   return { imageData: ctx.getImageData(sx, sy, sw, sh), sx, sy, sw, sh }
-}
-
-// Variance of Laplacian — higher = sharper image
-function sharpnessScore(imageData) {
-  const { data, width, height } = imageData
-  const gray = new Float32Array(width * height)
-  for (let i = 0; i < width * height; i++) {
-    const j = i * 4
-    gray[i] = 0.299 * data[j] + 0.587 * data[j + 1] + 0.114 * data[j + 2]
-  }
-  let sum = 0, sumSq = 0, count = 0
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const idx = y * width + x
-      const lap = 4 * gray[idx]
-        - gray[idx - 1] - gray[idx + 1]
-        - gray[idx - width] - gray[idx + width]
-      sum += lap
-      sumSq += lap * lap
-      count++
-    }
-  }
-  const mean = sum / count
-  return (sumSq / count) - mean * mean
-}
-
-const MULTI_FRAME_COUNT = 3
-const MULTI_FRAME_DELAY_MS = 80
-
-function captureBestFrame(ctx, canvasEl, canvasX, canvasY, w, h, yBias = 0.5) {
-  return new Promise((resolve) => {
-    const frames = []
-    let captured = 0
-
-    const grab = () => {
-      const region = captureRegion(ctx, canvasEl, canvasX, canvasY, w, h, yBias)
-      if (region) {
-        frames.push({ ...region, score: sharpnessScore(region.imageData) })
-      }
-      captured++
-      if (captured < MULTI_FRAME_COUNT) {
-        setTimeout(grab, MULTI_FRAME_DELAY_MS)
-      } else {
-        if (frames.length === 0) { resolve(null); return }
-        const best = frames.reduce((a, b) => a.score > b.score ? a : b)
-        console.log(`${LOG} Frame sharpness: [${frames.map(f => f.score.toFixed(0)).join(", ")}] → picked ${best.score.toFixed(0)}`)
-        resolve(best)
-      }
-    }
-    grab()
-  })
 }
 
 async function processAndOCR(imageData) {
@@ -344,8 +290,8 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
   // --- Step 1: OpenCV card detection ---
   const detectW = Math.round(canvasEl.width * DETECT_W_RATIO)
   const detectH = Math.round(canvasEl.height * DETECT_H_RATIO)
-  // yBias 0.15: click near top of region (user clicks title, card extends below)
-  const detectCapture = captureRegion(ctx, canvasEl, canvasX, canvasY, detectW, detectH, 0.15)
+  // yBias 0.3: click assumed on card art
+  const detectCapture = captureRegion(ctx, canvasEl, canvasX, canvasY, detectW, detectH, 0.3)
 
   if (detectCapture) {
     if (container && isDebugEnabled()) {
@@ -375,15 +321,20 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
       const cardCtx = cardCanvas.getContext("2d")
 
       // OCR on title region (already upright from the deskewed card)
-      if (title.width > 10 && title.height > 5) {
-        const titleImageData = cardCtx.getImageData(title.x, title.y, title.width, title.height)
+      const tw = Math.min(title.width, card.width - title.x)
+      const th = Math.min(title.height, card.height - title.y)
+      if (tw > 10 && th > 5) {
+        const titleImageData = cardCtx.getImageData(title.x, title.y, tw, th)
         result = await processAndOCR(titleImageData)
+        result.detectMethod = "title_bar"
         console.log(`${LOG} Title OCR: "${result.text}" (${result.confidence})`)
       }
 
       // Extract art region and compute perceptual hash
-      if (art.width > 20 && art.height > 20) {
-        const artImageData = cardCtx.getImageData(art.x, art.y, art.width, art.height)
+      const aw = Math.min(art.width, card.width - art.x)
+      const ah = Math.min(art.height, card.height - art.y)
+      if (aw > 20 && ah > 20) {
+        const artImageData = cardCtx.getImageData(art.x, art.y, aw, ah)
         const artCanvas = imageDataToCanvas(artImageData)
         const artHash = computePHash(artCanvas)
         console.log(`${LOG} Art pHash: ${artHash}`)
@@ -391,6 +342,11 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
         if (result) {
           result.artCanvas = artCanvas
           result.artHash = artHash
+          if (result.detectMethod === "title_bar") {
+            result.detectMethod = "title_bar + card_art"
+          }
+        } else {
+          result = { text: "", confidence: 0, artCanvas, artHash, detectMethod: "card_art" }
         }
       }
 
@@ -411,28 +367,6 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
       }
     } else {
       console.log(`${LOG} OpenCV found no card`)
-    }
-  }
-
-  // --- Step 2: Fallback — small OCR region if OpenCV didn't produce a result ---
-  if (!result) {
-    console.log(`${LOG} Falling back to fixed-region OCR around click`)
-    const fallbackW = Math.round(canvasEl.width * FALLBACK_W_RATIO)
-    const fallbackH = Math.round(canvasEl.height * FALLBACK_H_RATIO)
-    // Centered on click — assumes user clicked middle of the title text
-    const capture = await captureBestFrame(ctx, canvasEl, canvasX, canvasY, fallbackW, fallbackH)
-
-    if (capture) {
-      if (container && isDebugEnabled()) {
-        fadeBox(showBoundingBox(
-          container, rect,
-          capture.sx / scaleX, capture.sy / scaleY,
-          capture.sw / scaleX, capture.sh / scaleY,
-          isFlipped, "oklch(0.75 0.18 145)", "Fallback OCR",
-        ))
-      }
-      result = await processAndOCR(capture.imageData)
-      console.log(`${LOG} Fallback OCR: "${result.text}" (${result.confidence})`)
     }
   }
 

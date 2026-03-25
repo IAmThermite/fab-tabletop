@@ -59,7 +59,24 @@ defmodule TabletopWeb.CardLookup do
             possible_cards
           end
 
-        case build_open_card(possible_cards, x, y, detected_pitch) do
+        match_method =
+          cond do
+            phash && possible_cards != [] -> "phash"
+            candidates != [] && possible_cards != [] -> "ocr"
+            true -> "none"
+          end
+
+        max_results = if match_method in ["phash", "ocr"], do: 3, else: 5
+        possible_cards = Enum.take(possible_cards, max_results)
+
+        debug_info = %{
+          ocr_candidates: candidates,
+          phash: phash,
+          detected_pitch: detected_pitch,
+          match_method: match_method
+        }
+
+        case build_open_card(possible_cards, x, y, detected_pitch, debug_info) do
           nil -> {:noreply, socket}
           new_card -> {:noreply, assign(socket, :open_cards, socket.assigns.open_cards ++ [new_card])}
         end
@@ -76,7 +93,9 @@ defmodule TabletopWeb.CardLookup do
             x = if existing, do: existing.x, else: 20
             y = if existing, do: existing.y, else: 20
 
-            case build_open_card(Tabletop.Cards.fuzzy_match_name(trimmed), x, y, nil) do
+            search_debug = %{ocr_candidates: [%{"text" => trimmed, "confidence" => nil}], phash: nil, match_method: "search"}
+
+            case build_open_card(Tabletop.Cards.fuzzy_match_name(trimmed), x, y, nil, search_debug) do
               nil ->
                 {:noreply, socket}
 
@@ -123,9 +142,52 @@ defmodule TabletopWeb.CardLookup do
         {:noreply, assign(socket, :open_cards, cards)}
       end
 
-      defp build_open_card([], _x, _y, _detected_pitch), do: nil
+      def handle_event("switch_match", %{"card_id" => _id, "normalized_name" => ""}, socket) do
+        {:noreply, socket}
+      end
 
-      defp build_open_card(possible_cards, x, y, detected_pitch) do
+      def handle_event("switch_match", %{"card_id" => id, "normalized_name" => name}, socket) do
+        cards =
+          Enum.map(socket.assigns.open_cards, fn open_card ->
+            if open_card.id == id do
+              case Enum.find(open_card.alternate_matches, &(&1.normalized_name == name)) do
+                nil ->
+                  open_card
+
+                new_card ->
+                  # Rotate old card back into alternates
+                  old_base =
+                    Enum.find(open_card.pitch_variants, open_card.card, &(&1.pitch == 1))
+
+                  new_alternates =
+                    [old_base | Enum.reject(open_card.alternate_matches, &(&1.normalized_name == name))]
+                    |> Enum.uniq_by(& &1.normalized_name)
+
+                  new_pitch_variants =
+                    Tabletop.Cards.find_pitch_variants(new_card, new_card.set_code)
+
+                  new_selected =
+                    if new_pitch_variants != [],
+                      do: Enum.find(new_pitch_variants, new_card, &(&1.pitch == 1)),
+                      else: new_card
+
+                  %{open_card |
+                    card: new_selected,
+                    pitch_variants: new_pitch_variants,
+                    alternate_matches: new_alternates
+                  }
+              end
+            else
+              open_card
+            end
+          end)
+
+        {:noreply, assign(socket, :open_cards, cards)}
+      end
+
+      defp build_open_card([], _x, _y, _detected_pitch, _debug_info), do: nil
+
+      defp build_open_card(possible_cards, x, y, detected_pitch, debug_info) do
         card = List.first(possible_cards)
         pitch_variants = Tabletop.Cards.find_pitch_variants(card, card.set_code)
 
@@ -141,12 +203,19 @@ defmodule TabletopWeb.CardLookup do
               Enum.find(pitch_variants, card, &(&1.pitch == 1))
           end
 
+        alternates =
+          possible_cards
+          |> Enum.reject(&(&1.normalized_name == card.normalized_name))
+          |> Enum.uniq_by(& &1.normalized_name)
+
         %{
           id: System.unique_integer([:positive]) |> Integer.to_string(),
           x: x,
           y: y,
           card: selected_card,
-          pitch_variants: pitch_variants
+          pitch_variants: pitch_variants,
+          alternate_matches: alternates,
+          debug: debug_info
         }
       end
     end

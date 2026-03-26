@@ -58,7 +58,7 @@ defmodule Tabletop.Cards.Importer do
         {:ok, changeset} -> [changeset]
         {:exit, _reason} -> []
       end)
-      |> Enum.uniq_by(fn cs -> {cs.changes.image_phash, cs.changes[:pitch]} end)
+      |> Enum.uniq_by(fn cs -> {cs.changes[:name], cs.changes[:pitch], cs.changes[:set_code]} end)
       |> then(fn unique_cards ->
         Logger.info("Generated #{length(unique_cards)} unique cards from file #{file}")
         unique_cards

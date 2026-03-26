@@ -357,5 +357,67 @@ defmodule Tabletop.Cards.ImporterTest do
       assert 2 in generated_pitches
       assert 3 in generated_pitches
     end
+
+    test "imports all pitch variants from each set when card exists in multiple sets", %{} do
+      output_dir =
+        System.tmp_dir!() |> Path.join("importer_test_#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(output_dir)
+
+      on_exit(fn -> File.rm_rf!(output_dir) end)
+
+      Req.Test.stub(Tabletop.Cards.ImporterTest, fn conn ->
+        cond do
+          String.contains?(conn.request_path, "/card_id/scar-for-a-scar-1/") ->
+            json = File.read!("#{@test_fixture_dir}/scar-for-a-scar-1.json")
+            Req.Test.json(conn, Jason.decode!(json))
+
+          String.contains?(conn.request_path, "/card_id/scar-for-a-scar-2/") ->
+            json = File.read!("#{@test_fixture_dir}/scar-for-a-scar-2.json")
+            Req.Test.json(conn, Jason.decode!(json))
+
+          String.contains?(conn.request_path, "/card_id/scar-for-a-scar-3/") ->
+            json = File.read!("#{@test_fixture_dir}/scar-for-a-scar-3.json")
+            Req.Test.json(conn, Jason.decode!(json))
+
+          String.ends_with?(conn.request_path, ".webp") ->
+            body = File.read!("#{@test_fixture_dir}/scar-for-a-scar-1.webp")
+
+            conn
+            |> Plug.Conn.put_resp_content_type("image/webp")
+            |> Plug.Conn.send_resp(200, body)
+
+          true ->
+            Plug.Conn.send_resp(conn, 404, "Not found")
+        end
+      end)
+
+      req_options = [plug: {Req.Test, Tabletop.Cards.ImporterTest}]
+
+      Importer.import_and_generate(
+        raw_path: "#{@test_fixture_dir}/scar-for-a-scar-all.json",
+        output_dir: output_dir,
+        req_options: req_options
+      )
+
+      cards = Cards.list_cards()
+      scar_cards = Enum.filter(cards, &(&1.name == "Scar for a Scar"))
+
+      # The fixtures contain prints from multiple sets (e.g. 1HP, WTR, UPR, IRA).
+      # The dedup should preserve all pitch variants per set, not collapse across sets.
+      for set_code <- ["1HP", "WTR"] do
+        set_cards = Enum.filter(scar_cards, &(&1.set_code == set_code))
+        set_pitches = Enum.map(set_cards, & &1.pitch) |> Enum.sort()
+
+        assert 1 in set_pitches,
+               "Expected pitch 1 for set #{set_code}, got pitches: #{inspect(set_pitches)}"
+
+        assert 2 in set_pitches,
+               "Expected pitch 2 for set #{set_code}, got pitches: #{inspect(set_pitches)}"
+
+        assert 3 in set_pitches,
+               "Expected pitch 3 for set #{set_code}, got pitches: #{inspect(set_pitches)}"
+      end
+    end
   end
 end

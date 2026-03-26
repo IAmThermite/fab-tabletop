@@ -5,6 +5,8 @@ defmodule Mix.Tasks.ImportCards do
 
   @impl Mix.Task
   def run(_args) do
+    Mix.Task.run("app.start")
+
     Mix.shell().info("Running card import...")
     Tabletop.Cards.Importer.import_from_generated_data()
     Mix.shell().info("Card import complete.")

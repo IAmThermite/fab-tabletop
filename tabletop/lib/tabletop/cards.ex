@@ -30,6 +30,32 @@ defmodule Tabletop.Cards do
     |> IO.inspect(label: "find_by_p_hash_similarity")
   end
 
+  @doc """
+  Try both orientations' pHashes and return the result set with the better top match.
+  Used when the client can't determine card orientation.
+  """
+  def find_by_p_hash_similarity_dual(phash, phash_flipped, threshold \\ 15) do
+    results_a = find_by_p_hash_similarity(phash, threshold)
+    results_b = find_by_p_hash_similarity(phash_flipped, threshold)
+
+    best_a = best_hamming_distance(results_a, phash)
+    best_b = best_hamming_distance(results_b, phash_flipped)
+
+    if best_b < best_a, do: results_b, else: results_a
+  end
+
+  defp best_hamming_distance([], _phash), do: 64
+
+  defp best_hamming_distance(results, phash) do
+    results
+    |> Enum.map(fn card ->
+      Bitwise.bxor(card.image_phash, phash)
+      |> Integer.digits(2)
+      |> Enum.count(&(&1 == 1))
+    end)
+    |> Enum.min()
+  end
+
   # Scoring formula:
   # - Trigram similarity of the full normalized name (good for close matches)
   # - Token overlap: product of (card tokens found in query) × (query tokens found in card) × 4

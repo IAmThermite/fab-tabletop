@@ -76,15 +76,11 @@ export function showDebugPanel(result, ocrText, confidence) {
     row.appendChild(col)
   }
 
-  addPreview(result.rawCanvas, "Raw capture", null, null)
-  addPreview(result.grayCanvas, "Sharpened grayscale", result.grayConfidence, result.grayText)
-  if (result.upGrayCanvas) {
-    addPreview(result.upGrayCanvas, "Upscaled grayscale", result.upGrayConfidence, result.upGrayText)
-  }
-  if (result.sharpThreshCanvas) {
-    addPreview(result.sharpThreshCanvas, "Sharp + threshold", result.sharpThreshConfidence, result.sharpThreshText)
-  }
-  addPreview(result.processedCanvas, "Adaptive threshold", result.threshConfidence, result.threshText)
+  if (result.rawCanvas) addPreview(result.rawCanvas, "Raw capture", null, null)
+  if (result.grayCanvas) addPreview(result.grayCanvas, "Sharpened grayscale", result.grayConfidence, result.grayText)
+  if (result.upGrayCanvas) addPreview(result.upGrayCanvas, "Upscaled grayscale", result.upGrayConfidence, result.upGrayText)
+  if (result.sharpThreshCanvas) addPreview(result.sharpThreshCanvas, "Sharp + threshold", result.sharpThreshConfidence, result.sharpThreshText)
+  if (result.processedCanvas) addPreview(result.processedCanvas, "Adaptive threshold", result.threshConfidence, result.threshText)
 
   // Show full card capture if available
   if (result.cardCanvas) {
@@ -136,19 +132,105 @@ export function showDebugPanel(result, ocrText, confidence) {
     row.appendChild(artCol)
   }
 
+  // Show flipped art region and pHash if available (uncertain orientation)
+  if (result.artCanvasFlipped) {
+    const flipCol = document.createElement("div")
+    flipCol.style.cssText = "display: flex; flex-direction: column; gap: 2px; border-left: 1px solid rgba(255,255,255,0.15); padding-left: 8px;"
+    const flipLbl = document.createElement("span")
+    flipLbl.style.cssText = "font-size: 10px; opacity: 0.7;"
+    flipLbl.textContent = "Art region (flipped)"
+    flipCol.appendChild(flipLbl)
+    const flipImg = document.createElement("img")
+    flipImg.src = result.artCanvasFlipped.toDataURL()
+    flipImg.style.cssText = `
+      max-width: 120px; max-height: 120px; width: auto; height: auto;
+      border: 1px solid rgba(255,255,255,0.2); border-radius: 3px;
+    `
+    flipCol.appendChild(flipImg)
+    const flipSize = document.createElement("span")
+    flipSize.style.cssText = "font-size: 9px; opacity: 0.5;"
+    flipSize.textContent = `${result.artCanvasFlipped.width}\u00d7${result.artCanvasFlipped.height}`
+    flipCol.appendChild(flipSize)
+    if (result.artHashFlipped) {
+      const flipHashEl = document.createElement("span")
+      flipHashEl.style.cssText = "font-size: 10px; font-weight: 600; color: #c8f; font-family: monospace; letter-spacing: 1px;"
+      flipHashEl.textContent = result.artHashFlipped
+      flipCol.appendChild(flipHashEl)
+    }
+    row.appendChild(flipCol)
+  }
+
   _debugPanel.appendChild(row)
 
   const resultEl = document.createElement("div")
   resultEl.style.cssText = "margin-top: 4px; padding: 4px 6px; background: rgba(255,255,255,0.1); border-radius: 4px;"
-  const methodLabels = { "title_bar": "Title bar OCR", "card_art": "Card art pHash", "title_bar + card_art": "Title bar + Card art" }
+  const methodLabels = { "title_bar": "Title bar OCR", "card_art": "Card art pHash", "title_bar + card_art": "Title bar + Card art", "title_bar (flipped)": "Title bar OCR (flipped)" }
   const methodLabel = result.detectMethod ? ` | method: ${methodLabels[result.detectMethod] || result.detectMethod}` : ""
   const rotationLabel = result.angle ? ` | angle: ${Math.abs(result.angle).toFixed(1)}\u00b0` : ""
+  const orientationLabel = result.orientation ? ` | orient: ${result.orientation}` : ""
   const hashLabel = result.artHash ? ` | pHash: ${result.artHash}` : ""
+  const hashFlippedLabel = result.artHashFlipped ? ` | pHash\u2191\u2193: ${result.artHashFlipped}` : ""
   resultEl.innerHTML = `
-    <div style="opacity: 0.7; font-size: 10px;">Best result (confidence: ${confidence ?? "?"}${methodLabel}${rotationLabel}${hashLabel})</div>
+    <div style="opacity: 0.7; font-size: 10px;">Best result (confidence: ${confidence ?? "?"}${methodLabel}${rotationLabel}${orientationLabel}${hashLabel}${hashFlippedLabel})</div>
     <div style="font-size: 13px; font-weight: bold; margin-top: 2px;">${ocrText || "<em style='opacity:0.5'>no text detected</em>"}</div>
   `
   _debugPanel.appendChild(resultEl)
+
+  // Decision list: show all OCR candidates, filtering, and detection signals
+  const listEl = document.createElement("div")
+  listEl.style.cssText = "margin-top: 4px; padding: 6px; background: rgba(255,255,255,0.06); border-radius: 4px; font-size: 10px; line-height: 1.6;"
+
+  const allCandidates = [
+    { label: "gray", text: result.grayText, confidence: result.grayConfidence },
+    { label: "upGray", text: result.upGrayText, confidence: result.upGrayConfidence },
+    { label: "sharpThresh", text: result.sharpThreshText, confidence: result.sharpThreshConfidence },
+    { label: "thresh", text: result.threshText, confidence: result.threshConfidence },
+  ]
+
+  let html = `<div style="font-weight: 600; margin-bottom: 3px; opacity: 0.8;">Decision Logic</div>`
+
+  // OCR candidates
+  html += `<div style="opacity: 0.6; margin-bottom: 2px;">OCR candidates (threshold: conf&gt;40, 3+ alpha):</div>`
+  for (const c of allCandidates) {
+    const alphaLen = (c.text || "").replace(/[^a-zA-Z]/g, "").length
+    const passed = (c.confidence || 0) > 40 && c.text && alphaLen >= 3
+    const color = passed ? "#6f6" : "#f66"
+    const icon = passed ? "\u2713" : "\u2717"
+    const confStr = c.confidence != null ? Math.round(c.confidence) : "?"
+    html += `<div style="margin-left: 8px;"><span style="color:${color}">${icon}</span> <b>${c.label}</b>: "${c.text || ""}" <span style="opacity:0.6">(conf: ${confStr}, alpha: ${alphaLen})</span></div>`
+  }
+
+  // Detection signals
+  html += `<div style="opacity: 0.6; margin-top: 4px; margin-bottom: 2px;">Detection signals:</div>`
+
+  if (result.orientation) {
+    const orientColor = result.orientation === "flipped" ? "#f96" : result.orientation === "uncertain" ? "#ff6" : "#6f6"
+    html += `<div style="margin-left: 8px;"><span style="color:${orientColor}">\u25cf</span> Orientation: <b>${result.orientation}</b></div>`
+  }
+
+  if (result.detectedPitch) {
+    const pitchColors = { 1: "#f66", 2: "#ff6", 3: "#6af" }
+    html += `<div style="margin-left: 8px;"><span style="color:${pitchColors[result.detectedPitch] || "#fff"}">\u25cf</span> Pitch: <b>${result.detectedPitch}</b></div>`
+  } else {
+    html += `<div style="margin-left: 8px;"><span style="color:#888">\u25cf</span> Pitch: <span style="opacity:0.5">not detected</span></div>`
+  }
+
+  if (result.artHash != null) {
+    html += `<div style="margin-left: 8px;"><span style="color:#8cf">\u25cf</span> pHash: <span style="font-family:monospace">${result.artHash}</span></div>`
+  }
+  if (result.artHashFlipped != null) {
+    html += `<div style="margin-left: 8px;"><span style="color:#c8f">\u25cf</span> pHash (flipped): <span style="font-family:monospace">${result.artHashFlipped}</span></div>`
+  }
+
+  // Sent payload summary
+  const sent = allCandidates.filter(c => (c.confidence || 0) > 40 && c.text && (c.text).replace(/[^a-zA-Z]/g, "").length >= 3)
+  html += `<div style="opacity: 0.6; margin-top: 4px; margin-bottom: 2px;">Payload sent to server:</div>`
+  html += `<div style="margin-left: 8px;">OCR candidates: <b>${sent.length}</b> of ${allCandidates.length} passed filter</div>`
+  html += `<div style="margin-left: 8px;">pHash: <b>${result.artHash != null ? "yes" : "no"}</b>${result.artHashFlipped != null ? " + flipped" : ""}</div>`
+  html += `<div style="margin-left: 8px;">Detect method: <b>${result.detectMethod || "none"}</b></div>`
+
+  listEl.innerHTML = html
+  _debugPanel.appendChild(listEl)
 
   // Append to body so LiveView patches don't remove it
   document.body.appendChild(_debugPanel)

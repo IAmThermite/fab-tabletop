@@ -50,12 +50,12 @@ function detectCard(imageData) {
       worker.removeEventListener("message", handler)
 
       if (event.data.type === "cardDetected") {
-        const { card, cardImageData, quad, title, art, angle } = event.data
+        const { card, cardImageData, quad, title, art, angle, orientation } = event.data
         if (!card.width || !card.height) { resolve(null); return }
         // Reconstruct ImageData from the transferred buffer
         const cardPixels = new Uint8ClampedArray(cardImageData)
         const deskewedImageData = new ImageData(cardPixels, card.width, card.height)
-        resolve({ card, deskewedImageData, quad, title, art, angle })
+        resolve({ card, deskewedImageData, quad, title, art, angle, orientation })
       } else {
         resolve(null)
       }
@@ -141,6 +141,10 @@ export function setupCardLookup(hook, canvasEl, gameArea, opts = {}) {
 
         if (result.artHash != null) {
           payload.phash = result.artHash.toString()
+        }
+
+        if (result.artHashFlipped != null) {
+          payload.phash_flipped = result.artHashFlipped.toString()
         }
 
         if (result.detectedPitch != null) {
@@ -306,7 +310,7 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
     const detected = await detectCard(detectCapture.imageData)
 
     if (detected) {
-      const { card, deskewedImageData, quad, title, art, angle } = detected
+      const { card, deskewedImageData, quad, title, art, angle, orientation } = detected
 
       if (container && isDebugEnabled() && quad) {
         fadeBox(showCardQuad(rect, quad, detectCapture, scaleX, scaleY, isFlipped))
@@ -328,6 +332,32 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
         result = await processAndOCR(titleImageData)
         result.detectMethod = "title_bar"
         console.log(`${LOG} Title OCR: "${result.text}" (${result.confidence})`)
+
+        // If orientation is uncertain and OCR confidence is low, try the flipped title
+        if (orientation === "uncertain" && result.confidence < 40) {
+          console.log(`${LOG} Low OCR confidence with uncertain orientation — trying flipped title`)
+          const flippedTitleY = card.height - title.y - th
+          if (flippedTitleY >= 0) {
+            const flippedTitleData = cardCtx.getImageData(title.x, flippedTitleY, tw, th)
+            // Rotate this region 180° so text reads correctly
+            const ftd = flippedTitleData.data
+            const totalPx = tw * th
+            const halfPx = Math.floor(totalPx / 2)
+            for (let i = 0; i < halfPx; i++) {
+              const j = totalPx - 1 - i
+              const ai = i * 4, bi = j * 4
+              const r = ftd[ai], g = ftd[ai + 1], b = ftd[ai + 2], a = ftd[ai + 3]
+              ftd[ai] = ftd[bi]; ftd[ai + 1] = ftd[bi + 1]; ftd[ai + 2] = ftd[bi + 2]; ftd[ai + 3] = ftd[bi + 3]
+              ftd[bi] = r; ftd[bi + 1] = g; ftd[bi + 2] = b; ftd[bi + 3] = a
+            }
+            const flippedResult = await processAndOCR(flippedTitleData)
+            console.log(`${LOG} Flipped title OCR: "${flippedResult.text}" (${flippedResult.confidence})`)
+            if (flippedResult.confidence > result.confidence) {
+              result = flippedResult
+              result.detectMethod = "title_bar (flipped)"
+            }
+          }
+        }
       }
 
       // Extract art region and compute perceptual hash
@@ -339,14 +369,39 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
         const artHash = computePHash(artCanvas)
         console.log(`${LOG} Art pHash: ${artHash}`)
 
+        let artHashFlipped = null
+        let flippedArtCanvas = null
+        if (orientation === "uncertain") {
+          // Compute pHash from the 180-rotated card's art region as fallback
+          const flippedData = new Uint8ClampedArray(deskewedImageData.data)
+          const totalPixels = card.width * card.height
+          const half = Math.floor(totalPixels / 2)
+          for (let i = 0; i < half; i++) {
+            const j = totalPixels - 1 - i
+            const ai = i * 4, bi = j * 4
+            const r = flippedData[ai], g = flippedData[ai + 1], b = flippedData[ai + 2], a = flippedData[ai + 3]
+            flippedData[ai] = flippedData[bi]; flippedData[ai + 1] = flippedData[bi + 1]; flippedData[ai + 2] = flippedData[bi + 2]; flippedData[ai + 3] = flippedData[bi + 3]
+            flippedData[bi] = r; flippedData[bi + 1] = g; flippedData[bi + 2] = b; flippedData[bi + 3] = a
+          }
+          const flippedImageData = new ImageData(flippedData, card.width, card.height)
+          const flippedCanvas = imageDataToCanvas(flippedImageData)
+          const flippedCtx = flippedCanvas.getContext("2d")
+          const flippedArtData = flippedCtx.getImageData(art.x, art.y, aw, ah)
+          flippedArtCanvas = imageDataToCanvas(flippedArtData)
+          artHashFlipped = computePHash(flippedArtCanvas)
+          console.log(`${LOG} Art pHash (flipped): ${artHashFlipped}`)
+        }
+
         if (result) {
           result.artCanvas = artCanvas
           result.artHash = artHash
+          result.artHashFlipped = artHashFlipped
+          result.artCanvasFlipped = flippedArtCanvas
           if (result.detectMethod === "title_bar") {
             result.detectMethod = "title_bar + card_art"
           }
         } else {
-          result = { text: "", confidence: 0, artCanvas, artHash, detectMethod: "card_art" }
+          result = { text: "", confidence: 0, artCanvas, artHash, artHashFlipped, artCanvasFlipped: flippedArtCanvas ?? null, detectMethod: "card_art" }
         }
       }
 
@@ -362,6 +417,7 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
       }
       result.cardCanvas = cardCanvas
       result.angle = angle
+      result.orientation = orientation
       if (pitchResult) {
         result.detectedPitch = pitchResult.pitch
       }

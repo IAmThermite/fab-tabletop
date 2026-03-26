@@ -430,6 +430,20 @@ defmodule TabletopWeb.CameraSetupLive do
           }
         },
 
+        updated() {
+          const zoomSlider = document.getElementById("zoom-slider")
+          const zoomValueEl = document.getElementById("zoom-value")
+          const rotationSlider = document.getElementById("rotation-slider")
+          const rotationValueEl = document.getElementById("rotation-value")
+
+          const savedZoom = localStorage.getItem("tabletop:camera-zoom") || "1"
+          const savedRotation = localStorage.getItem("tabletop:camera-rotation") || "0"
+          zoomSlider.value = savedZoom
+          rotationSlider.value = savedRotation
+          zoomValueEl.textContent = parseFloat(savedZoom).toFixed(1) + "x"
+          rotationValueEl.textContent = savedRotation + "\u00B0"
+        },
+
         destroyed() {
           if (this.cleanup) this.cleanup()
         },

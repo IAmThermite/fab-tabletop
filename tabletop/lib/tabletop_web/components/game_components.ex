@@ -442,7 +442,7 @@ defmodule TabletopWeb.GameComponents do
 
   def settings_dialog(assigns) do
     ~H"""
-    <dialog id="settings-dialog" class="modal">
+    <dialog id="settings-dialog" class="modal" phx-update="ignore">
       <div class="modal-box">
         <h3 class="text-lg font-bold">Settings</h3>
         <div class="py-4 space-y-4">
@@ -612,6 +612,24 @@ defmodule TabletopWeb.GameComponents do
                       end
                     ]}>
                       (distance: {distance})
+                    </span>
+                  <% end %>
+                </div>
+              <% end %>
+              <%= if debug[:phash_flipped] do %>
+                <% distance_flipped = if card.card.image_phash, do: Tabletop.Cards.PHash.hamming_distance(debug.phash_flipped, card.card.image_phash), else: nil %>
+                <div>
+                  <span class="opacity-50">client phash (flipped):</span> {debug.phash_flipped}
+                  <%= if distance_flipped do %>
+                    <span class={[
+                      "ml-1",
+                      cond do
+                        distance_flipped < 5 -> "text-success"
+                        distance_flipped < 15 -> "text-warning"
+                        true -> "text-error"
+                      end
+                    ]}>
+                      (distance: {distance_flipped})
                     </span>
                   <% end %>
                 </div>

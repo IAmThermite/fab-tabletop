@@ -64,6 +64,75 @@ const ART_H_RATIO = 0.42
 const ART_X_INSET = 0.10
 
 /**
+ * Detect whether the deskewed card is upside-down by comparing color saturation
+ * of the top strip vs bottom strip. FaB cards have a colored pitch band at top.
+ *
+ * Returns "upright", "flipped", or "uncertain".
+ */
+function detectOrientation(cardData, cardW, cardH) {
+  const topY0 = Math.round(cardH * 0.01)
+  const topY1 = Math.round(cardH * 0.04)
+  const botY0 = Math.round(cardH * 0.96)
+  const botY1 = Math.round(cardH * 0.99)
+  const x0 = Math.round(cardW * 0.25)
+  const x1 = Math.round(cardW * 0.75)
+
+  let topSaturated = 0, topTotal = 0
+  let botSaturated = 0, botTotal = 0
+
+  for (let y = topY0; y < topY1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = (y * cardW + x) * 4
+      const r = cardData[i], g = cardData[i + 1], b = cardData[i + 2]
+      const max = Math.max(r, g, b), min = Math.min(r, g, b)
+      const v = max / 255
+      const s = max === 0 ? 0 : (max - min) / max
+      topTotal++
+      if (s > 0.20 && v > 0.15) topSaturated++
+    }
+  }
+
+  for (let y = botY0; y < botY1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = (y * cardW + x) * 4
+      const r = cardData[i], g = cardData[i + 1], b = cardData[i + 2]
+      const max = Math.max(r, g, b), min = Math.min(r, g, b)
+      const v = max / 255
+      const s = max === 0 ? 0 : (max - min) / max
+      botTotal++
+      if (s > 0.20 && v > 0.15) botSaturated++
+    }
+  }
+
+  const topRatio = topTotal > 0 ? topSaturated / topTotal : 0
+  const botRatio = botTotal > 0 ? botSaturated / botTotal : 0
+
+  console.log(`${LOG} Orientation check — top saturation: ${(topRatio * 100).toFixed(0)}%, bottom: ${(botRatio * 100).toFixed(0)}%`)
+
+  // If one strip has clearly more color than the other, we can determine orientation
+  if (botRatio > topRatio * 1.5 && botRatio > 0.15) return "flipped"
+  if (topRatio > botRatio * 1.5 && topRatio > 0.15) return "upright"
+  return "uncertain"
+}
+
+/**
+ * Rotate an RGBA pixel buffer 180 degrees in-place.
+ */
+function rotateBuffer180(data, width, height) {
+  const totalPixels = width * height
+  const half = Math.floor(totalPixels / 2)
+
+  for (let i = 0; i < half; i++) {
+    const j = totalPixels - 1 - i
+    const ai = i * 4, bi = j * 4
+    // Swap RGBA values
+    const r = data[ai], g = data[ai + 1], b = data[ai + 2], a = data[ai + 3]
+    data[ai] = data[bi]; data[ai + 1] = data[bi + 1]; data[ai + 2] = data[bi + 2]; data[ai + 3] = data[bi + 3]
+    data[bi] = r; data[bi + 1] = g; data[bi + 2] = b; data[bi + 3] = a
+  }
+}
+
+/**
  * Use approxPolyDP to find the best 4-point polygon approximation of a contour.
  * Returns null if no good quad is found, or an array of 4 {x,y} points.
  */
@@ -283,6 +352,13 @@ self.onmessage = function (event) {
 
       const cardData = new Uint8ClampedArray(warpedRGBA.data)
 
+      // Detect if the card is upside-down and flip if needed
+      const orientation = detectOrientation(cardData, cardW, cardH)
+      if (orientation === "flipped") {
+        console.log(`${LOG} Card is upside-down — rotating 180°`)
+        rotateBuffer180(cardData, cardW, cardH)
+      }
+
       // Extract title and art regions from the deskewed card
       const title = {
         x: Math.round(cardW * TITLE_X_INSET),
@@ -312,6 +388,7 @@ self.onmessage = function (event) {
         title,
         art,
         angle,
+        orientation,
       }, [cardData.buffer])
 
       srcPts.delete()

@@ -25,6 +25,12 @@ defmodule TabletopWeb.CardLookup do
             _ -> nil
           end
 
+        phash_flipped =
+          case Map.get(params, "phash_flipped") do
+            s when is_binary(s) -> String.to_integer(s)
+            _ -> nil
+          end
+
         detected_pitch =
           case Map.get(params, "detected_pitch") do
             p when p in [1, 2, 3] -> p
@@ -32,10 +38,15 @@ defmodule TabletopWeb.CardLookup do
           end
 
         possible_cards =
-          if phash do
-            Tabletop.Cards.find_by_p_hash_similarity(phash)
-          else
-            []
+          cond do
+            phash && phash_flipped ->
+              Tabletop.Cards.find_by_p_hash_similarity_dual(phash, phash_flipped)
+
+            phash ->
+              Tabletop.Cards.find_by_p_hash_similarity(phash)
+
+            true ->
+              []
           end
 
         possible_cards =
@@ -72,6 +83,7 @@ defmodule TabletopWeb.CardLookup do
         debug_info = %{
           ocr_candidates: candidates,
           phash: phash,
+          phash_flipped: phash_flipped,
           detected_pitch: detected_pitch,
           match_method: match_method
         }

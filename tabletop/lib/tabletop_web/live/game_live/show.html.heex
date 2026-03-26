@@ -457,6 +457,12 @@
         this._previewObserver.observe(this.el, { childList: true, subtree: true })
       },
 
+      updated() {
+        const canvasEl = document.getElementById("remote-canvas")
+        const flipped = localStorage.getItem("tabletop:flip-opponent") === "true"
+        canvasEl.style.transform = flipped ? "rotate(180deg)" : ""
+      },
+
       destroyed() {
         if (this._localPreviewFrameId) {
           cancelAnimationFrame(this._localPreviewFrameId)

@@ -12,9 +12,8 @@ import { computePHash } from "./p_hash"
 const LOG = "[CardScanner]"
 const BOX_LINGER_MS = 3000
 
-// Detect region: enough to contain one portrait card with margin
-const DETECT_W_RATIO = 0.15
-const DETECT_H_RATIO = 0.30
+// Detect region: square so it captures cards in any orientation
+const DETECT_RATIO = 0.35
 
 let _worker = null
 let _requestCounter = 0
@@ -292,10 +291,9 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
   let result = null
 
   // --- Step 1: OpenCV card detection ---
-  const detectW = Math.round(canvasEl.width * DETECT_W_RATIO)
-  const detectH = Math.round(canvasEl.height * DETECT_H_RATIO)
+  const detectSize = Math.round(Math.min(canvasEl.width, canvasEl.height) * DETECT_RATIO)
   // yBias 0.3: click assumed on card art
-  const detectCapture = captureRegion(ctx, canvasEl, canvasX, canvasY, detectW, detectH, 0.3)
+  const detectCapture = captureRegion(ctx, canvasEl, canvasX, canvasY, detectSize, detectSize, 0.3)
 
   if (detectCapture) {
     if (container && isDebugEnabled()) {

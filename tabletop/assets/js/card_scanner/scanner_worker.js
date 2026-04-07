@@ -45,13 +45,17 @@ function onReady(module) {
   setTimeout(() => { clearInterval(poll); if (!cvReady) self.postMessage({ type: "error", message: "OpenCV init timed out" }) }, 30000)
 })()
 
-// Card must be at least 2% but no more than 60% of image area
-const MIN_CARD_AREA_RATIO = 0.02
+// Card must be at least 5% but no more than 60% of image area
+const MIN_CARD_AREA_RATIO = 0.05
 const MAX_CARD_AREA_RATIO = 0.60
 
 // Portrait card aspect ratio: long/short ~1.2 to 2.0 (standard FaB is ~1.4)
 const MIN_ASPECT = 1.1
 const MAX_ASPECT = 2.0
+
+// Rectangularity: reject trapezoids from card art features
+const MIN_SIDE_RATIO = 0.75       // opposite sides must be within 75% of each other
+const MAX_CORNER_DEVIATION = 25   // max degrees any corner can deviate from 90°
 
 // Title region: narrow banner near top of card
 const TITLE_Y_RATIO = 0.055
@@ -179,10 +183,42 @@ function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
+/**
+ * Compute angle (in degrees) at point b, formed by edges ba and bc.
+ */
+function cornerAngle(a, b, c) {
+  const ba = { x: a.x - b.x, y: a.y - b.y }
+  const bc = { x: c.x - b.x, y: c.y - b.y }
+  const dot = ba.x * bc.x + ba.y * bc.y
+  const magBA = Math.hypot(ba.x, ba.y)
+  const magBC = Math.hypot(bc.x, bc.y)
+  if (magBA < 1 || magBC < 1) return 0
+  return Math.acos(Math.max(-1, Math.min(1, dot / (magBA * magBC)))) * (180 / Math.PI)
+}
+
+/**
+ * Check that a quad is convex by verifying all cross products have the same sign.
+ */
+function isConvexQuad(pts) {
+  let sign = 0
+  for (let i = 0; i < 4; i++) {
+    const a = pts[i]
+    const b = pts[(i + 1) % 4]
+    const c = pts[(i + 2) % 4]
+    const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
+    if (cross === 0) continue
+    if (sign === 0) sign = Math.sign(cross)
+    else if (Math.sign(cross) !== sign) return false
+  }
+  return true
+}
+
 function findBestContour(cv, contours, imgArea, centerX, centerY) {
   let bestQuad = null
-  let bestDist = Infinity
+  let bestScore = -Infinity
   let bestArea = 0
+
+  const maxPossibleDist = Math.hypot(centerX, centerY)
 
   for (let i = 0; i < contours.size(); i++) {
     const cnt = contours.get(i)
@@ -210,19 +246,40 @@ function findBestContour(cv, contours, imgArea, centerX, centerY) {
     const aspect = longSide / shortSide
     if (aspect < MIN_ASPECT || aspect > MAX_ASPECT) continue
 
-    // Prefer contour closest to center of the image
+    // Opposite-side ratio check — rejects trapezoids
+    const widthRatio = Math.min(widthTop, widthBot) / Math.max(widthTop, widthBot)
+    const heightRatio = Math.min(heightLeft, heightRight) / Math.max(heightLeft, heightRight)
+    if (widthRatio < MIN_SIDE_RATIO || heightRatio < MIN_SIDE_RATIO) continue
+
+    // Corner angle check — rejects non-rectangular quads
+    const angles = [
+      cornerAngle(ordered[3], ordered[0], ordered[1]),  // at TL
+      cornerAngle(ordered[0], ordered[1], ordered[2]),  // at TR
+      cornerAngle(ordered[1], ordered[2], ordered[3]),  // at BR
+      cornerAngle(ordered[2], ordered[3], ordered[0]),  // at BL
+    ]
+    const maxAngleDev = Math.max(...angles.map(a => Math.abs(a - 90)))
+    if (maxAngleDev > MAX_CORNER_DEVIATION) continue
+
+    // Convexity check
+    if (!isConvexQuad(ordered)) continue
+
+    // Composite score: prefer rectangular contours, with proximity as tiebreaker
+    const rectScore = (widthRatio + heightRatio) / 2 * (1 - maxAngleDev / MAX_CORNER_DEVIATION)
     const cx = quad.reduce((s, p) => s + p.x, 0) / 4
     const cy = quad.reduce((s, p) => s + p.y, 0) / 4
     const d = Math.hypot(cx - centerX, cy - centerY)
+    const normalizedDist = maxPossibleDist > 0 ? d / maxPossibleDist : 0
+    const compositeScore = rectScore * 0.6 + (1 - normalizedDist) * 0.4
 
-    if (d < bestDist) {
-      bestDist = d
+    if (compositeScore > bestScore) {
+      bestScore = compositeScore
       bestQuad = ordered
       bestArea = area
     }
   }
 
-  return { bestQuad, bestDist, bestArea }
+  return { bestQuad, bestScore, bestArea }
 }
 
 self.onmessage = function (event) {
@@ -257,7 +314,7 @@ self.onmessage = function (event) {
     ]
 
     let bestQuad = null
-    let bestDist = Infinity
+    let bestScore = -Infinity
 
     for (const strat of strategies) {
       cv.GaussianBlur(gray, blurred, new cv.Size(strat.blur, strat.blur), 0)
@@ -285,13 +342,13 @@ self.onmessage = function (event) {
       contours = null
       hierarchy = null
 
-      if (result.bestQuad && result.bestDist < bestDist) {
+      if (result.bestQuad && result.bestScore > bestScore) {
         bestQuad = result.bestQuad
-        bestDist = result.bestDist
+        bestScore = result.bestScore
       }
 
-      // Good enough — stop early
-      if (bestQuad && bestDist < Math.min(imageData.width, imageData.height) * 0.15) break
+      // Good enough — stop early (score > 0.85 means highly rectangular and near center)
+      if (bestQuad && bestScore > 0.85) break
     }
 
     if (bestQuad) {
@@ -375,7 +432,7 @@ self.onmessage = function (event) {
       }
 
       const cardArea = cardW * cardH
-      console.log(`${LOG} Card: ${cardW}x${cardH}, angle: ${angle.toFixed(1)}°, area: ${(cardArea / imgArea * 100).toFixed(1)}%, dist: ${bestDist.toFixed(0)}`)
+      console.log(`${LOG} Card: ${cardW}x${cardH}, angle: ${angle.toFixed(1)}°, area: ${(cardArea / imgArea * 100).toFixed(1)}%, score: ${bestScore.toFixed(2)}`)
       console.log(`${LOG} Title: ${title.width}x${title.height} at (${title.x},${title.y})`)
       console.log(`${LOG} Art: ${art.width}x${art.height} at (${art.x},${art.y})`)
 

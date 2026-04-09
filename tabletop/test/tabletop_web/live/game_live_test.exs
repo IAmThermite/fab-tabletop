@@ -65,13 +65,11 @@ defmodule TabletopWeb.GameLiveTest do
 
       {:ok, live_view, _html} = live(conn, ~p"/")
 
-      assert {:ok, _show_live, html} =
+      assert {:ok, _pre_join_live, _html} =
                live_view
                |> element("button", "JOIN")
                |> render_click()
-               |> follow_redirect(conn, ~p"/games/#{game}")
-
-      assert html =~ "Joined game successfully"
+               |> follow_redirect(conn, ~p"/games/#{game}/pre-join")
     end
   end
 

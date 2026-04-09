@@ -87,6 +87,7 @@ defmodule TabletopWeb.Router do
       live "/", GameLive.Index, :index
       live "/games/:id", GameLive.Show, :show
       live "/games/:id/edit", GameLive.Form, :edit
+      live "/games/:id/pre-join", GameLive.PreJoin, :pre_join
       live "/camera-setup", CameraSetupLive, :index
     end
 

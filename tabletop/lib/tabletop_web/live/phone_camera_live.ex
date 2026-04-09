@@ -101,8 +101,14 @@ defmodule TabletopWeb.PhoneCameraLive do
 
           let currentFacingMode = "environment"
           let stream = null
+          let canvasStream = null
+          let animFrameId = null
 
-          // Try to lock to landscape so the camera always captures in landscape
+          // Offscreen canvas used to rotate portrait video into landscape
+          const rotateCanvas = document.createElement("canvas")
+          const rotateCtx = rotateCanvas.getContext("2d")
+
+          // Try to lock to landscape (works in some browsers when fullscreen)
           screen.orientation?.lock("landscape").catch(() => {})
 
           this.relay = new PhoneCameraRelay({
@@ -146,22 +152,95 @@ defmodule TabletopWeb.PhoneCameraLive do
             }
           }
 
+          // Creates a landscape stream from the camera.
+          // If the video is portrait (phone held upright), we rotate it 90°
+          // via an offscreen canvas and capture that instead.
+          const createLandscapeStream = (cameraStream) => {
+            const videoTrack = cameraStream.getVideoTracks()[0]
+            if (!videoTrack) return cameraStream
+
+            const settings = videoTrack.getSettings()
+            const isPortrait = settings.height > settings.width
+
+            if (!isPortrait) {
+              // Already landscape, send raw stream
+              return cameraStream
+            }
+
+            // Portrait mode: rotate via canvas
+            // Swapped dimensions so output is landscape
+            rotateCanvas.width = settings.height
+            rotateCanvas.height = settings.width
+
+            // Hidden video element to drive canvas rendering
+            const hiddenVideo = document.createElement("video")
+            hiddenVideo.srcObject = cameraStream
+            hiddenVideo.muted = true
+            hiddenVideo.playsInline = true
+            hiddenVideo.play().catch(() => {})
+
+            // Render loop: draw rotated frame
+            const renderRotated = () => {
+              if (hiddenVideo.readyState >= hiddenVideo.HAVE_CURRENT_DATA) {
+                const vw = hiddenVideo.videoWidth
+                const vh = hiddenVideo.videoHeight
+                // Output canvas is vh x vw (landscape)
+                rotateCanvas.width = vh
+                rotateCanvas.height = vw
+
+                rotateCtx.save()
+                rotateCtx.translate(rotateCanvas.width / 2, rotateCanvas.height / 2)
+                rotateCtx.rotate(-Math.PI / 2)
+                rotateCtx.drawImage(hiddenVideo, -vw / 2, -vh / 2, vw, vh)
+                rotateCtx.restore()
+              }
+              animFrameId = requestAnimationFrame(renderRotated)
+            }
+            animFrameId = requestAnimationFrame(renderRotated)
+
+            // Capture the canvas as a video stream, add audio from the original
+            const rotatedStream = rotateCanvas.captureStream(30)
+            const audioTrack = cameraStream.getAudioTracks()[0]
+            if (audioTrack) {
+              rotatedStream.addTrack(audioTrack)
+            }
+
+            // Store reference so we can clean up
+            this._hiddenVideo = hiddenVideo
+
+            return rotatedStream
+          }
+
+          const stopCanvasStream = () => {
+            if (animFrameId) {
+              cancelAnimationFrame(animFrameId)
+              animFrameId = null
+            }
+            if (this._hiddenVideo) {
+              this._hiddenVideo.srcObject = null
+              this._hiddenVideo = null
+            }
+          }
+
           const start = async () => {
             stream = await getCamera(currentFacingMode)
             if (!stream) return
 
             videoEl.srcObject = stream
-            this.relay.start(stream)
+            canvasStream = createLandscapeStream(stream)
+            this.relay.start(canvasStream)
           }
 
           // Flip camera (front/back)
           flipBtn.addEventListener("click", async () => {
             currentFacingMode = currentFacingMode === "environment" ? "user" : "environment"
+            stopCanvasStream()
             const newStream = await getCamera(currentFacingMode)
             if (newStream) {
               stream = newStream
               videoEl.srcObject = stream
-              this.relay.replaceStream(stream)
+              canvasStream = createLandscapeStream(stream)
+              this.relay.replaceStream(canvasStream)
             }
           })
 
@@ -181,11 +260,13 @@ defmodule TabletopWeb.PhoneCameraLive do
               const videoTrack = stream.getVideoTracks()[0]
               if (!videoTrack || videoTrack.readyState === "ended") {
                 console.log("[PhoneCamera] Track ended, re-acquiring camera")
+                stopCanvasStream()
                 const newStream = await getCamera(currentFacingMode)
                 if (newStream) {
                   stream = newStream
                   videoEl.srcObject = stream
-                  this.relay.replaceStream(stream)
+                  canvasStream = createLandscapeStream(stream)
+                  this.relay.replaceStream(canvasStream)
                 }
               }
             }
@@ -196,6 +277,7 @@ defmodule TabletopWeb.PhoneCameraLive do
 
           this._cleanup = () => {
             document.removeEventListener("visibilitychange", this._visibilityHandler)
+            stopCanvasStream()
             screen.orientation?.unlock?.()
             if (this.relay) this.relay.disconnect()
             if (stream) stream.getTracks().forEach(t => t.stop())

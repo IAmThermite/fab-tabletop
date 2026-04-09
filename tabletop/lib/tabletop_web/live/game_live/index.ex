@@ -12,6 +12,7 @@ defmodule TabletopWeb.GameLive.Index do
       <div id="game-index" phx-hook=".GameIndex">
         <div
           id="camera-setup-banner"
+          phx-update="ignore"
           class="hidden mb-6 border-2 border-warning rounded-lg p-4 bg-warning/10"
         >
           <div class="flex items-center justify-between">
@@ -36,7 +37,7 @@ defmodule TabletopWeb.GameLive.Index do
               </span>
             </div>
             <div class="flex gap-2">
-              <.link navigate={~p"/games/#{@current_game}"} class="btn btn-primary btn-sm">
+              <.link navigate={~p"/games/#{@current_game}/pre-join"} class="btn btn-primary btn-sm">
                 Rejoin Game
               </.link>
               <button
@@ -79,7 +80,6 @@ defmodule TabletopWeb.GameLive.Index do
                       phx-click="join"
                       phx-value-id={game.id}
                       variant="primary"
-                      data-requires-setup="true"
                     >
                       JOIN
                     </.button>
@@ -122,7 +122,7 @@ defmodule TabletopWeb.GameLive.Index do
                   placeholder="https://fabrary.com/..."
                 />
                 <div class="flex justify-center pt-4">
-                  <.button variant="primary" phx-disable-with="Starting..." data-requires-setup="true">
+                  <.button variant="primary" phx-disable-with="Starting...">
                     Start
                   </.button>
                 </div>
@@ -159,16 +159,6 @@ defmodule TabletopWeb.GameLive.Index do
             const banner = document.getElementById("camera-setup-banner")
             if (banner) banner.classList.remove("hidden")
           }
-
-          // Intercept join/create clicks if setup not done
-          this.el.addEventListener("click", (e) => {
-            const btn = e.target.closest("[data-requires-setup]")
-            if (btn && !setupDone) {
-              e.preventDefault()
-              e.stopPropagation()
-              window.location.href = "/camera-setup"
-            }
-          }, true)
         }
       }
     </script>
@@ -221,7 +211,7 @@ defmodule TabletopWeb.GameLive.Index do
         {:noreply,
          socket
          |> put_flash(:info, "Game created successfully")
-         |> push_navigate(to: ~p"/games/#{game}")}
+         |> push_navigate(to: ~p"/games/#{game}/pre-join")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, form: to_form(changeset))}
@@ -236,18 +226,7 @@ defmodule TabletopWeb.GameLive.Index do
   end
 
   def handle_event("join", %{"id" => id}, socket) do
-    game = Games.get_game!(socket.assigns.current_scope, id)
-
-    case Games.join_game(socket.assigns.current_scope, game) do
-      {:ok, game} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Joined game successfully")
-         |> push_navigate(to: ~p"/games/#{game}")}
-
-      {:error, _reason} ->
-        {:noreply, put_flash(socket, :error, "Unable to join game")}
-    end
+    {:noreply, push_navigate(socket, to: ~p"/games/#{id}/pre-join")}
   end
 
   @impl true

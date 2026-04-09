@@ -79,8 +79,8 @@
       />
 
       <%!-- Central game area with canvas --%>
-      <div id="game-area" class="flex-1 relative bg-blue-100">
-        <canvas id="remote-canvas" class="w-full h-full"></canvas>
+      <div id="game-area" class="flex-1 relative bg-black">
+        <canvas id="remote-canvas" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></canvas>
         <video id="remote-video" class="hidden" autoplay playsinline></video>
 
         <%!-- Waiting overlay --%>
@@ -125,7 +125,7 @@
       </div>
     </div>
 
-    <.settings_dialog qr_svg={@qr_svg} />
+    <.settings_dialog qr_svg={@qr_svg} game_id={@game.id} />
 
     <%!-- Preview expansion overlay --%>
     <div
@@ -160,6 +160,12 @@
       mounted() {
         const gameId = this.el.dataset.gameId
         const token = this.el.dataset.userToken
+
+        // Redirect to pre-join if camera settings haven't been confirmed for this game
+        if (localStorage.getItem(`tabletop:camera-confirmed:${gameId}`) !== "true") {
+          window.location.href = `/games/${gameId}/pre-join`
+          return
+        }
 
         const localVideoEl = document.getElementById("local-video")
         const localCanvasEl = document.getElementById("local-canvas")

@@ -59,11 +59,14 @@ defmodule Tabletop.Games do
   def list_joinable_games(scope, format_filter \\ "")
 
   def list_joinable_games(%Scope{} = scope, format_filter) do
+    now = DateTime.utc_now()
+
     query =
       from g in Game,
         where: g.status == :waiting,
         where: is_nil(g.user2_id),
         where: g.user_id != ^scope.user.id,
+        where: is_nil(g.joining_user_id) or g.joining_expires_at < ^now,
         order_by: [desc: g.inserted_at],
         preload: [:user]
 
@@ -78,10 +81,13 @@ defmodule Tabletop.Games do
   end
 
   def list_joinable_games(nil, format_filter) do
+    now = DateTime.utc_now()
+
     query =
       from g in Game,
         where: g.status == :waiting,
         where: is_nil(g.user2_id),
+        where: is_nil(g.joining_user_id) or g.joining_expires_at < ^now,
         order_by: [desc: g.inserted_at],
         preload: [:user]
 
@@ -197,28 +203,93 @@ defmodule Tabletop.Games do
   end
 
   @doc """
+  Reserves a join slot for a user entering the pre-join screen.
+  Uses an atomic conditional UPDATE to prevent race conditions.
+  """
+  def reserve_join(%Scope{} = scope, %Game{} = game) do
+    now = DateTime.utc_now()
+    expires = DateTime.add(now, 120, :second)
+    user_id = scope.user.id
+
+    from(g in Game,
+      where: g.id == ^game.id,
+      where: g.status == :waiting,
+      where: is_nil(g.user2_id),
+      where: g.user_id != ^user_id,
+      where: is_nil(g.joining_user_id) or g.joining_expires_at < ^now
+    )
+    |> Repo.update_all(
+      set: [joining_user_id: user_id, joining_expires_at: expires]
+    )
+    |> case do
+      {1, _} ->
+        game = Repo.get!(Game, game.id) |> Repo.preload([:user, :user2])
+        broadcast_game(scope, {:updated, game})
+        {:ok, game}
+
+      {0, _} ->
+        {:error, :unavailable}
+    end
+  end
+
+  @doc """
+  Releases a join reservation. Called when user leaves the pre-join screen.
+  """
+  def release_reservation(%Scope{} = scope, game_id) do
+    {count, _} =
+      from(g in Game,
+        where: g.id == ^game_id,
+        where: g.joining_user_id == ^scope.user.id
+      )
+      |> Repo.update_all(set: [joining_user_id: nil, joining_expires_at: nil])
+
+    if count > 0 do
+      game = Repo.get!(Game, game_id) |> Repo.preload([:user, :user2])
+      broadcast_game(scope, {:updated, game})
+    end
+
+    :ok
+  end
+
+  @doc """
   Joins a game by setting the current user as user2 (opponent).
+  Verifies the user holds the join reservation (or no reservation exists).
   """
   def join_game(%Scope{} = scope, %Game{} = game) do
+    user_id = scope.user.id
+
     cond do
-      game.user_id == scope.user.id ->
+      game.user_id == user_id ->
         {:error, :own_game}
 
       game.user2_id != nil ->
         {:error, :game_full}
 
       true ->
-        game
-        |> Ecto.Changeset.change(%{user2_id: scope.user.id, status: :active})
-        |> Repo.update()
-        |> case do
-          {:ok, game} ->
-            game = Repo.preload(game, [:user, :user2])
+        {count, _} =
+          from(g in Game,
+            where: g.id == ^game.id,
+            where: g.status == :waiting,
+            where: is_nil(g.user2_id),
+            where: g.joining_user_id == ^user_id or is_nil(g.joining_user_id)
+          )
+          |> Repo.update_all(
+            set: [
+              user2_id: user_id,
+              status: :active,
+              joining_user_id: nil,
+              joining_expires_at: nil
+            ]
+          )
+
+        case count do
+          1 ->
+            game = Repo.get!(Game, game.id) |> Repo.preload([:user, :user2])
             broadcast_game(scope, {:updated, game})
             {:ok, game}
 
-          error ->
-            error
+          0 ->
+            {:error, :unavailable}
         end
     end
   end

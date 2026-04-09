@@ -12,6 +12,7 @@ defmodule TabletopWeb.CameraSetupLive do
         id="camera-setup"
         phx-hook=".CameraSetup"
         data-redirect={@redirect_to}
+        data-game-id={@game_id}
         data-user-token={@user_token}
         data-camera-relay-token={@camera_relay_token}
         class="flex flex-col h-full"
@@ -298,6 +299,7 @@ defmodule TabletopWeb.CameraSetupLive do
                 audio: true,
               })
               videoEl.srcObject = stream
+              await videoEl.play().catch(() => {})
               noCameraEl.classList.add("hidden")
               statusEl.textContent = "Camera active"
               statusEl.className = "badge badge-sm badge-success"
@@ -346,8 +348,18 @@ defmodule TabletopWeb.CameraSetupLive do
             localStorage.setItem("tabletop:camera-zoom", zoomSlider.value)
             localStorage.setItem("tabletop:camera-rotation", rotationSlider.value)
             localStorage.setItem("tabletop:camera-setup-done", "true")
+
+            const gameId = el.dataset.gameId
             const redirect = el.dataset.redirect
-            window.location.href = redirect || "/"
+
+            // If coming from a game, mark camera as confirmed and go straight to the game
+            if (gameId) {
+              localStorage.setItem(`tabletop:camera-confirmed:${gameId}`, "true")
+              localStorage.setItem("tabletop:camera-source", "webcam")
+              window.location.href = `/games/${gameId}`
+            } else {
+              window.location.href = redirect || "/"
+            }
           })
 
           start()
@@ -466,6 +478,7 @@ defmodule TabletopWeb.CameraSetupLive do
      socket
      |> assign(:page_title, "Camera Setup")
      |> assign(:redirect_to, params["redirect"])
+     |> assign(:game_id, params["game_id"])
      |> assign(:user_token, user_token)
      |> assign(:camera_relay_token, camera_relay_token)
      |> assign(:qr_svg, qr_svg)

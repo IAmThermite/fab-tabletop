@@ -439,6 +439,7 @@ defmodule TabletopWeb.GameComponents do
 
   attr :qr_svg, :string, required: true
   attr :show_reconfigure_link, :boolean, default: true
+  attr :game_id, :string, default: nil
 
   def settings_dialog(assigns) do
     ~H"""
@@ -490,7 +491,11 @@ defmodule TabletopWeb.GameComponents do
             </p>
           </div>
 
-          <.link :if={@show_reconfigure_link} navigate={~p"/camera-setup"} class="btn btn-outline btn-sm w-full">
+          <.link
+            :if={@show_reconfigure_link}
+            navigate={if @game_id, do: ~p"/camera-setup?#{%{redirect: "/games/#{@game_id}", game_id: @game_id}}", else: ~p"/camera-setup"}
+            class="btn btn-outline btn-sm w-full"
+          >
             Reconfigure Camera
           </.link>
         </div>

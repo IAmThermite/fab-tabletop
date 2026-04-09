@@ -18,9 +18,11 @@ defmodule Tabletop.Games.Game do
     field :status, Ecto.Enum, values: [:waiting, :active, :finished], default: :waiting
     field :user1_left_at, :utc_datetime_usec
     field :user2_left_at, :utc_datetime_usec
+    field :joining_expires_at, :utc_datetime_usec
 
     belongs_to :user, Tabletop.Accounts.User, type: Ecto.UUID
     belongs_to :user2, Tabletop.Accounts.User, type: Ecto.UUID
+    belongs_to :joining_user, Tabletop.Accounts.User, type: Ecto.UUID
 
     timestamps(type: :utc_datetime)
   end

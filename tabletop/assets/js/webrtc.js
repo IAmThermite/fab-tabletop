@@ -14,8 +14,8 @@ export default class WebRTCManager {
     this.localVideoEl = localVideoEl
     this.remoteVideoEl = remoteVideoEl
     this.canvasEl = canvasEl
-    this.onStatusChange = onStatusChange || (() => {})
-    this.onRemoteMediaStatus = onRemoteMediaStatus || (() => {})
+    this.onStatusChange = onStatusChange || (() => { })
+    this.onRemoteMediaStatus = onRemoteMediaStatus || (() => { })
 
     this.socket = null
     this.channel = null
@@ -43,6 +43,7 @@ export default class WebRTCManager {
         audio: true,
       })
       this.localVideoEl.srcObject = this.localStream
+      await this.localVideoEl.play().catch(() => { })
       this._streamForPeer = this._createTransformedStream()
     } catch (err) {
       console.error("[WebRTC] Failed to get user media:", err)
@@ -109,7 +110,7 @@ export default class WebRTCManager {
 
     // Update local preview to show the external source
     this.localVideoEl.srcObject = stream
-    this.localVideoEl.play().catch(() => {})
+    this.localVideoEl.play().catch(() => { })
 
     // Rebuild the transformed stream from the new source
     this._stopLocalTransform()
@@ -133,7 +134,7 @@ export default class WebRTCManager {
 
     // Restore the original webcam stream
     this.localVideoEl.srcObject = this.localStream
-    this.localVideoEl.play().catch(() => {})
+    this.localVideoEl.play().catch(() => { })
 
     // Rebuild the transformed stream from the webcam
     this._stopLocalTransform()
@@ -244,7 +245,7 @@ export default class WebRTCManager {
     // When we receive remote tracks
     this.peerConnection.ontrack = (event) => {
       this.remoteVideoEl.srcObject = event.streams[0]
-      this.remoteVideoEl.play().catch(() => {})
+      this.remoteVideoEl.play().catch(() => { })
       this._startCanvasRender()
       this._setStatus("connected")
     }
@@ -395,9 +396,26 @@ export default class WebRTCManager {
       if (this.remoteVideoEl.readyState >= this.remoteVideoEl.HAVE_CURRENT_DATA) {
         const vw = this.remoteVideoEl.videoWidth
         const vh = this.remoteVideoEl.videoHeight
+        const container = this.canvasEl.parentElement
+        const containerW = container.clientWidth
+        const containerH = container.clientHeight
 
-        // Render at native video resolution for sharper OCR captures
-        // CSS sizing handles display; canvas holds full-res pixels
+        // Fit canvas to container while preserving video aspect ratio
+        const videoAspect = vw / vh
+        const containerAspect = containerW / containerH
+        let displayW, displayH
+        if (videoAspect > containerAspect) {
+          displayW = containerW
+          displayH = containerW / videoAspect
+        } else {
+          displayH = containerH
+          displayW = containerH * videoAspect
+        }
+
+        this.canvasEl.style.width = displayW + "px"
+        this.canvasEl.style.height = displayH + "px"
+
+        // Set buffer to native video resolution for sharp OCR captures
         if (this.canvasEl.width !== vw || this.canvasEl.height !== vh) {
           this.canvasEl.width = vw
           this.canvasEl.height = vh
@@ -421,5 +439,7 @@ export default class WebRTCManager {
   _clearCanvas() {
     const ctx = this.canvasEl.getContext("2d")
     ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height)
+    this.canvasEl.style.width = ""
+    this.canvasEl.style.height = ""
   }
 }

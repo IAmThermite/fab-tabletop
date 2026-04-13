@@ -1,0 +1,27 @@
+flippable screen
+I want the user to have the ability to flip the orientation of their opponents view. Some players might like to see the cards coming toward them like they would traditionally but some may find it easier to read the cards upright. Can you please implement a settings dialog on the game page (with a cog icon for opening it in the top right next to the leave button) that allows the user to flip their opponents view
+
+moveable go again components (both players)
+The various effects such as damage and go again should be moveble and repositionable by both the opponent and current user. When the user enables go again, it should create a tile on the canvas that can be repositioned so that it is easier to see. I think the implementation of the view needs to be updated. The user should not see the tiles on the opponents screen, they should instead be able to open their camera and reposition the tiles themselves which would then propogate through to their opponents screen, these should still be moveable by the opponent and the updates should be reflected in the users preview screen. When the user clicks on go again for example, their preview should pop out, perhaps in a modal or just expand and then they can move it, also when they hover over their view they should be able to manipulate the tiles too. As an additional item, can you make it so when you click on an `effect` the dropdown doesn't close til you close it, that way you can select multiple effects without having to reopen the dropdown each time.
+
+Camera setup page
+Can you refactor the test page to be a setup page where the user can setup their camera correctly. They should be able to zoom in and rotate through 180 degrees to get the correct camera angle. When the user joins a game the camera settings should be pre applied. Additionally I think it would be a good idea that before a user joins a game they have to go through the setup process to ensure that their camera will work well. I think just storing these settings in browser localstorage should be fine
+
+ocr card recognition
+One of the main features of the app is the ability for a user to click on a card on the screen (just the opponent view) and have a pop out come out and display the card fetched from the backend. This is done by using OCR to read the name of the card and then the backend will fetch the card details and display them in a pop out. One of the methods I thought of was when the user clicks on a card, the browser takes a snapshot of a small secion of the opponents view around where they clicked and then performs OCR browser side to read the name of the card. I'd prefer to do OCR client side to avoid the latency and bandwidth usage of sending images to the backend. There are a number of libraries that can do OCR in the browser, such as Tesseract.js. Once the card name is extracted, it can be sent to the backend to fetch the card details and display them in a pop out. Are there any other methods you can think of for implementing this feature? Don't worry about the backend implementation however please stub out some code, just focus on the client side OCR and pop out display of the card details. The user should be able to click on multiple cards and have multiple pop outs open at the same time, with a closeable X button like the preview modal. The pop outs should be moveable and repositionable by the user if possible.
+
+
+use phone as camera
+I'd like to add the ability to join the game using a phone as a capture. The user would click join (or when  creating a game) with phone and then they would be given a QR code to scan with their phone. When they scan the QR code, it would open a page on their phone where they can start the camera and capture the game. The video feed from the phone would then be displayed to the opponent as if they were using a webcam on their computer. This would allow users who don't have a webcam or want to use a different camera angle to still participate in the game. The phone camera feed should also have the same features as the webcam feed, such as the ability to flip the orientation and apply camera settings from the setup page. The same OCR card recognition feature should also work with the phone camera feed. There should also be the option to switch between the phone camera and webcam feed if the user has both available.
+
+
+Pre join lobby
+I'd like to add a pre join state to the game where when you click on join (or create a game) the user is shown an option to join with phone or continue with webcam. It should then show the correct camera view (webcam or phone) and the you click `continue` to join the actual game. It should use reusable components where needed, just include the camera capture, no card capture logic or camera setting adjustment (but use these stored settings). The idea behind this is that a user can confirm their settings before joining. I think there should also be a `JOINING` state for a game for when an opponent that has clicked join and is confirming their camera etc to avoid another player joining at the same time, explore other methods for this too though. Please suggest other ideas or improve this too
+
+tournaments
+
+
+
+Improvements:
+Game state refresh on rejoin after disconnect
+On camera reconfigure -> rejoin game

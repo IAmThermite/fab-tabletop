@@ -70,7 +70,7 @@ fly secrets list                    # List configured secrets
 Migrations run automatically if configured in the Phoenix release. To run manually:
 
 ```bash
-fly ssh console -C "/app/bin/tabletop eval 'Tabletop.Release.migrate()'"
+fly ssh console -c infrastructure/fly/fly.toml -C "/app/bin/tabletop eval 'Tabletop.Release.migrate()'"
 ```
 
 ## Database Backups

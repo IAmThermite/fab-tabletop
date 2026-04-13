@@ -117,4 +117,10 @@ if config_env() == :prod do
   #     config :swoosh, :api_client, Swoosh.ApiClient.Req
   #
   # See https://hexdocs.pm/swoosh/Swoosh.html#module-installation for details.
+
+
+  # Setup MailerSend adapter with API key from environment variable
+  config :tabletop, Tabletop.Mailer,
+    adapter: Swoosh.Adapters.Mailersend,
+    api_key: System.get_env("MAILERSEND_API_KEY")
 end

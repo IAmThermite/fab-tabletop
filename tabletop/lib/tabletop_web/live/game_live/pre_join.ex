@@ -28,7 +28,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
             <span class="font-semibold">{@game.title}</span>
             <span class="text-sm opacity-75 ml-2">{Game.format_name(@game)}</span>
             <span :if={@mode == :joiner} class="text-sm opacity-75 ml-2">
-              vs {@game.user.email}
+              vs {@game.user.name}
             </span>
           </div>
 

@@ -467,7 +467,7 @@ defmodule TabletopWeb.CameraSetupLive do
   @impl true
   def mount(params, _session, socket) do
     scope = socket.assigns.current_scope
-    user_id = scope.user.id
+    user_id = if scope && scope.user, do: scope.user.id, else: "anon:#{Base.encode64(:crypto.strong_rand_bytes(16))}"
 
     user_token = Phoenix.Token.sign(socket, "user socket", user_id)
     camera_relay_token = Phoenix.Token.sign(socket, "camera relay", user_id)

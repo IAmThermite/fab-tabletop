@@ -25,7 +25,7 @@ defmodule Tabletop.Accounts.UserNotifier do
 
     ==============================
 
-    Hi #{user.email},
+    Hi #{user.name},
 
     You can confirm your account by visiting the URL below:
 

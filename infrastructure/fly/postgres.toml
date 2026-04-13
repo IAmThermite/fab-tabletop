@@ -1,0 +1,35 @@
+# fly.toml app configuration file generated for fabtabletop-db on 2026-04-13T14:16:35+12:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'fabtabletop-db'
+primary_region = 'iad'
+
+[build]
+  image = 'postgres:18-alpine'
+
+[env]
+  PGDATA = '/data/postgresql'
+  POSTGRES_DB = 'fabtabletop'
+  POSTGRES_HOST_AUTH_METHOD = 'scram-sha-256'
+  POSTGRES_INITDB_ARGS = '--auth-host=scram-sha-256'
+  POSTGRES_USER = 'fabtabletop'
+
+[[mounts]]
+  source = 'pg_data'
+  destination = '/data'
+
+[[services]]
+  protocol = 'tcp'
+  internal_port = 5432
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  ports = []
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256

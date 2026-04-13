@@ -1,0 +1,23 @@
+# Git
+.git
+
+# Dev/test artifacts
+tabletop/_build
+tabletop/deps
+tabletop/node_modules
+tabletop/.elixir_ls
+
+# Infrastructure (not needed in build)
+infrastructure/terraform
+infrastructure/coturn
+
+# Docker
+docker-compose.yml
+
+# Misc
+.env
+.github
+.claude
+.vscode
+*.md
+*.dump

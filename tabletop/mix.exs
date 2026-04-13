@@ -21,7 +21,7 @@ defmodule Tabletop.MixProject do
   def application do
     [
       mod: {Tabletop.Application, []},
-      extra_applications: [:logger, :runtime_tools, :observer, :wx]
+      extra_applications: [:logger, :runtime_tools] ++ extra_applications(Mix.env())
     ]
   end
 
@@ -34,6 +34,9 @@ defmodule Tabletop.MixProject do
   # Specifies which paths to compile per environment.
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
+
+  defp extra_applications(:prod), do: []
+  defp extra_applications(_), do: [:observer, :wx]
 
   # Specifies your project dependencies.
   #

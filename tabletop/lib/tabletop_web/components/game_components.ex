@@ -178,7 +178,7 @@ defmodule TabletopWeb.GameComponents do
 
       <div class="flex-1"></div>
 
-      <form phx-change="search_card" class="relative">
+      <form phx-change="search_card" phx-submit="search_card" onsubmit="return false" class="relative">
         <input
           type="text"
           placeholder="Search card..."
@@ -526,7 +526,7 @@ defmodule TabletopWeb.GameComponents do
         style="left: 0; top: 0;"
       >
         <div class="card-popout-header flex items-center justify-between px-3 py-2 bg-base-200 cursor-grab active:cursor-grabbing touch-none">
-          <form phx-change="search_card" class="flex-1 min-w-0">
+          <form phx-change="search_card" phx-submit="search_card" onsubmit="return false" class="flex-1 min-w-0">
             <input type="hidden" name="_id" value={card.id} />
             <input
               type="text"

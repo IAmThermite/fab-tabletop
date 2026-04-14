@@ -206,15 +206,19 @@ defmodule TabletopWeb.GameLive.Index do
   end
 
   def handle_event("create", %{"game" => game_params}, socket) do
-    case Games.create_game(socket.assigns.current_scope, game_params) do
-      {:ok, game} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Game created successfully")
-         |> push_navigate(to: ~p"/games/#{game}/pre-join")}
+    if is_nil(socket.assigns.current_scope.user.confirmed_at) do
+      {:noreply, put_flash(socket, :error, "Please confirm your email address before creating a game.")}
+    else
+      case Games.create_game(socket.assigns.current_scope, game_params) do
+        {:ok, game} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Game created successfully")
+           |> push_navigate(to: ~p"/games/#{game}/pre-join")}
 
-      {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, form: to_form(changeset))}
+        {:error, %Ecto.Changeset{} = changeset} ->
+          {:noreply, assign(socket, form: to_form(changeset))}
+      end
     end
   end
 
@@ -226,7 +230,11 @@ defmodule TabletopWeb.GameLive.Index do
   end
 
   def handle_event("join", %{"id" => id}, socket) do
-    {:noreply, push_navigate(socket, to: ~p"/games/#{id}/pre-join")}
+    if is_nil(socket.assigns.current_scope.user.confirmed_at) do
+      {:noreply, put_flash(socket, :error, "Please confirm your email address before joining a game.")}
+    else
+      {:noreply, push_navigate(socket, to: ~p"/games/#{id}/pre-join")}
+    end
   end
 
   @impl true

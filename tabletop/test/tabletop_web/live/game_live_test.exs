@@ -17,6 +17,66 @@ defmodule TabletopWeb.GameLiveTest do
     %{game: game}
   end
 
+  describe "Index (unauthenticated)" do
+    test "shows games list without join buttons", %{conn: _conn} do
+      fresh_conn = Phoenix.ConnTest.build_conn()
+      other_scope = user_scope_fixture()
+      game_fixture(other_scope, %{title: "Visible Game"})
+
+      {:ok, live_view, html} = live(fresh_conn, ~p"/")
+
+      assert html =~ "Games to join"
+      assert html =~ "Visible Game"
+      refute has_element?(live_view, "button", "JOIN")
+    end
+
+    test "shows login prompt instead of create form", %{conn: _conn} do
+      fresh_conn = Phoenix.ConnTest.build_conn()
+      {:ok, _live_view, html} = live(fresh_conn, ~p"/")
+
+      assert html =~ "Log in"
+      refute html =~ ~s(id="create-game-form")
+    end
+  end
+
+  describe "Index (unconfirmed user)" do
+    setup :register_and_log_in_unconfirmed_user
+
+    test "shows games list with join buttons", %{conn: conn} do
+      other_scope = user_scope_fixture()
+      game_fixture(other_scope, %{title: "Joinable Game"})
+
+      {:ok, live_view, _html} = live(conn, ~p"/")
+
+      assert has_element?(live_view, "button", "JOIN")
+    end
+
+    test "blocks join with flash when email not confirmed", %{conn: conn} do
+      other_scope = user_scope_fixture()
+      game = game_fixture(other_scope, %{title: "Blocked Join"})
+
+      {:ok, live_view, _html} = live(conn, ~p"/")
+
+      result =
+        live_view
+        |> element("button[phx-value-id='#{game.id}']", "JOIN")
+        |> render_click()
+
+      assert result =~ "Please confirm your email address before joining a game."
+    end
+
+    test "blocks create with flash when email not confirmed", %{conn: conn} do
+      {:ok, live_view, _html} = live(conn, ~p"/")
+
+      result =
+        live_view
+        |> form("#create-game-form", game: @create_attrs)
+        |> render_submit()
+
+      assert result =~ "Please confirm your email address before creating a game."
+    end
+  end
+
   describe "Index" do
     test "shows three-column layout", %{conn: conn} do
       {:ok, _live, html} = live(conn, ~p"/")
@@ -65,11 +125,12 @@ defmodule TabletopWeb.GameLiveTest do
 
       {:ok, live_view, _html} = live(conn, ~p"/")
 
-      assert {:ok, _pre_join_live, _html} =
+      assert {:error, {:live_redirect, %{to: to}}} =
                live_view
-               |> element("button", "JOIN")
+               |> element("button[phx-value-id='#{game.id}']", "JOIN")
                |> render_click()
-               |> follow_redirect(conn, ~p"/games/#{game}/pre-join")
+
+      assert to == ~p"/games/#{game}/pre-join"
     end
   end
 
@@ -88,6 +149,22 @@ defmodule TabletopWeb.GameLiveTest do
       {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
 
       assert has_element?(show_live, "button[title='Leave Game']")
+    end
+  end
+
+  describe "Pre-join (unconfirmed user)" do
+    test "redirects to index with flash when email not confirmed", %{conn: _conn} do
+      conn =
+        Phoenix.ConnTest.build_conn()
+        |> log_in_user(unconfirmed_user_fixture())
+
+      other_scope = user_scope_fixture()
+      game = game_fixture(other_scope, %{title: "Guarded Game"})
+
+      assert {:error, {:redirect, %{to: "/", flash: %{"error" => message}}}} =
+               live(conn, ~p"/games/#{game}/pre-join")
+
+      assert message =~ "Please confirm your email address"
     end
   end
 

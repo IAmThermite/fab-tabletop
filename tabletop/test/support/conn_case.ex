@@ -57,6 +57,17 @@ defmodule TabletopWeb.ConnCase do
   end
 
   @doc """
+  Setup helper that registers and logs in an unconfirmed user.
+
+      setup :register_and_log_in_unconfirmed_user
+  """
+  def register_and_log_in_unconfirmed_user(%{conn: conn}) do
+    user = Tabletop.AccountsFixtures.unconfirmed_user_fixture()
+    scope = Tabletop.Accounts.Scope.for_user(user)
+    %{conn: log_in_user(conn, user), user: user, scope: scope}
+  end
+
+  @doc """
   Logs the given `user` into the `conn`.
 
   It returns an updated `conn`.

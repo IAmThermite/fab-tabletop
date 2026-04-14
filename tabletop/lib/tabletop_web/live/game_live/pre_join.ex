@@ -358,20 +358,28 @@ defmodule TabletopWeb.GameLive.PreJoin do
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     scope = socket.assigns.current_scope
-    game = Games.get_game!(scope, id)
 
-    # If the user already belongs to the game (creator or already-joined opponent),
-    # treat as :creator mode (no reservation needed, just camera confirm).
-    # Only use :joiner mode for users who haven't joined yet.
-    mode =
-      if Games.user_part_of_game?(scope, game) do
-        :creator
-      else
-        :joiner
-      end
+    if is_nil(scope.user.confirmed_at) do
+      {:ok,
+       socket
+       |> put_flash(:error, "Please confirm your email address before joining a game.")
+       |> redirect(to: ~p"/")}
+    else
+      game = Games.get_game!(scope, id)
 
-    socket = mount_pre_join(socket, game, mode, scope)
-    {:ok, socket}
+      # If the user already belongs to the game (creator or already-joined opponent),
+      # treat as :creator mode (no reservation needed, just camera confirm).
+      # Only use :joiner mode for users who haven't joined yet.
+      mode =
+        if Games.user_part_of_game?(scope, game) do
+          :creator
+        else
+          :joiner
+        end
+
+      socket = mount_pre_join(socket, game, mode, scope)
+      {:ok, socket}
+    end
   end
 
   defp mount_pre_join(socket, game, :creator, scope) do

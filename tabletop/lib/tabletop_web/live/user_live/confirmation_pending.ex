@@ -58,6 +58,11 @@ defmodule TabletopWeb.UserLive.ConfirmationPending do
       )
     end
 
-    {:noreply, put_flash(socket, :info, "If your email is in our system and unconfirmed, you will receive a confirmation email shortly.")}
+    {:noreply,
+     put_flash(
+       socket,
+       :info,
+       "If your email is in our system and unconfirmed, you will receive a confirmation email shortly."
+     )}
   end
 end

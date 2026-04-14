@@ -99,8 +99,8 @@ defmodule Tabletop.Cards.Importer do
 
       Enum.each(all_card_data, fn card_data ->
         case %Card{}
-          |> Card.generated_changeset(card_data)
-          |> Tabletop.Repo.insert() do
+             |> Card.generated_changeset(card_data)
+             |> Tabletop.Repo.insert() do
           {:ok, _card} -> :ok
           {:error, changeset} -> Logger.error("Failed to insert card: #{inspect(changeset)}")
         end

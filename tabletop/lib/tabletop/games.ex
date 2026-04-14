@@ -48,8 +48,8 @@ defmodule Tabletop.Games do
       [%Game{}, ...]
 
   """
-  def list_games(_scope) do
-    Repo.all(Game)
+  def list_games(%Scope{user: user}) do
+    Game |> where(user_id: ^user.id) |> Repo.all()
   end
 
   @doc """
@@ -218,9 +218,7 @@ defmodule Tabletop.Games do
       where: g.user_id != ^user_id,
       where: is_nil(g.joining_user_id) or g.joining_expires_at < ^now
     )
-    |> Repo.update_all(
-      set: [joining_user_id: user_id, joining_expires_at: expires]
-    )
+    |> Repo.update_all(set: [joining_user_id: user_id, joining_expires_at: expires])
     |> case do
       {1, _} ->
         game = Repo.get!(Game, game.id) |> Repo.preload([:user, :user2])

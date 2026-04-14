@@ -17,7 +17,8 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
         %{
           "name" => "Rally the Coast Guard",
           "print_id" => "SEA225",
-          "image_url" => "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/SEA225.webp",
+          "image_url" =>
+            "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/SEA225.webp",
           "normalized_name" => "RALLY THE COAST GUARD",
           "tokens" => ["rally", "the", "coast", "guard"],
           "image_phash" => 1_484_317_916_512_072_972,
@@ -33,7 +34,8 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
         %{
           "name" => "Bravo",
           "print_id" => "HER010",
-          "image_url" => "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/HER010.webp",
+          "image_url" =>
+            "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/HER010.webp",
           "normalized_name" => "BRAVO",
           "tokens" => ["bravo"],
           "image_phash" => 1_000_000_000_000_000_001
@@ -41,7 +43,8 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
         %{
           "name" => "Bravo, Showstopper",
           "print_id" => "HER011",
-          "image_url" => "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/HER011.webp",
+          "image_url" =>
+            "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/HER011.webp",
           "normalized_name" => "BRAVO SHOWSTOPPER",
           "tokens" => ["bravo", "showstopper"],
           "image_phash" => 1_000_000_000_000_000_002
@@ -49,13 +52,14 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
         %{
           "name" => "Bravo, Flattering Showman",
           "print_id" => "GEM077",
-          "image_url" => "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/GEM077.webp",
+          "image_url" =>
+            "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/GEM077.webp",
           "normalized_name" => "BRAVO FLATTERING SHOWMAN",
           "tokens" => ["bravo", "flattering", "showman"],
           "image_phash" => 1_000_000_000_000_000_003
         }
       ]
-    },
+    }
   ]
 
   # Reference hash (Rally the Coast Guard, pitch 3): 1_484_317_916_512_072_972
@@ -87,7 +91,7 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
       1_484_317_916_512_072_947,
       "Rally the Coast Guard",
       1_484_317_916_512_072_972
-    },
+    }
   ]
 
   describe "find_by_p_hash_similarity/1" do

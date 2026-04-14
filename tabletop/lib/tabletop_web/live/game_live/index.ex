@@ -225,7 +225,8 @@ defmodule TabletopWeb.GameLive.Index do
 
   def handle_event("create", %{"game" => game_params}, socket) do
     if is_nil(socket.assigns.current_scope.user.confirmed_at) do
-      {:noreply, put_flash(socket, :error, "Please confirm your email address before creating a game.")}
+      {:noreply,
+       put_flash(socket, :error, "Please confirm your email address before creating a game.")}
     else
       case Games.create_game(socket.assigns.current_scope, game_params) do
         {:ok, game} ->
@@ -264,7 +265,8 @@ defmodule TabletopWeb.GameLive.Index do
 
   def handle_event("join", %{"id" => id}, socket) do
     if is_nil(socket.assigns.current_scope.user.confirmed_at) do
-      {:noreply, put_flash(socket, :error, "Please confirm your email address before joining a game.")}
+      {:noreply,
+       put_flash(socket, :error, "Please confirm your email address before joining a game.")}
     else
       {:noreply, push_navigate(socket, to: ~p"/games/#{id}/pre-join")}
     end

@@ -89,8 +89,11 @@ defmodule TabletopWeb.CardLookup do
         }
 
         case build_open_card(possible_cards, x, y, detected_pitch, debug_info) do
-          nil -> {:noreply, socket}
-          new_card -> {:noreply, assign(socket, :open_cards, socket.assigns.open_cards ++ [new_card])}
+          nil ->
+            {:noreply, socket}
+
+          new_card ->
+            {:noreply, assign(socket, :open_cards, socket.assigns.open_cards ++ [new_card])}
         end
       end
 
@@ -105,9 +108,19 @@ defmodule TabletopWeb.CardLookup do
             x = if existing, do: existing.x, else: 20
             y = if existing, do: existing.y, else: 20
 
-            search_debug = %{ocr_candidates: [%{"text" => trimmed, "confidence" => nil}], phash: nil, match_method: "search"}
+            search_debug = %{
+              ocr_candidates: [%{"text" => trimmed, "confidence" => nil}],
+              phash: nil,
+              match_method: "search"
+            }
 
-            case build_open_card(Tabletop.Cards.fuzzy_match_name(trimmed), x, y, nil, search_debug) do
+            case build_open_card(
+                   Tabletop.Cards.fuzzy_match_name(trimmed),
+                   x,
+                   y,
+                   nil,
+                   search_debug
+                 ) do
               nil ->
                 {:noreply, socket}
 
@@ -172,7 +185,10 @@ defmodule TabletopWeb.CardLookup do
                     Enum.find(open_card.pitch_variants, open_card.card, &(&1.pitch == 1))
 
                   new_alternates =
-                    [old_base | Enum.reject(open_card.alternate_matches, &(&1.normalized_name == name))]
+                    [
+                      old_base
+                      | Enum.reject(open_card.alternate_matches, &(&1.normalized_name == name))
+                    ]
                     |> Enum.uniq_by(& &1.normalized_name)
 
                   new_pitch_variants =
@@ -183,10 +199,11 @@ defmodule TabletopWeb.CardLookup do
                       do: Enum.find(new_pitch_variants, new_card, &(&1.pitch == 1)),
                       else: new_card
 
-                  %{open_card |
-                    card: new_selected,
-                    pitch_variants: new_pitch_variants,
-                    alternate_matches: new_alternates
+                  %{
+                    open_card
+                    | card: new_selected,
+                      pitch_variants: new_pitch_variants,
+                      alternate_matches: new_alternates
                   }
               end
             else

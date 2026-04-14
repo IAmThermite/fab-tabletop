@@ -8,7 +8,7 @@ defmodule Tabletop.Cards.PHashTest do
   @hash_cases [
     {"priv/cards/test/scar-for-a-scar-1.webp", 2_806_554_061_580_624_742},
     {"priv/cards/test/scar-for-a-scar-2.webp", 2_806_484_800_938_009_442},
-    {"priv/cards/test/scar-for-a-scar-3.webp", 2_806_484_800_938_009_442},
+    {"priv/cards/test/scar-for-a-scar-3.webp", 2_806_484_800_938_009_442}
   ]
 
   @fixture_path "priv/cards/test/scar-for-a-scar-1.webp"

@@ -1,5 +1,8 @@
 # Flesh and Blood Tabletop
 
+[![Test](https://github.com/IAmThermite/fab-tabletop/actions/workflows/ci.yml/badge.svg)](https://github.com/IAmThermite/fab-tabletop/actions/workflows/ci.yml)
+[![Deploy](https://github.com/IAmThermite/fab-tabletop/actions/workflows/deploy.yml/badge.svg)](https://github.com/IAmThermite/fab-tabletop/actions/workflows/deploy.yml)
+
 FaB Tabletop is where Flesh and Blood players can come together online and play against each other from the comfort of their homes using their webcam.
 
 ## How it works

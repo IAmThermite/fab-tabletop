@@ -31,7 +31,16 @@ defmodule Tabletop.Cards.Card do
 
   def generated_changeset(card, attrs) do
     card
-    |> cast(attrs, [:name, :print_id, :image_url, :tokens, :normalized_name, :image_phash, :pitch, :set_code])
+    |> cast(attrs, [
+      :name,
+      :print_id,
+      :image_url,
+      :tokens,
+      :normalized_name,
+      :image_phash,
+      :pitch,
+      :set_code
+    ])
     |> validate_required([:name, :print_id, :image_url, :tokens, :normalized_name, :image_phash])
     |> unique_constraint(:print_id)
   end

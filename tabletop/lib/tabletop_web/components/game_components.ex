@@ -186,7 +186,10 @@ defmodule TabletopWeb.GameComponents do
           name="query"
           class="input input-bordered input-sm w-full pr-7 text-xs"
         />
-        <.icon name="hero-magnifying-glass" class="size-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-40 pointer-events-none" />
+        <.icon
+          name="hero-magnifying-glass"
+          class="size-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-40 pointer-events-none"
+        />
       </form>
 
       <%!-- Player life --%>
@@ -493,7 +496,11 @@ defmodule TabletopWeb.GameComponents do
 
           <.link
             :if={@show_reconfigure_link}
-            navigate={if @game_id, do: ~p"/camera-setup?#{%{redirect: "/games/#{@game_id}", game_id: @game_id}}", else: ~p"/camera-setup"}
+            navigate={
+              if @game_id,
+                do: ~p"/camera-setup?#{%{redirect: "/games/#{@game_id}", game_id: @game_id}}",
+                else: ~p"/camera-setup"
+            }
             class="btn btn-outline btn-sm w-full"
           >
             Reconfigure Camera
@@ -526,7 +533,12 @@ defmodule TabletopWeb.GameComponents do
         style="left: 0; top: 0;"
       >
         <div class="card-popout-header flex items-center justify-between px-3 py-2 bg-base-200 cursor-grab active:cursor-grabbing touch-none">
-          <form phx-change="search_card" phx-submit="search_card" onsubmit="return false" class="flex-1 min-w-0">
+          <form
+            phx-change="search_card"
+            phx-submit="search_card"
+            onsubmit="return false"
+            class="flex-1 min-w-0"
+          >
             <input type="hidden" name="_id" value={card.id} />
             <input
               type="text"
@@ -604,7 +616,10 @@ defmodule TabletopWeb.GameComponents do
                 </div>
               <% end %>
               <%= if debug.phash do %>
-                <% distance = if card.card.image_phash, do: Tabletop.Cards.PHash.hamming_distance(debug.phash, card.card.image_phash), else: nil %>
+                <% distance =
+                  if card.card.image_phash,
+                    do: Tabletop.Cards.PHash.hamming_distance(debug.phash, card.card.image_phash),
+                    else: nil %>
                 <div>
                   <span class="opacity-50">client phash:</span> {debug.phash}
                   <%= if distance do %>
@@ -622,7 +637,14 @@ defmodule TabletopWeb.GameComponents do
                 </div>
               <% end %>
               <%= if debug[:phash_flipped] do %>
-                <% distance_flipped = if card.card.image_phash, do: Tabletop.Cards.PHash.hamming_distance(debug.phash_flipped, card.card.image_phash), else: nil %>
+                <% distance_flipped =
+                  if card.card.image_phash,
+                    do:
+                      Tabletop.Cards.PHash.hamming_distance(
+                        debug.phash_flipped,
+                        card.card.image_phash
+                      ),
+                    else: nil %>
                 <div>
                   <span class="opacity-50">client phash (flipped):</span> {debug.phash_flipped}
                   <%= if distance_flipped do %>
@@ -641,7 +663,8 @@ defmodule TabletopWeb.GameComponents do
               <% end %>
               <%= for candidate <- debug.ocr_candidates do %>
                 <div>
-                  <span class="opacity-50">ocr:</span> "{candidate["text"]}"
+                  <span class="opacity-50">ocr:</span>
+                  "{candidate["text"]}"
                   <%= if candidate["confidence"] do %>
                     <span class={[
                       "ml-1",

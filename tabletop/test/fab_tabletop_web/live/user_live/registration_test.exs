@@ -36,7 +36,7 @@ defmodule TabletopWeb.UserLive.RegistrationTest do
   end
 
   describe "register user" do
-    test "creates account but does not log in", %{conn: conn} do
+    test "creates account and redirects to confirmation pending page", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/register")
 
       email = unique_user_email()
@@ -44,10 +44,11 @@ defmodule TabletopWeb.UserLive.RegistrationTest do
 
       {:ok, _lv, html} =
         render_submit(form)
-        |> follow_redirect(conn, ~p"/users/log-in")
+        |> follow_redirect(conn, ~p"/users/confirmation-pending")
 
-      assert html =~
-               ~r/An email was sent to .*, please access it to confirm your account/
+      assert html =~ "Thanks for registering"
+      assert html =~ email
+      assert html =~ "Resend Confirmation Email"
     end
 
     test "renders errors for duplicated email", %{conn: conn} do

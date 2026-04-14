@@ -83,6 +83,7 @@ defmodule TabletopWeb.Router do
       on_mount: [{TabletopWeb.UserAuth, :mount_current_scope}] do
       live("/users/register", UserLive.Registration, :new)
       live("/users/log-in", UserLive.Login, :new)
+      live("/users/confirmation-pending", UserLive.ConfirmationPending, :new)
 
       live "/", GameLive.Index, :index
       live "/games/:id", GameLive.Show, :show

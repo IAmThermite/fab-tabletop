@@ -1,6 +1,7 @@
 defmodule TabletopWeb.GameLive.Index do
   use TabletopWeb, :live_view
 
+  alias Tabletop.Accounts
   alias Tabletop.Accounts.Scope
   alias Tabletop.Games
   alias Tabletop.Games.Game
@@ -21,6 +22,23 @@ defmodule TabletopWeb.GameLive.Index do
               <p class="text-sm opacity-75">Set up your camera before joining or creating a game.</p>
             </div>
             <.link navigate={~p"/camera-setup"} class="btn btn-warning btn-sm">Set Up Camera</.link>
+          </div>
+        </div>
+
+        <div
+          :if={@current_scope && is_nil(@current_scope.user.confirmed_at)}
+          class="mb-6 border-2 border-warning rounded-lg p-4 bg-warning/10"
+        >
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="font-bold">Email Confirmation Required</h3>
+              <p class="text-sm opacity-75">
+                Please confirm your email address to create or join games.
+              </p>
+            </div>
+            <button phx-click="resend_confirmation" class="btn btn-warning btn-sm">
+              Resend Confirmation Email
+            </button>
           </div>
         </div>
 
@@ -227,6 +245,21 @@ defmodule TabletopWeb.GameLive.Index do
     Games.LeaveTimer.cancel_leave(game.id, socket.assigns.current_scope.user.id)
     Games.terminate_game(socket.assigns.current_scope, game)
     {:noreply, assign_current_game(socket, socket.assigns.current_scope)}
+  end
+
+  def handle_event("resend_confirmation", _params, socket) do
+    user = socket.assigns.current_scope.user
+
+    if is_nil(user.confirmed_at) do
+      Accounts.deliver_user_confirmation_instructions(
+        user,
+        &url(~p"/users/confirm/#{&1}")
+      )
+
+      {:noreply, put_flash(socket, :info, "Confirmation email sent. Please check your inbox.")}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_event("join", %{"id" => id}, socket) do

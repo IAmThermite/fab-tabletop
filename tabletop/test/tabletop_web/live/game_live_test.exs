@@ -75,6 +75,24 @@ defmodule TabletopWeb.GameLiveTest do
 
       assert result =~ "Please confirm your email address before creating a game."
     end
+
+    test "shows email confirmation banner with resend button", %{conn: conn} do
+      {:ok, _live_view, html} = live(conn, ~p"/")
+
+      assert html =~ "Email Confirmation Required"
+      assert html =~ "Resend Confirmation Email"
+    end
+
+    test "resend confirmation button sends email", %{conn: conn} do
+      {:ok, live_view, _html} = live(conn, ~p"/")
+
+      result =
+        live_view
+        |> element("button", "Resend Confirmation Email")
+        |> render_click()
+
+      assert result =~ "Confirmation email sent"
+    end
   end
 
   describe "Index" do

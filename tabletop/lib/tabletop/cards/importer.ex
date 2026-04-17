@@ -12,12 +12,13 @@ defmodule Tabletop.Cards.Importer do
   @phash_concurrency 15
   @task_timeout :timer.seconds(60)
 
-  @default_raw_path "priv/cards/raw/*.json"
-  @default_output_dir "priv/cards/generated"
+  defp priv_path(relative), do: Application.app_dir(:tabletop, relative)
+  defp default_raw_path, do: priv_path("priv/cards/raw/*.json")
+  defp default_output_dir, do: priv_path("priv/cards/generated")
 
   def import_and_generate(opts \\ []) do
-    raw_path = Keyword.get(opts, :raw_path, @default_raw_path)
-    output_dir = Keyword.get(opts, :output_dir, @default_output_dir)
+    raw_path = Keyword.get(opts, :raw_path, default_raw_path())
+    output_dir = Keyword.get(opts, :output_dir, default_output_dir())
     req_options = Keyword.get(opts, :req_options, [])
 
     Path.wildcard(raw_path)
@@ -91,7 +92,7 @@ defmodule Tabletop.Cards.Importer do
 
   # read from generated/cards.json and insert into the database
   def import_from_generated_data do
-    Path.wildcard("priv/cards/generated/*.json")
+    Path.wildcard(priv_path("priv/cards/generated/*.json"))
     |> Enum.each(fn file ->
       Logger.info("Importing cards from file #{file}")
       {:ok, content} = File.read(file)
@@ -114,7 +115,7 @@ defmodule Tabletop.Cards.Importer do
     |> Enum.chunk_every(1000)
     |> Enum.join(",")
     |> Enum.with_index(fn chunk, index ->
-      File.write!("priv/cards/generated/cards-exported-#{index}.json", "[#{chunk}]")
+      File.write!(priv_path("priv/cards/generated/cards-exported-#{index}.json"), "[#{chunk}]")
     end)
   end
 

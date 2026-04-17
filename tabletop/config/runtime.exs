@@ -121,5 +121,9 @@ if config_env() == :prod do
   # Setup MailerSend adapter with API key from environment variable
   config :tabletop, Tabletop.Mailer,
     adapter: Swoosh.Adapters.Mailersend,
-    api_key: System.get_env("MAILERSEND_API_KEY")
+    api_key: System.get_env("MAILERSEND_API_KEY"),
+    from_name: System.get_env("MAILER_FROM_NAME", "Tabletop"),
+    from_email:
+      System.get_env("MAILER_FROM_EMAIL") ||
+        raise("MAILER_FROM_EMAIL is required")
 end

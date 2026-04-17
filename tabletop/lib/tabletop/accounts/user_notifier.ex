@@ -5,10 +5,13 @@ defmodule Tabletop.Accounts.UserNotifier do
 
   # Delivers the email using the application mailer.
   defp deliver(recipient, subject, body) do
+    config = Application.fetch_env!(:tabletop, Tabletop.Mailer)
+    from = {Keyword.fetch!(config, :from_name), Keyword.fetch!(config, :from_email)}
+
     email =
       new()
       |> to(recipient)
-      |> from({"Tabletop", "contact@example.com"})
+      |> from(from)
       |> subject(subject)
       |> text_body(body)
 

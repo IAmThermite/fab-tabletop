@@ -67,10 +67,16 @@ fly secrets list                    # List configured secrets
 
 ## Database Migrations
 
-Migrations run automatically if configured in the Phoenix release. To run manually:
+To run manually:
 
 ```bash
 fly ssh console -c infrastructure/fly/fly.toml -C "/app/bin/tabletop eval 'Tabletop.Release.migrate()'"
+```
+
+To seed the Card database run:
+
+```bash
+fly ssh console -c infrastructure/fly/fly.toml -C "/app/bin/tabletop eval 'Tabletop.Release.import_cards()'"
 ```
 
 ## Database Backups

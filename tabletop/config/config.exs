@@ -44,7 +44,10 @@ config :tabletop, TabletopWeb.Endpoint,
 #
 # For production it's recommended to configure a different adapter
 # at the `config/runtime.exs`.
-config :tabletop, Tabletop.Mailer, adapter: Swoosh.Adapters.Local
+config :tabletop, Tabletop.Mailer,
+  adapter: Swoosh.Adapters.Local,
+  from_name: "Tabletop",
+  from_email: "contact@example.com"
 
 # Configure esbuild (the version is required)
 config :esbuild,

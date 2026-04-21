@@ -316,6 +316,7 @@ defmodule Tabletop.Games do
         game = Repo.preload(game, [:user, :user2])
         broadcast_game(scope, {:updated, game})
         broadcast_game_session(game.id, "game_ended", scope.user.id)
+        Tabletop.Games.GameSession.stop(game.id)
         {:ok, game}
 
       error ->

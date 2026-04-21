@@ -486,7 +486,7 @@ defmodule TabletopWeb.CameraSetupLive do
      |> assign(:user_token, user_token)
      |> assign(:camera_relay_token, camera_relay_token)
      |> assign(:qr_svg, qr_svg)
-     |> assign(:game_state, GameState.new())
+     |> assign(:game_state, new_preview_state())
      |> assign(:abilities_open, false)
      |> assign(:on_hits_open, false)
      |> assign(:open_cards, [])}
@@ -494,40 +494,30 @@ defmodule TabletopWeb.CameraSetupLive do
 
   @impl true
   def handle_event("toggle_damage", %{"type" => type}, socket) do
-    apply_action(
-      socket,
-      GameState.toggle_damage(socket.assigns.game_state, validate_damage_type(type))
-    )
+    apply_action(socket, GameState.toggle_damage(my(socket), validate_damage_type(type)))
   end
 
   def handle_event("change_damage", %{"type" => type, "delta" => delta}, socket) do
     apply_action(
       socket,
-      GameState.change_damage(
-        socket.assigns.game_state,
-        validate_damage_type(type),
-        String.to_integer(delta)
-      )
+      GameState.change_damage(my(socket), validate_damage_type(type), String.to_integer(delta))
     )
   end
 
   def handle_event("toggle_goagain", _params, socket) do
-    apply_action(socket, GameState.toggle_goagain(socket.assigns.game_state))
+    apply_action(socket, GameState.toggle_goagain(my(socket)))
   end
 
   def handle_event("toggle_effect", %{"type" => type}, socket) do
-    apply_action(socket, GameState.toggle_effect(socket.assigns.game_state, type))
+    apply_action(socket, GameState.toggle_effect(my(socket), type))
   end
 
   def handle_event("change_life", %{"delta" => delta}, socket) do
-    apply_action(
-      socket,
-      GameState.change_life(socket.assigns.game_state, String.to_integer(delta))
-    )
+    apply_action(socket, GameState.change_life(my(socket), String.to_integer(delta)))
   end
 
   def handle_event("reset_chain", _params, socket) do
-    apply_action(socket, GameState.reset_chain(socket.assigns.game_state))
+    apply_action(socket, GameState.reset_chain(my(socket)))
   end
 
   def handle_event(
@@ -535,10 +525,7 @@ defmodule TabletopWeb.CameraSetupLive do
         %{"tile_id" => tile_id, "x" => x, "y" => y, "owner" => _owner},
         socket
       ) do
-    apply_action(
-      socket,
-      GameState.move_tile(socket.assigns.game_state, tile_id, to_float(x), to_float(y))
-    )
+    apply_action(socket, GameState.move_tile(my(socket), tile_id, to_float(x), to_float(y)))
   end
 
   def handle_event("toggle_dropdown", %{"name" => "abilities"}, socket) do
@@ -549,12 +536,18 @@ defmodule TabletopWeb.CameraSetupLive do
     {:noreply, assign(socket, :on_hits_open, !socket.assigns.on_hits_open)}
   end
 
-  defp apply_action(socket, {:ok, new_state, _broadcast_msg}) do
-    {:noreply, assign(socket, :game_state, new_state)}
+  defp my(socket), do: socket.assigns.game_state.my
+
+  defp apply_action(socket, {:ok, new_player, _broadcast_msg}) do
+    {:noreply, assign(socket, :game_state, %{socket.assigns.game_state | my: new_player})}
   end
 
   defp apply_action(socket, {:error, _reason}) do
     {:noreply, socket}
+  end
+
+  defp new_preview_state do
+    %{my: GameState.default_player(), opponent: GameState.default_player()}
   end
 
   defp validate_damage_type("physical"), do: :physical

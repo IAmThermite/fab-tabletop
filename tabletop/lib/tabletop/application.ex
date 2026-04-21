@@ -15,6 +15,8 @@ defmodule Tabletop.Application do
       %{id: :game_channels_pg, start: {:pg, :start_link, [:game_channels]}},
       {Registry, keys: :unique, name: Tabletop.Games.LeaveTimerRegistry},
       {DynamicSupervisor, name: Tabletop.Games.LeaveTimerSupervisor, strategy: :one_for_one},
+      {Registry, keys: :unique, name: Tabletop.Games.GameSessionRegistry},
+      {DynamicSupervisor, name: Tabletop.Games.GameSessionSupervisor, strategy: :one_for_one},
       # Start to serve requests, typically the last entry
       TabletopWeb.Endpoint
     ]

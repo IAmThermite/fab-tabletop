@@ -4,7 +4,7 @@ defmodule TabletopWeb.GameLive.Show do
 
   alias Tabletop.Games
   alias Tabletop.Games.LeaveTimer
-  alias Tabletop.Fab.GameState
+  alias Tabletop.Games.GameSession
 
   on_mount {TabletopWeb.UserAuth, :require_authenticated}
 
@@ -24,7 +24,11 @@ defmodule TabletopWeb.GameLive.Show do
       if connected?(socket) do
         LeaveTimer.cancel_leave(game.id, user_id)
         Games.rejoin_game(scope, game)
+        GameSession.ensure_started(game)
       end
+
+      session_state =
+        if connected?(socket), do: GameSession.get_state(game.id), else: empty_state()
 
       user_token = Phoenix.Token.sign(socket, "user socket", user_id)
       camera_relay_token = Phoenix.Token.sign(socket, "camera relay", user_id)
@@ -38,10 +42,12 @@ defmodule TabletopWeb.GameLive.Show do
        |> assign(:game, game)
        |> assign(:user_token, user_token)
        |> assign(:user_id, user_id)
+       |> assign(:user1_id, game.user_id)
+       |> assign(:user2_id, game.user2_id)
        |> assign(:camera_relay_token, camera_relay_token)
        |> assign(:qr_svg, qr_svg)
        |> assign(:peer_connected, false)
-       |> assign(:game_state, GameState.new())
+       |> assign_session_state(session_state)
        |> assign(:abilities_open, false)
        |> assign(:on_hits_open, false)
        |> assign(:preview_open, false)
@@ -66,62 +72,44 @@ defmodule TabletopWeb.GameLive.Show do
   end
 
   def handle_event("toggle_damage", %{"type" => type}, socket) do
-    apply_my_action(
-      socket,
-      GameState.toggle_damage(socket.assigns.game_state, validate_damage_type(type))
-    )
+    dispatch(socket, {:toggle_damage, validate_damage_type(type)})
   end
 
   def handle_event("change_damage", %{"type" => type, "delta" => delta}, socket) do
-    apply_my_action(
+    dispatch(
       socket,
-      GameState.change_damage(
-        socket.assigns.game_state,
-        validate_damage_type(type),
-        String.to_integer(delta)
-      )
+      {:change_damage, validate_damage_type(type), String.to_integer(delta)}
     )
   end
 
   def handle_event("toggle_goagain", _params, socket) do
-    apply_my_action(socket, GameState.toggle_goagain(socket.assigns.game_state))
+    dispatch(socket, {:toggle_goagain})
   end
 
   def handle_event("toggle_effect", %{"type" => type}, socket) do
-    apply_my_action(socket, GameState.toggle_effect(socket.assigns.game_state, type))
+    dispatch(socket, {:toggle_effect, type})
   end
 
   def handle_event("change_life", %{"delta" => delta}, socket) do
-    apply_my_action(
-      socket,
-      GameState.change_life(socket.assigns.game_state, String.to_integer(delta))
-    )
+    dispatch(socket, {:change_life, String.to_integer(delta)})
   end
 
   def handle_event("reset_chain", _params, socket) do
-    apply_my_action(socket, GameState.reset_chain(socket.assigns.game_state))
+    dispatch(socket, {:reset_chain})
   end
 
   def handle_event(
         "move_tile",
-        %{"tile_id" => tile_id, "x" => x, "y" => y, "owner" => "my"},
+        %{"tile_id" => tile_id, "x" => x, "y" => y, "owner" => owner},
         socket
       ) do
-    apply_my_action(
-      socket,
-      GameState.move_tile(socket.assigns.game_state, tile_id, to_float(x), to_float(y))
-    )
-  end
+    target_user_id =
+      case owner do
+        "my" -> socket.assigns.user_id
+        "opponent" -> opponent_user_id(socket.assigns)
+      end
 
-  def handle_event(
-        "move_tile",
-        %{"tile_id" => tile_id, "x" => x, "y" => y, "owner" => "opponent"},
-        socket
-      ) do
-    apply_my_action(
-      socket,
-      GameState.move_opponent_tile(socket.assigns.game_state, tile_id, to_float(x), to_float(y))
-    )
+    dispatch(socket, {:move_tile, target_user_id, tile_id, to_float(x), to_float(y)})
   end
 
   def handle_event("toggle_dropdown", %{"name" => "abilities"}, socket) do
@@ -149,13 +137,6 @@ defmodule TabletopWeb.GameLive.Show do
   # --- PubSub messages ---
 
   @impl true
-  def handle_info(
-        {:game_update, _broadcast_msg, sender_id},
-        %{assigns: %{user_id: sender_id}} = socket
-      ) do
-    {:noreply, socket}
-  end
-
   def handle_info({:game_update, "game_ended", _sender_id}, socket) do
     {:noreply,
      socket
@@ -163,16 +144,28 @@ defmodule TabletopWeb.GameLive.Show do
      |> push_navigate(to: ~p"/")}
   end
 
-  def handle_info({:game_update, broadcast_msg, _sender_id}, socket) do
-    new_state = GameState.apply_opponent_update(socket.assigns.game_state, broadcast_msg)
-    {:noreply, assign(socket, :game_state, new_state)}
+  def handle_info({:game_update, side, _delta, _sender_id}, socket)
+      when side in [:user1, :user2] do
+    state = GameSession.get_state(socket.assigns.game.id)
+    {:noreply, assign_session_state(socket, state)}
+  end
+
+  def handle_info({:session_reset, state}, socket) do
+    {:noreply, assign_session_state(socket, state)}
   end
 
   def handle_info(
         {:updated, %Tabletop.Games.Game{id: id} = game},
         %{assigns: %{game: %{id: id}}} = socket
       ) do
-    {:noreply, assign(socket, :game, game)}
+    if game.user2_id != socket.assigns.user2_id do
+      GameSession.set_user2(game.id, game.user2_id)
+    end
+
+    {:noreply,
+     socket
+     |> assign(:game, game)
+     |> assign(:user2_id, game.user2_id)}
   end
 
   def handle_info(
@@ -190,14 +183,35 @@ defmodule TabletopWeb.GameLive.Show do
     {:noreply, socket}
   end
 
-  defp apply_my_action(socket, {:ok, new_state, broadcast_msg}) do
-    broadcast_game_update(socket, broadcast_msg, socket.assigns.user_id)
-    {:noreply, assign(socket, :game_state, new_state)}
+  defp dispatch(socket, action) do
+    case GameSession.apply_action(socket.assigns.game.id, socket.assigns.user_id, action) do
+      :ok -> {:noreply, socket}
+      {:error, reason} ->
+        IO.inspect(reason, label: "Action error")
+        {:noreply, socket}
+    end
   end
 
-  defp apply_my_action(socket, {:error, reason}) do
-    IO.inspect(reason, label: "Action error")
-    {:noreply, socket}
+  defp assign_session_state(socket, %{user1: user1, user2: user2}) do
+    user_id = socket.assigns.user_id
+    user1_id = socket.assigns.user1_id
+
+    {my, opponent} =
+      if user_id == user1_id, do: {user1, user2}, else: {user2, user1}
+
+    socket
+    |> assign(:user1_state, user1)
+    |> assign(:user2_state, user2)
+    |> assign(:game_state, %{my: my, opponent: opponent})
+  end
+
+  defp empty_state do
+    default = Tabletop.Fab.GameState.default_player()
+    %{user1: default, user2: default}
+  end
+
+  defp opponent_user_id(%{user_id: user_id, user1_id: user1_id, user2_id: user2_id}) do
+    if user_id == user1_id, do: user2_id, else: user1_id
   end
 
   defp validate_damage_type("physical"), do: :physical
@@ -211,14 +225,6 @@ defmodule TabletopWeb.GameLive.Show do
       {f, _} -> f
       :error -> 0.0
     end
-  end
-
-  defp broadcast_game_update(socket, broadcast_msg, user_id) do
-    Phoenix.PubSub.broadcast(
-      Tabletop.PubSub,
-      "game_session:#{socket.assigns.game.id}",
-      {:game_update, broadcast_msg, user_id}
-    )
   end
 
   @impl true

@@ -86,8 +86,8 @@ defmodule TabletopWeb.GameLive.Show do
     dispatch(socket, {:toggle_goagain})
   end
 
-  def handle_event("toggle_effect", %{"type" => type}, socket) do
-    dispatch(socket, {:toggle_effect, type})
+  def handle_event("toggle_effect", %{"type" => type, "category" => category}, socket) do
+    dispatch(socket, {:toggle_effect, category, type})
   end
 
   def handle_event("change_life", %{"delta" => delta}, socket) do

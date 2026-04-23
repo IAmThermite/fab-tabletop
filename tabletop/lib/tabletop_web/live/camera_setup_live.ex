@@ -99,8 +99,10 @@ defmodule TabletopWeb.CameraSetupLive do
           />
 
           <%!-- Central area — camera preview canvas --%>
-          <div id="game-area" class="flex-1 relative bg-blue-100">
-            <canvas id="test-canvas" class="w-full h-full"></canvas>
+          <div id="game-area" class="flex-1 relative bg-blue-100 flex items-center justify-center overflow-hidden" style="container-type: size;">
+            <div class="aspect-video" style="width: min(100cqw, 100cqh * 16 / 9);">
+              <canvas id="test-canvas" class="w-full h-full block"></canvas>
+            </div>
 
             <%!-- No camera overlay --%>
             <div
@@ -293,11 +295,24 @@ defmodule TabletopWeb.CameraSetupLive do
           }
 
           const start = async () => {
+            const videoBase = { width: { ideal: 1920 }, height: { ideal: 1080 } }
             try {
-              stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
-                audio: true,
-              })
+              try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                  video: { ...videoBase, aspectRatio: { exact: 16 / 9 } },
+                  audio: true,
+                })
+              } catch (err) {
+                if (err && err.name === "OverconstrainedError") {
+                  console.warn("[CameraSetup] Camera rejected 16:9 constraint, falling back")
+                  stream = await navigator.mediaDevices.getUserMedia({
+                    video: videoBase,
+                    audio: true,
+                  })
+                } else {
+                  throw err
+                }
+              }
               videoEl.srcObject = stream
               await videoEl.play().catch(() => {})
               noCameraEl.classList.add("hidden")
@@ -349,17 +364,8 @@ defmodule TabletopWeb.CameraSetupLive do
             localStorage.setItem("tabletop:camera-rotation", rotationSlider.value)
             localStorage.setItem("tabletop:camera-setup-done", "true")
 
-            const gameId = el.dataset.gameId
             const redirect = el.dataset.redirect
-
-            // If coming from a game, mark camera as confirmed and go straight to the game
-            if (gameId) {
-              localStorage.setItem(`tabletop:camera-confirmed:${gameId}`, "true")
-              localStorage.setItem("tabletop:camera-source", "webcam")
-              window.location.href = `/games/${gameId}`
-            } else {
-              window.location.href = redirect || "/"
-            }
+            window.location.href = redirect || "/"
           })
 
           start()
@@ -508,8 +514,8 @@ defmodule TabletopWeb.CameraSetupLive do
     apply_action(socket, GameState.toggle_goagain(my(socket)))
   end
 
-  def handle_event("toggle_effect", %{"type" => type}, socket) do
-    apply_action(socket, GameState.toggle_effect(my(socket), type))
+  def handle_event("toggle_effect", %{"type" => type, "category" => category}, socket) do
+    apply_action(socket, GameState.toggle_effect(my(socket), category, type))
   end
 
   def handle_event("change_life", %{"delta" => delta}, socket) do

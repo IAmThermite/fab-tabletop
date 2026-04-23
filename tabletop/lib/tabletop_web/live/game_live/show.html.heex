@@ -13,7 +13,7 @@
       <div
         id="local-preview-container"
         phx-click="toggle_preview"
-        class="relative w-24 h-18 rounded bg-black cursor-pointer overflow-hidden"
+        class="relative w-32 aspect-video rounded bg-black cursor-pointer overflow-hidden"
       >
         <canvas id="local-canvas" class="w-full h-full"></canvas>
         <.game_tiles game_state={@game_state} context={:local} />
@@ -138,7 +138,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center"
     >
       <div class="absolute inset-0 bg-black/60"></div>
-      <div class="relative z-10 w-full max-w-4xl h-[80vh] rounded-lg overflow-hidden">
+      <div class="relative z-10 w-full max-w-[min(90vw,142vh)] aspect-video rounded-lg overflow-hidden">
         <div class="relative w-full h-full bg-black">
           <canvas id="local-canvas-expanded" class="w-full h-full"></canvas>
           <.game_tiles game_state={@game_state} context={:expanded} />

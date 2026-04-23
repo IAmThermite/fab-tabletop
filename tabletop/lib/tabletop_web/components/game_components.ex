@@ -14,6 +14,52 @@ defmodule TabletopWeb.GameComponents do
     router: TabletopWeb.Router,
     statics: TabletopWeb.static_paths()
 
+  attr :tile, :map, required: true
+
+  defp tile_hover_preview(assigns) do
+    img = Map.get(assigns.tile, :card_img_src)
+    desc = Map.get(assigns.tile, :description_html)
+
+    # Anchor the popover on the side with more room so it never gets clipped.
+    horizontal_class =
+      if assigns.tile.x > 50, do: "right-full mr-2", else: "left-full ml-2"
+
+    vertical_class =
+      if assigns.tile.y > 50, do: "bottom-0", else: "top-0"
+
+    assigns =
+      assigns
+      |> assign(:img, if(img in [nil, ""], do: nil, else: img))
+      |> assign(
+        :desc,
+        if(desc in [nil, ""], do: nil, else: Tabletop.Fab.Effects.render_description(desc))
+      )
+      |> assign(:position_class, "#{horizontal_class} #{vertical_class}")
+
+    ~H"""
+    <div
+      :if={@img || @desc}
+      class={[
+        "pointer-events-none absolute z-50 hidden group-hover:block",
+        @position_class
+      ]}
+    >
+      <img
+        :if={@img}
+        src={@img}
+        alt={@tile.label}
+        class="max-w-[16rem] rounded shadow-lg bg-base-100"
+      />
+      <div
+        :if={!@img && @desc}
+        class="w-64 max-w-[16rem] rounded shadow-lg bg-base-100 text-base-content p-2 text-xs leading-snug font-normal normal-case tracking-normal space-y-1 whitespace-normal break-words"
+      >
+        {raw(@desc)}
+      </div>
+    </div>
+    """
+  end
+
   attr :game_state, :any, required: true
   attr :abilities_open, :boolean, default: false
   attr :on_hits_open, :boolean, default: false
@@ -108,7 +154,7 @@ defmodule TabletopWeb.GameComponents do
       <div class="relative">
         <button
           type="button"
-          class="btn btn-warning w-full"
+          class="btn w-full bg-purple-300 hover:bg-purple-400 text-purple-950 border-purple-400"
           phx-click="toggle_dropdown"
           phx-value-name="abilities"
         >
@@ -120,20 +166,22 @@ defmodule TabletopWeb.GameComponents do
         </button>
         <ul
           :if={@abilities_open}
-          class="absolute z-30 menu bg-base-100 rounded-box w-40 p-2 shadow-sm mt-1"
+          class="absolute z-30 menu bg-base-100 rounded-box w-32 p-2 shadow-sm mt-1"
         >
           <%= for {_key, effect} <- Tabletop.Fab.Effects.abilities() do %>
             <li>
-              <div class="flex items-center gap-1 mb-1">
+              <label class="flex items-center gap-1 mb-1 cursor-pointer w-full">
                 <input
                   type="checkbox"
-                  class="checkbox checkbox-xs checkbox-warning"
-                  checked={@game_state.my.effects[effect[:name]]}
+                  class="checkbox checkbox-xs accent-purple-400"
+                  checked={@game_state.my.effects[Tabletop.Fab.GameState.effect_key("ability", effect[:name])]}
                   phx-click="toggle_effect"
                   phx-value-type={effect[:name]}
+                  phx-value-category="ability"
                 />
+                <.icon :if={effect[:icon] not in [nil, ""]} name={effect[:icon]} class="size-3" />
                 <span class="text-xs font-semibold">{effect[:name]}</span>
-              </div>
+              </label>
             </li>
           <% end %>
         </ul>
@@ -143,7 +191,7 @@ defmodule TabletopWeb.GameComponents do
       <div class="relative">
         <button
           type="button"
-          class="btn btn-warning w-full"
+          class="btn w-full bg-orange-400 hover:bg-orange-500 text-orange-950 border-orange-500"
           phx-click="toggle_dropdown"
           phx-value-name="on_hits"
         >
@@ -155,20 +203,22 @@ defmodule TabletopWeb.GameComponents do
         </button>
         <ul
           :if={@on_hits_open}
-          class="absolute z-30 menu bg-base-100 rounded-box w-40 p-2 shadow-sm mt-1"
+          class="absolute z-30 menu bg-base-100 rounded-box w-32 p-2 shadow-sm mt-1"
         >
           <%= for {_key, effect} <- Tabletop.Fab.Effects.on_hit_effects() do %>
             <li>
-              <div class="flex items-center gap-1 mb-1">
+              <label class="flex items-center gap-1 mb-1 cursor-pointer w-full">
                 <input
                   type="checkbox"
-                  class="checkbox checkbox-xs checkbox-warning"
-                  checked={@game_state.my.effects[effect[:name]]}
+                  class="checkbox checkbox-xs accent-orange-500"
+                  checked={@game_state.my.effects[Tabletop.Fab.GameState.effect_key("on_hit", effect[:name])]}
                   phx-click="toggle_effect"
                   phx-value-type={effect[:name]}
+                  phx-value-category="on_hit"
                 />
+                <.icon :if={effect[:icon] not in [nil, ""]} name={effect[:icon]} class="size-3" />
                 <span class="text-xs font-semibold">{effect[:name]}</span>
-              </div>
+              </label>
             </li>
           <% end %>
         </ul>
@@ -236,11 +286,11 @@ defmodule TabletopWeb.GameComponents do
     <%= for tile <- @tiles do %>
       <div
         class={[
-          "absolute select-none z-20 rounded shadow-md whitespace-nowrap font-semibold",
+          "group absolute select-none z-20 rounded-md shadow-lg ring-1 ring-black/10 whitespace-nowrap font-semibold bg-gradient-to-br flex items-center gap-1",
           case @context do
-            :local -> "pointer-events-none px-1 py-0.5 text-[8px]"
-            :expanded -> "cursor-grab active:cursor-grabbing px-2 py-1 text-xs"
-            _ -> "pointer-events-none px-2 py-1 text-xs"
+            :local -> "pointer-events-none px-1 py-0.5 text-[8px] gap-0.5"
+            :expanded -> "cursor-grab active:cursor-grabbing px-2 py-1 text-xs gap-1.5"
+            _ -> "px-2 py-1 text-xs gap-1.5 #{if has_hover?(tile), do: "cursor-help", else: "pointer-events-none"}"
           end,
           tile_color_class(tile)
         ]}
@@ -250,7 +300,37 @@ defmodule TabletopWeb.GameComponents do
         phx-hook={if @context == :expanded, do: "TabletopWeb.GameComponents.DraggableTile"}
         id={"tile-#{@context}-#{tile.owner}-#{tile.id}"}
       >
-        {tile.label}
+        <span class={[
+          "rounded-full bg-black/25 flex items-center justify-center shrink-0",
+          case @context do
+            :local -> "p-[1px]"
+            _ -> "p-1"
+          end
+        ]}>
+          <.icon
+            name={tile_icon(tile)}
+            class={
+              case @context do
+                :local -> "size-2"
+                _ -> "size-3.5"
+              end
+            }
+          />
+        </span>
+        <span class="uppercase tracking-wide leading-none">{tile.label}</span>
+        <span
+          :if={Map.get(tile, :value)}
+          class={[
+            "font-bold leading-none ml-0.5",
+            case @context do
+              :local -> "text-[10px]"
+              _ -> "text-sm"
+            end
+          ]}
+        >
+          {tile.value}
+        </span>
+        <.tile_hover_preview :if={@context == :remote} tile={tile} />
       </div>
     <% end %>
 
@@ -385,10 +465,17 @@ defmodule TabletopWeb.GameComponents do
     tiles =
       if player_state.physical.active do
         pos = Map.get(player_state.tile_positions, "physical", %{x: 20.0, y: 60.0})
-        label = "Physical #{player_state.physical.damage}"
 
         [
-          %{id: "physical", owner: owner, label: label, x: pos.x, y: pos.y, type: :physical}
+          %{
+            id: "physical",
+            owner: owner,
+            label: "Physical",
+            value: player_state.physical.damage,
+            x: pos.x,
+            y: pos.y,
+            type: :physical
+          }
           | tiles
         ]
       else
@@ -398,42 +485,114 @@ defmodule TabletopWeb.GameComponents do
     tiles =
       if player_state.arcane.active do
         pos = Map.get(player_state.tile_positions, "arcane", %{x: 80.0, y: 60.0})
-        label = "Arcane #{player_state.arcane.damage}"
 
         [
-          %{id: "arcane", owner: owner, label: label, x: pos.x, y: pos.y, type: :arcane}
+          %{
+            id: "arcane",
+            owner: owner,
+            label: "Arcane",
+            value: player_state.arcane.damage,
+            x: pos.x,
+            y: pos.y,
+            type: :arcane
+          }
           | tiles
         ]
       else
         tiles
       end
 
-    Enum.reduce(player_state.effects, tiles, fn {name, active}, acc ->
+    abilities_by_name =
+      Map.new(Tabletop.Fab.Effects.abilities(), fn {_k, e} -> {e.name, e} end)
+
+    on_hits_by_name =
+      Map.new(Tabletop.Fab.Effects.on_hit_effects(), fn {_k, e} -> {e.name, e} end)
+
+    Enum.reduce(player_state.effects, tiles, fn {key, active}, acc ->
       if active do
-        pos = Map.get(player_state.tile_positions, name, %{x: 50.0, y: 50.0})
-        [%{id: name, owner: owner, label: name, x: pos.x, y: pos.y, type: :effect} | acc]
+        pos = Map.get(player_state.tile_positions, key, %{x: 50.0, y: 50.0})
+        {category, name} = parse_effect_key(key)
+
+        {effect, type} =
+          case category do
+            "ability" -> {Map.get(abilities_by_name, name), :ability}
+            "on_hit" -> {Map.get(on_hits_by_name, name), :on_hit}
+            _ -> {nil, :effect}
+          end
+
+        [
+          %{
+            id: key,
+            owner: owner,
+            label: name,
+            x: pos.x,
+            y: pos.y,
+            type: type,
+            icon: effect && effect[:icon],
+            card_img_src: effect && effect[:card_img_src],
+            description_html: effect && effect[:description_html]
+          }
+          | acc
+        ]
       else
         acc
       end
     end)
   end
 
-  defp tile_color_class(%{owner: "my", type: :goagain}), do: "bg-success text-success-content"
-  defp tile_color_class(%{owner: "my", type: :physical}), do: "bg-warning text-warning-content"
-  defp tile_color_class(%{owner: "my", type: :arcane}), do: "bg-info text-info-content"
-  defp tile_color_class(%{owner: "my", type: :effect}), do: "bg-secondary text-secondary-content"
+  defp parse_effect_key(key) do
+    case String.split(key, ":", parts: 2) do
+      [category, name] -> {category, name}
+      [name] -> {nil, name}
+    end
+  end
+
+  defp has_hover?(tile) do
+    Map.get(tile, :card_img_src) not in [nil, ""] or
+      Map.get(tile, :description_html) not in [nil, ""]
+  end
+
+  defp tile_color_class(%{owner: "my", type: :goagain}),
+    do: "from-success to-success/70 text-success-content"
+
+  defp tile_color_class(%{owner: "my", type: :physical}),
+    do: "from-warning to-warning/70 text-warning-content"
+
+  defp tile_color_class(%{owner: "my", type: :arcane}),
+    do: "from-info to-info/70 text-info-content"
+
+  defp tile_color_class(%{owner: "my", type: :ability}),
+    do: "from-purple-300 to-purple-400/70 text-purple-950"
+
+  defp tile_color_class(%{owner: "my", type: :on_hit}),
+    do: "from-orange-400 to-orange-500/70 text-orange-950"
+
+  defp tile_color_class(%{owner: "my", type: :effect}),
+    do: "from-secondary to-secondary/70 text-secondary-content"
 
   defp tile_color_class(%{owner: "opponent", type: :goagain}),
-    do: "bg-success/60 text-success-content border border-success"
+    do: "from-success/60 to-success/40 text-success-content border border-success"
 
   defp tile_color_class(%{owner: "opponent", type: :physical}),
-    do: "bg-warning/60 text-warning-content border border-warning"
+    do: "from-warning/60 to-warning/40 text-warning-content border border-warning"
 
   defp tile_color_class(%{owner: "opponent", type: :arcane}),
-    do: "bg-info/60 text-info-content border border-info"
+    do: "from-info/60 to-info/40 text-info-content border border-info"
+
+  defp tile_color_class(%{owner: "opponent", type: :ability}),
+    do: "from-purple-300/60 to-purple-400/40 text-purple-950 border border-purple-400"
+
+  defp tile_color_class(%{owner: "opponent", type: :on_hit}),
+    do: "from-orange-400/60 to-orange-500/40 text-orange-950 border border-orange-500"
 
   defp tile_color_class(%{owner: "opponent", type: :effect}),
-    do: "bg-secondary/60 text-secondary-content border border-secondary"
+    do: "from-secondary/60 to-secondary/40 text-secondary-content border border-secondary"
+
+  defp tile_icon(%{icon: icon}) when is_binary(icon) and icon != "", do: icon
+  defp tile_icon(%{type: :goagain}), do: "hero-arrow-path"
+  defp tile_icon(%{type: :physical}), do: "hero-bolt"
+  defp tile_icon(%{type: :arcane}), do: "hero-sparkles"
+  defp tile_icon(_), do: "hero-star"
 
   defp pitch_color_class(1), do: "bg-red-500"
   defp pitch_color_class(2), do: "bg-yellow-400"

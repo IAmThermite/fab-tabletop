@@ -36,12 +36,26 @@ export default class WebRTCManager {
   async start() {
     this._setStatus("connecting")
 
-    // Capture local media first so tracks are ready before signaling
+    // Capture local media first so tracks are ready before signaling.
+    // Lock to 16:9 so previews and the remote feed share one aspect ratio.
+    const videoBase = { width: { ideal: 3840 }, height: { ideal: 2160 } }
     try {
-      this.localStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 3840 }, height: { ideal: 2160 } },
-        audio: true,
-      })
+      try {
+        this.localStream = await navigator.mediaDevices.getUserMedia({
+          video: { ...videoBase, aspectRatio: { exact: 16 / 9 } },
+          audio: true,
+        })
+      } catch (err) {
+        if (err && err.name === "OverconstrainedError") {
+          console.warn("[WebRTC] Camera rejected 16:9 constraint, falling back")
+          this.localStream = await navigator.mediaDevices.getUserMedia({
+            video: videoBase,
+            audio: true,
+          })
+        } else {
+          throw err
+        }
+      }
       this.localVideoEl.srcObject = this.localStream
       await this.localVideoEl.play().catch(() => { })
       this._streamForPeer = this._createTransformedStream()

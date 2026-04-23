@@ -40,8 +40,10 @@ defmodule TabletopWeb.GameLive.PreJoin do
         <%!-- Main area --%>
         <div class="flex flex-1 min-h-0">
           <%!-- Central area — camera preview --%>
-          <div class="flex-1 relative bg-base-300">
-            <canvas id="pre-join-canvas" class="w-full h-full"></canvas>
+          <div class="flex-1 relative bg-base-300 flex items-center justify-center overflow-hidden" style="container-type: size;">
+            <div class="aspect-video" style="width: min(100cqw, 100cqh * 16 / 9);">
+              <canvas id="pre-join-canvas" class="w-full h-full block"></canvas>
+            </div>
 
             <%!-- No camera overlay --%>
             <div
@@ -251,11 +253,24 @@ defmodule TabletopWeb.GameLive.PreJoin do
           // Start webcam
           const start = async () => {
             console.log("[PreJoin] start() called, requesting getUserMedia")
+            const videoBase = { width: { ideal: 1920 }, height: { ideal: 1080 } }
             try {
-              stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
-                audio: true,
-              })
+              try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                  video: { ...videoBase, aspectRatio: { exact: 16 / 9 } },
+                  audio: true,
+                })
+              } catch (err) {
+                if (err && err.name === "OverconstrainedError") {
+                  console.warn("[PreJoin] Camera rejected 16:9 constraint, falling back")
+                  stream = await navigator.mediaDevices.getUserMedia({
+                    video: videoBase,
+                    audio: true,
+                  })
+                } else {
+                  throw err
+                }
+              }
               console.log("[PreJoin] getUserMedia succeeded, stream:", stream.id)
               videoEl.srcObject = stream
               await videoEl.play().catch(() => {})

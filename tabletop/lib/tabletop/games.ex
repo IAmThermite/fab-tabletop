@@ -257,6 +257,9 @@ defmodule Tabletop.Games do
     user_id = scope.user.id
 
     cond do
+      game.status == :finished ->
+        {:error, :finished}
+
       game.user_id == user_id ->
         {:error, :own_game}
 

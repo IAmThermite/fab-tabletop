@@ -126,33 +126,49 @@ defmodule Tabletop.Fab.GameStateTest do
     end
   end
 
-  describe "toggle_effect/2" do
+  describe "toggle_effect/3" do
     test "toggles a valid ability" do
-      assert {:ok, new_player, {:effect_toggled, "Dominate", true}} =
-               GameState.toggle_effect(GameState.default_player(), "Dominate")
+      assert {:ok, new_player, {:effect_toggled, "ability", "Dominate", true}} =
+               GameState.toggle_effect(GameState.default_player(), "ability", "Dominate")
 
-      assert new_player.effects["Dominate"] == true
+      assert new_player.effects["ability:Dominate"] == true
     end
 
     test "toggles a valid on-hit effect" do
-      assert {:ok, new_player, {:effect_toggled, "Mark", true}} =
-               GameState.toggle_effect(GameState.default_player(), "Mark")
+      assert {:ok, new_player, {:effect_toggled, "on_hit", "Mark", true}} =
+               GameState.toggle_effect(GameState.default_player(), "on_hit", "Mark")
 
-      assert new_player.effects["Mark"] == true
+      assert new_player.effects["on_hit:Mark"] == true
     end
 
     test "toggles from true back to false" do
-      {:ok, player, _} = GameState.toggle_effect(GameState.default_player(), "Dominate")
+      {:ok, player, _} = GameState.toggle_effect(GameState.default_player(), "ability", "Dominate")
 
-      assert {:ok, new_player, {:effect_toggled, "Dominate", false}} =
-               GameState.toggle_effect(player, "Dominate")
+      assert {:ok, new_player, {:effect_toggled, "ability", "Dominate", false}} =
+               GameState.toggle_effect(player, "ability", "Dominate")
 
-      assert new_player.effects["Dominate"] == false
+      assert new_player.effects["ability:Dominate"] == false
+    end
+
+    test "ability and on-hit are namespaced separately" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_effect(player, "ability", "Dominate")
+      {:ok, player, _} = GameState.toggle_effect(player, "on_hit", "Mark")
+
+      assert player.effects["ability:Dominate"] == true
+      assert player.effects["on_hit:Mark"] == true
+      assert Map.get(player.effects, "Dominate") == nil
+      assert Map.get(player.effects, "Mark") == nil
     end
 
     test "returns error for unknown effect" do
       assert {:error, :invalid_effect} =
-               GameState.toggle_effect(GameState.default_player(), "Nonexistent")
+               GameState.toggle_effect(GameState.default_player(), "ability", "Nonexistent")
+    end
+
+    test "returns error for unknown category" do
+      assert {:error, :invalid_effect} =
+               GameState.toggle_effect(GameState.default_player(), "bogus", "Dominate")
     end
   end
 
@@ -195,7 +211,7 @@ defmodule Tabletop.Fab.GameStateTest do
       {:ok, player, _} = GameState.toggle_damage(player, :physical)
       {:ok, player, _} = GameState.change_damage(player, :physical, 3)
       {:ok, player, _} = GameState.toggle_goagain(player)
-      {:ok, player, _} = GameState.toggle_effect(player, "Dominate")
+      {:ok, player, _} = GameState.toggle_effect(player, "ability", "Dominate")
 
       assert {:ok, new_player, :chain_reset} = GameState.reset_chain(player)
 

@@ -46,12 +46,8 @@ defmodule TabletopWeb.Layouts do
       </div>
 
       <div class="flex items-center gap-4">
-        <.theme_toggle />
         <.link navigate={~p"/about"} class="btn btn-ghost">
           About
-        </.link>
-        <.link navigate={~p"/camera-setup"} class="btn btn-ghost">
-          Camera Setup
         </.link>
       </div>
     </header>
@@ -136,7 +132,7 @@ defmodule TabletopWeb.Layouts do
   def theme_toggle(assigns) do
     ~H"""
     <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=emerald]_&]:left-1/3 [[data-theme=forest]_&]:left-2/3 transition-[left]" />
+      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=cupcake]_&]:left-1/3 [[data-theme=halloween]_&]:left-2/3 transition-[left]" />
 
       <button
         class="flex p-2 cursor-pointer w-1/3"
@@ -149,7 +145,7 @@ defmodule TabletopWeb.Layouts do
       <button
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="emerald"
+        data-phx-theme="cupcake"
       >
         <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
@@ -157,7 +153,7 @@ defmodule TabletopWeb.Layouts do
       <button
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="forest"
+        data-phx-theme="halloween"
       >
         <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>

@@ -32,6 +32,7 @@
   </head>
   <body>
     <ul class="menu menu-horizontal w-full relative z-10 flex items-center gap-4 px-4 sm:px-6 lg:px-8 justify-end">
+    <.theme_toggle />
       <%= if @current_scope do %>
         <li>
           {@current_scope.user.name}

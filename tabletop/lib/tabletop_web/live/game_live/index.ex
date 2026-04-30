@@ -235,6 +235,14 @@ defmodule TabletopWeb.GameLive.Index do
            |> put_flash(:info, "Game created successfully")
            |> push_navigate(to: ~p"/games/#{game}/pre-join")}
 
+        {:error, :already_in_game} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "You're already in a game. Finish or leave it before creating another."
+           )}
+
         {:error, %Ecto.Changeset{} = changeset} ->
           {:noreply, assign(socket, form: to_form(changeset))}
       end

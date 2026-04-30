@@ -440,9 +440,18 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:camera_relay_token, camera_relay_token)
         |> assign(:qr_svg, qr_svg)
 
-      {:error, :unavailable} ->
+      {:error, reason} ->
+        message =
+          case reason do
+            :already_in_game ->
+              "You're already in a game. Finish or leave it before joining another."
+
+            _ ->
+              "Game is no longer available"
+          end
+
         socket
-        |> put_flash(:error, "Game is no longer available")
+        |> put_flash(:error, message)
         |> push_navigate(to: ~p"/")
         |> assign(:game, game)
         |> assign(:mode, :joiner)
@@ -465,6 +474,15 @@ defmodule TabletopWeb.GameLive.PreJoin do
              socket
              |> put_flash(:info, "Joined game successfully")
              |> push_navigate(to: ~p"/games/#{game}")}
+
+          {:error, :already_in_game} ->
+            {:noreply,
+             socket
+             |> put_flash(
+               :error,
+               "You're already in a game. Finish or leave it before joining another."
+             )
+             |> push_navigate(to: ~p"/")}
 
           {:error, _reason} ->
             {:noreply,

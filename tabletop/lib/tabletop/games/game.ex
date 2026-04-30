@@ -46,5 +46,9 @@ defmodule Tabletop.Games.Game do
     |> validate_required([:title, :format])
     |> validate_inclusion(:format, Map.keys(@valid_formats))
     |> put_change(:user_id, user_scope.user.id)
+    |> unique_constraint(:user_id,
+      name: :games_one_active_per_user1,
+      message: "you are already in a game"
+    )
   end
 end

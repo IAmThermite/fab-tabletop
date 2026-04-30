@@ -132,12 +132,18 @@ defmodule Tabletop.Games do
 
   """
   def create_game(%Scope{} = scope, attrs) do
-    with {:ok, game = %Game{}} <-
-           %Game{}
-           |> Game.changeset(attrs, scope)
-           |> Repo.insert() do
-      broadcast_game(scope, {:created, game})
-      {:ok, game}
+    case get_current_game_for_user(scope) do
+      nil ->
+        with {:ok, game = %Game{}} <-
+               %Game{}
+               |> Game.changeset(attrs, scope)
+               |> Repo.insert() do
+          broadcast_game(scope, {:created, game})
+          {:ok, game}
+        end
+
+      %Game{} ->
+        {:error, :already_in_game}
     end
   end
 
@@ -207,6 +213,14 @@ defmodule Tabletop.Games do
   Uses an atomic conditional UPDATE to prevent race conditions.
   """
   def reserve_join(%Scope{} = scope, %Game{} = game) do
+    if user_in_other_game?(scope, game) do
+      {:error, :already_in_game}
+    else
+      do_reserve_join(scope, game)
+    end
+  end
+
+  defp do_reserve_join(%Scope{} = scope, %Game{} = game) do
     now = DateTime.utc_now()
     expires = DateTime.add(now, 120, :second)
     user_id = scope.user.id
@@ -265,6 +279,9 @@ defmodule Tabletop.Games do
 
       game.user2_id != nil ->
         {:error, :game_full}
+
+      user_in_other_game?(scope, game) ->
+        {:error, :already_in_game}
 
       true ->
         {count, _} =
@@ -382,5 +399,12 @@ defmodule Tabletop.Games do
 
   def user_part_of_game?(%Scope{} = scope, %Game{} = game) do
     game.user_id == scope.user.id || game.user2_id == scope.user.id
+  end
+
+  defp user_in_other_game?(%Scope{} = scope, %Game{} = game) do
+    case get_current_game_for_user(scope) do
+      %Game{id: id} -> id != game.id
+      nil -> false
+    end
   end
 end

@@ -79,6 +79,13 @@ defmodule TabletopWeb.Router do
   scope "/", TabletopWeb do
     pipe_through([:browser])
 
+    live_session :tournaments_admin,
+      on_mount: [{TabletopWeb.UserAuth, :require_admin}] do
+      live "/tournaments/new", TournamentLive.Form, :new
+      live "/tournaments/:id/edit", TournamentLive.Form, :edit
+      live "/tournaments/:id/admin", TournamentLive.Admin, :admin
+    end
+
     live_session :current_user,
       on_mount: [{TabletopWeb.UserAuth, :mount_current_scope}] do
       live("/users/register", UserLive.Registration, :new)
@@ -90,6 +97,9 @@ defmodule TabletopWeb.Router do
       live "/games/:id/edit", GameLive.Form, :edit
       live "/games/:id/pre-join", GameLive.PreJoin, :pre_join
       live "/camera-setup", CameraSetupLive, :index
+
+      live "/tournaments", TournamentLive.Index, :index
+      live "/tournaments/:id", TournamentLive.Show, :show
     end
 
     get("/users/confirm/:token", UserSessionController, :confirm)

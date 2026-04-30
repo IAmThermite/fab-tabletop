@@ -5,6 +5,7 @@ defmodule TabletopWeb.GameLive.Show do
   alias Tabletop.Games
   alias Tabletop.Games.LeaveTimer
   alias Tabletop.Games.GameSession
+  alias Tabletop.Tournaments
 
   on_mount {TabletopWeb.UserAuth, :require_authenticated}
 
@@ -51,7 +52,9 @@ defmodule TabletopWeb.GameLive.Show do
        |> assign(:abilities_open, false)
        |> assign(:on_hits_open, false)
        |> assign(:preview_open, false)
-       |> assign(:open_cards, [])}
+       |> assign(:open_cards, [])
+       |> assign(:tournament_match, Tournaments.get_match_by_game_id(game.id))
+       |> assign(:show_leave_modal, false)}
     else
       {:ok,
        socket
@@ -124,14 +127,53 @@ defmodule TabletopWeb.GameLive.Show do
     {:noreply, assign(socket, :preview_open, !socket.assigns.preview_open)}
   end
 
+  def handle_event("open_leave_modal", _params, socket) do
+    {:noreply, assign(socket, :show_leave_modal, true)}
+  end
+
+  def handle_event("close_leave_modal", _params, socket) do
+    {:noreply, assign(socket, :show_leave_modal, false)}
+  end
+
+  def handle_event("leave_with_result", %{"result" => result}, socket) do
+    match = socket.assigns.tournament_match
+    scope = socket.assigns.current_scope
+
+    case Tournaments.report_result(scope, match.id, result) do
+      {:ok, _} ->
+        LeaveTimer.cancel_leave(socket.assigns.game.id, socket.assigns.user_id)
+        Games.terminate_game(scope, socket.assigns.game)
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Result reported. The game has ended.")
+         |> push_navigate(to: ~p"/tournaments/#{match.tournament_id}")}
+
+      {:error, _} ->
+        LeaveTimer.cancel_leave(socket.assigns.game.id, socket.assigns.user_id)
+        Games.terminate_game(scope, socket.assigns.game)
+
+        {:noreply,
+         socket
+         |> put_flash(:error, "Couldn't report result, but the game has ended.")
+         |> push_navigate(to: ~p"/tournaments/#{match.tournament_id}")}
+    end
+  end
+
   def handle_event("leave_game", _params, socket) do
     LeaveTimer.cancel_leave(socket.assigns.game.id, socket.assigns.user_id)
     Games.terminate_game(socket.assigns.current_scope, socket.assigns.game)
 
+    redirect_to =
+      case socket.assigns.tournament_match do
+        %{tournament_id: tid} -> ~p"/tournaments/#{tid}"
+        _ -> ~p"/"
+      end
+
     {:noreply,
      socket
      |> put_flash(:info, "The game has ended.")
-     |> push_navigate(to: ~p"/")}
+     |> push_navigate(to: redirect_to)}
   end
 
   # --- PubSub messages ---
@@ -216,6 +258,22 @@ defmodule TabletopWeb.GameLive.Show do
 
   defp validate_damage_type("physical"), do: :physical
   defp validate_damage_type("arcane"), do: :arcane
+
+  # Tournament match helpers (mirrored from TournamentLive.Show).
+  def my_side(%{player1_id: id}, id, :win), do: "p1_win"
+  def my_side(%{player1_id: id}, id, :loss), do: "p2_win"
+  def my_side(%{player2_id: id}, id, :win), do: "p2_win"
+  def my_side(%{player2_id: id}, id, :loss), do: "p1_win"
+
+  def reported_by(%{player1_id: id, player1_reported: r}, id), do: r
+  def reported_by(%{player2_id: id, player2_reported: r}, id), do: r
+  def reported_by(_, _), do: nil
+
+  def needs_result_prompt?(nil, _), do: false
+
+  def needs_result_prompt?(match, user_id) do
+    match.confirmed_result == nil && is_nil(reported_by(match, user_id))
+  end
 
   defp to_float(val) when is_float(val), do: val
   defp to_float(val) when is_integer(val), do: val * 1.0

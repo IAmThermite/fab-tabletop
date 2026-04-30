@@ -1,6 +1,8 @@
 defmodule Tabletop.Cards.Importer do
   @moduledoc """
   A module to import card data from JSON files into the database.
+  Raw data from https://api.cardvault.fabtcg.com/carddb/api/v1/advanced-search/?page_size=1000
+  is stored in `priv/cards/raw/` and processed/generated data is stored in `priv/cards/generated/`.
   """
 
   require Logger

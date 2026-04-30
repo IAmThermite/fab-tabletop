@@ -34,7 +34,6 @@ defmodule Tabletop.Cards.PHash do
   Downloads the image at `image_url`, crops the art region, and computes
   a 64-bit integer pHash. Returns `nil` on failure.
   """
-  @spec compute(String.t(), keyword()) :: integer() | nil
   def compute(image_url, req_options \\ []) do
     with {:ok, body} <- download(image_url, req_options),
          {:ok, gray} <- decode_art_region(body) do
@@ -47,7 +46,6 @@ defmodule Tabletop.Cards.PHash do
   @doc """
   Computes pHash from a local file path. Returns `nil` on failure.
   """
-  @spec compute_from_file(String.t()) :: integer() | nil
   def compute_from_file(path) do
     with {:ok, body} <- File.read(path),
          {:ok, gray} <- decode_art_region(body) do
@@ -61,7 +59,6 @@ defmodule Tabletop.Cards.PHash do
   Crops the art region from an image binary and writes it to `output_path` as PNG.
   Useful for visually verifying the crop region.
   """
-  @spec save_art_region(binary(), String.t()) :: :ok | :error
   def save_art_region(image_binary, output_path) do
     with_tempfile(image_binary, fn tmp_path ->
       case image_dimensions(tmp_path) do
@@ -90,7 +87,6 @@ defmodule Tabletop.Cards.PHash do
   @doc """
   Computes hamming distance between two integer pHashes (0-64).
   """
-  @spec hamming_distance(integer(), integer()) :: non_neg_integer()
   def hamming_distance(a, b) when is_integer(a) and is_integer(b) do
     Bitwise.bxor(a, b) |> popcount(0)
   end

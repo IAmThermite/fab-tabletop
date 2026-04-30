@@ -24,6 +24,10 @@ config :tabletop,
   ecto_repos: [Tabletop.Repo],
   generators: [timestamp_type: :utc_datetime]
 
+# Emails allowed to access the tournament admin console.
+# Overridable in runtime.exs via the ADMIN_EMAILS env var.
+config :tabletop, :admin_emails, []
+
 config :tabletop, Tabletop.Repo, migration_primary_key: [type: :uuid]
 
 # Configure the endpoint

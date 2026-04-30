@@ -46,12 +46,11 @@ defmodule TabletopWeb.Layouts do
       </div>
 
       <div class="flex items-center gap-4">
-        <.theme_toggle />
+        <.link navigate={~p"/tournaments"} class="btn btn-ghost">
+          Tournaments
+        </.link>
         <.link navigate={~p"/about"} class="btn btn-ghost">
           About
-        </.link>
-        <.link navigate={~p"/camera-setup"} class="btn btn-ghost">
-          Camera Setup
         </.link>
       </div>
     </header>

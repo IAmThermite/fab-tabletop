@@ -185,7 +185,9 @@ defmodule TabletopWeb.GameLive.Show do
 
   defp dispatch(socket, action) do
     case GameSession.apply_action(socket.assigns.game.id, socket.assigns.user_id, action) do
-      :ok -> {:noreply, socket}
+      :ok ->
+        {:noreply, socket}
+
       {:error, reason} ->
         IO.inspect(reason, label: "Action error")
         {:noreply, socket}

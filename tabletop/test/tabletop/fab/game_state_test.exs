@@ -142,7 +142,8 @@ defmodule Tabletop.Fab.GameStateTest do
     end
 
     test "toggles from true back to false" do
-      {:ok, player, _} = GameState.toggle_effect(GameState.default_player(), "ability", "Dominate")
+      {:ok, player, _} =
+        GameState.toggle_effect(GameState.default_player(), "ability", "Dominate")
 
       assert {:ok, new_player, {:effect_toggled, "ability", "Dominate", false}} =
                GameState.toggle_effect(player, "ability", "Dominate")

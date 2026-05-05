@@ -129,8 +129,10 @@ defmodule Tabletop.Games.GameSession do
     do: GameState.change_damage(player, type, delta)
 
   defp dispatch({:toggle_goagain}, player), do: GameState.toggle_goagain(player)
+
   defp dispatch({:toggle_effect, category, name}, player),
     do: GameState.toggle_effect(player, category, name)
+
   defp dispatch({:change_life, delta}, player), do: GameState.change_life(player, delta)
   defp dispatch({:reset_chain}, player), do: GameState.reset_chain(player)
   defp dispatch(_, _), do: {:error, :unknown_action}

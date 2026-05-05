@@ -99,7 +99,11 @@ defmodule TabletopWeb.CameraSetupLive do
           />
 
           <%!-- Central area — camera preview canvas --%>
-          <div id="game-area" class="flex-1 relative bg-blue-100 flex items-center justify-center overflow-hidden" style="container-type: size;">
+          <div
+            id="game-area"
+            class="flex-1 relative bg-blue-100 flex items-center justify-center overflow-hidden"
+            style="container-type: size;"
+          >
             <div class="aspect-video" style="width: min(100cqw, 100cqh * 16 / 9);">
               <canvas id="test-canvas" class="w-full h-full block"></canvas>
             </div>

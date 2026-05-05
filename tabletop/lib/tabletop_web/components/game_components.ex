@@ -174,7 +174,11 @@ defmodule TabletopWeb.GameComponents do
                 <input
                   type="checkbox"
                   class="checkbox checkbox-xs accent-purple-400"
-                  checked={@game_state.my.effects[Tabletop.Fab.GameState.effect_key("ability", effect[:name])]}
+                  checked={
+                    @game_state.my.effects[
+                      Tabletop.Fab.GameState.effect_key("ability", effect[:name])
+                    ]
+                  }
                   phx-click="toggle_effect"
                   phx-value-type={effect[:name]}
                   phx-value-category="ability"
@@ -211,7 +215,9 @@ defmodule TabletopWeb.GameComponents do
                 <input
                   type="checkbox"
                   class="checkbox checkbox-xs accent-orange-500"
-                  checked={@game_state.my.effects[Tabletop.Fab.GameState.effect_key("on_hit", effect[:name])]}
+                  checked={
+                    @game_state.my.effects[Tabletop.Fab.GameState.effect_key("on_hit", effect[:name])]
+                  }
                   phx-click="toggle_effect"
                   phx-value-type={effect[:name]}
                   phx-value-category="on_hit"
@@ -288,9 +294,14 @@ defmodule TabletopWeb.GameComponents do
         class={[
           "group absolute select-none z-20 rounded-md shadow-lg ring-1 ring-black/10 whitespace-nowrap font-semibold bg-gradient-to-br flex items-center gap-1",
           case @context do
-            :local -> "pointer-events-none px-1 py-0.5 text-[8px] gap-0.5"
-            :expanded -> "cursor-grab active:cursor-grabbing px-2 py-1 text-xs gap-1.5"
-            _ -> "px-2 py-1 text-xs gap-1.5 #{if has_hover?(tile), do: "cursor-help", else: "pointer-events-none"}"
+            :local ->
+              "pointer-events-none px-1 py-0.5 text-[8px] gap-0.5"
+
+            :expanded ->
+              "cursor-grab active:cursor-grabbing px-2 py-1 text-xs gap-1.5"
+
+            _ ->
+              "px-2 py-1 text-xs gap-1.5 #{if has_hover?(tile), do: "cursor-help", else: "pointer-events-none"}"
           end,
           tile_color_class(tile)
         ]}

@@ -40,7 +40,10 @@ defmodule TabletopWeb.GameLive.PreJoin do
         <%!-- Main area --%>
         <div class="flex flex-1 min-h-0">
           <%!-- Central area — camera preview --%>
-          <div class="flex-1 relative bg-base-300 flex items-center justify-center overflow-hidden" style="container-type: size;">
+          <div
+            class="flex-1 relative bg-base-300 flex items-center justify-center overflow-hidden"
+            style="container-type: size;"
+          >
             <div class="aspect-video" style="width: min(100cqw, 100cqh * 16 / 9);">
               <canvas id="pre-join-canvas" class="w-full h-full block"></canvas>
             </div>

@@ -213,12 +213,75 @@ function isConvexQuad(pts) {
   return true
 }
 
-function findBestContour(cv, contours, imgArea, centerX, centerY) {
-  let bestQuad = null
-  let bestScore = -Infinity
-  let bestArea = 0
+// Canonical FaB card aspect (long/short). Used as a soft preference in scoring
+// so that two-card merge blobs (aspect drifts toward 1.0 or beyond ~2× target)
+// lose to individual card contours that sit inside them.
+const TARGET_ASPECT = 1.4
 
+function quadAABB(pts) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.x > maxX) maxX = p.x
+    if (p.y > maxY) maxY = p.y
+  }
+  const area = Math.max(0, (maxX - minX) * (maxY - minY))
+  return { minX, minY, maxX, maxY, area }
+}
+
+function aabbIntersectionArea(a, b) {
+  const w = Math.max(0, Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX))
+  const h = Math.max(0, Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY))
+  return w * h
+}
+
+/**
+ * Greedy suppression over candidate quads:
+ *   - High IoU pair (>0.6): keep the higher-scored one (standard NMS — same
+ *     physical card detected via inner+outer edge contours).
+ *   - High containment (>0.8) with the smaller quad at 30-70% of the larger:
+ *     prefer the SMALLER one. This catches a merged two-card blob enclosing
+ *     a single-card contour and picks the individual card.
+ */
+function suppressCandidates(candidates) {
+  const sorted = [...candidates].sort((a, b) => b.score - a.score)
+  const survivors = []
+  for (const cand of sorted) {
+    let drop = false
+    let replaceIndex = -1
+    for (let i = 0; i < survivors.length; i++) {
+      const s = survivors[i]
+      const inter = aabbIntersectionArea(cand.aabb, s.aabb)
+      if (inter === 0) continue
+      const union = cand.aabb.area + s.aabb.area - inter
+      const iou = union > 0 ? inter / union : 0
+      const smallerArea = Math.min(cand.aabb.area, s.aabb.area)
+      const largerArea = Math.max(cand.aabb.area, s.aabb.area)
+      const containment = smallerArea > 0 ? inter / smallerArea : 0
+      const areaRatio = largerArea > 0 ? smallerArea / largerArea : 0
+
+      if (iou > 0.6) { drop = true; break }
+      if (containment > 0.8 && areaRatio >= 0.3 && areaRatio <= 0.7) {
+        if (cand.aabb.area < s.aabb.area) { replaceIndex = i; break }
+        drop = true
+        break
+      }
+    }
+    if (drop) continue
+    if (replaceIndex >= 0) survivors[replaceIndex] = cand
+    else survivors.push(cand)
+  }
+  return survivors
+}
+
+function findBestContour(cv, contours, imgArea, centerX, centerY) {
   const maxPossibleDist = Math.hypot(centerX, centerY)
+  const candidates = []
+
+  // Span of aspect deviation possible inside the gates [MIN_ASPECT, MAX_ASPECT],
+  // used to normalize the aspect-fit term.
+  const aspectFitSpan = Math.max(TARGET_ASPECT - MIN_ASPECT, MAX_ASPECT - TARGET_ASPECT)
 
   for (let i = 0; i < contours.size(); i++) {
     const cnt = contours.get(i)
@@ -264,18 +327,29 @@ function findBestContour(cv, contours, imgArea, centerX, centerY) {
     // Convexity check
     if (!isConvexQuad(ordered)) continue
 
-    // Composite score: prefer rectangular contours, with proximity as tiebreaker
     const rectScore = (widthRatio + heightRatio) / 2 * (1 - maxAngleDev / MAX_CORNER_DEVIATION)
     const cx = quad.reduce((s, p) => s + p.x, 0) / 4
     const cy = quad.reduce((s, p) => s + p.y, 0) / 4
     const d = Math.hypot(cx - centerX, cy - centerY)
     const normalizedDist = maxPossibleDist > 0 ? d / maxPossibleDist : 0
-    const compositeScore = rectScore * 0.6 + (1 - normalizedDist) * 0.4
+    const aspectFit = aspectFitSpan > 0
+      ? Math.max(0, 1 - Math.abs(aspect - TARGET_ASPECT) / aspectFitSpan)
+      : 1
+    const compositeScore = rectScore * 0.5 + (1 - normalizedDist) * 0.3 + aspectFit * 0.2
 
-    if (compositeScore > bestScore) {
-      bestScore = compositeScore
-      bestQuad = ordered
-      bestArea = area
+    candidates.push({ ordered, score: compositeScore, area, aabb: quadAABB(ordered) })
+  }
+
+  const survivors = suppressCandidates(candidates)
+
+  let bestQuad = null
+  let bestScore = -Infinity
+  let bestArea = 0
+  for (const c of survivors) {
+    if (c.score > bestScore) {
+      bestScore = c.score
+      bestQuad = c.ordered
+      bestArea = c.area
     }
   }
 
@@ -332,7 +406,7 @@ self.onmessage = function (event) {
 
       cv.findContours(
         edges, contours, hierarchy,
-        cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE,
+        cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE,
       )
 
       const result = findBestContour(cv, contours, imgArea, centerX, centerY)

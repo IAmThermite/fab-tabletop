@@ -120,8 +120,14 @@ defmodule TabletopWeb.CameraSetupLive do
               </div>
             </div>
 
-            <%!-- Zoom/rotation controls --%>
-            <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-base-200/90 rounded-lg px-4 py-2 backdrop-blur-sm">
+            <%!-- Zoom/rotation controls. Wrapped in phx-update="ignore" so a
+                 LiveView re-render (e.g. when a card popout opens) doesn't
+                 reset the slider values back to the template defaults. --%>
+            <div
+              id="camera-adjust-controls"
+              phx-update="ignore"
+              class="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-base-200/90 rounded-lg px-4 py-2 backdrop-blur-sm"
+            >
               <div class="flex items-center gap-2">
                 <span class="text-xs font-semibold">Rotate</span>
                 <input
@@ -150,7 +156,7 @@ defmodule TabletopWeb.CameraSetupLive do
               </div>
             </div>
 
-            <.game_tiles game_state={@game_state} context={:remote} />
+            <.game_tiles game_state={@game_state} context={:setup} />
 
             <.card_popouts open_cards={@open_cards} />
           </div>
@@ -450,20 +456,6 @@ defmodule TabletopWeb.CameraSetupLive do
             if (stream) stream.getTracks().forEach(t => t.stop())
             if (this.cameraRelay) this.cameraRelay.disconnect()
           }
-        },
-
-        updated() {
-          const zoomSlider = document.getElementById("zoom-slider")
-          const zoomValueEl = document.getElementById("zoom-value")
-          const rotationSlider = document.getElementById("rotation-slider")
-          const rotationValueEl = document.getElementById("rotation-value")
-
-          const savedZoom = localStorage.getItem("tabletop:camera-zoom") || "1"
-          const savedRotation = localStorage.getItem("tabletop:camera-rotation") || "0"
-          zoomSlider.value = savedZoom
-          rotationSlider.value = savedRotation
-          zoomValueEl.textContent = parseFloat(savedZoom).toFixed(1) + "x"
-          rotationValueEl.textContent = savedRotation + "\u00B0"
         },
 
         destroyed() {

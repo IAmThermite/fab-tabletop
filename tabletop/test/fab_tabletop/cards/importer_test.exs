@@ -2,62 +2,80 @@ defmodule Tabletop.Cards.ImporterTest do
   use Tabletop.DataCase
 
   alias Tabletop.Cards
-  alias Tabletop.Cards.{Card, Importer}
+  alias Tabletop.Cards.{Card, CardPrint, Importer}
 
   @test_fixture_dir "priv/cards/test"
 
-  describe "dedupe_card_prints/1" do
-    test "preserves all pitch variants from API response" do
-      {:ok, content} = File.read("#{@test_fixture_dir}/scar-for-a-scar-1.json")
-      {:ok, data} = Jason.decode(content)
+  defp scar_results(pitch) do
+    {:ok, content} = File.read("#{@test_fixture_dir}/scar-for-a-scar-#{pitch}.json")
+    {:ok, data} = Jason.decode(content)
+    data["results"]
+  end
 
-      faces = Importer.dedupe_card_prints(data["results"])
-      pitches = faces |> Enum.map(& &1["printed_pitch"]) |> Enum.sort()
-
-      assert 1 in pitches
-      assert 2 in pitches
-      assert 3 in pitches
-    end
-
-    test "filters non-English faces" do
-      {:ok, content} = File.read("#{@test_fixture_dir}/scar-for-a-scar-1.json")
-      {:ok, data} = Jason.decode(content)
-
-      faces = Importer.dedupe_card_prints(data["results"])
+  describe "collect_english_faces/1" do
+    test "filters non-English faces and attaches set_code" do
+      [first_result | _] = scar_results(1)
+      faces = Importer.collect_english_faces(first_result["card_prints"])
 
       assert Enum.all?(faces, &(&1["face_language"] == "en"))
+      assert Enum.all?(faces, &is_binary(&1["set_code"]))
     end
 
-    test "filters non-regular finish types" do
-      {:ok, content} = File.read("#{@test_fixture_dir}/scar-for-a-scar-1.json")
-      {:ok, data} = Jason.decode(content)
-
-      faces = Importer.dedupe_card_prints(data["results"])
-
-      assert Enum.all?(faces, &(&1["finish_type"] == "regular"))
-    end
-
-    test "filters non-regular and non-extended-art types" do
-      {:ok, content} = File.read("#{@test_fixture_dir}/scar-for-a-scar-1.json")
-      {:ok, data} = Jason.decode(content)
-
-      faces = Importer.dedupe_card_prints(data["results"])
-
-      assert Enum.all?(faces, &(&1["art_type"] in ["regular", "extended-art"]))
-    end
-
-    test "dedupes by face_id" do
-      {:ok, content} = File.read("#{@test_fixture_dir}/scar-for-a-scar-1.json")
-      {:ok, data} = Jason.decode(content)
-
-      faces = Importer.dedupe_card_prints(data["results"])
-      face_ids = Enum.map(faces, & &1["face_id"])
-
-      assert face_ids == Enum.uniq(face_ids)
+    test "returns [] for missing or non-list input" do
+      assert Importer.collect_english_faces(nil) == []
+      assert Importer.collect_english_faces(%{}) == []
     end
   end
 
-  describe "import_changeset_from_json/1" do
+  describe "foil_dedup/1" do
+    test "prefers regular finish over foil within the same (set, art_type, layout) group" do
+      faces = [
+        %{"face_id" => "WTR191", "set_code" => "WTR", "art_type" => "regular", "layout_position" => 10, "finish_type" => "regular"},
+        %{"face_id" => "WTR191-RF", "set_code" => "WTR", "art_type" => "regular", "layout_position" => 10, "finish_type" => "rainbow-foil"}
+      ]
+
+      result = Importer.foil_dedup(faces)
+      assert length(result) == 1
+      assert hd(result)["face_id"] == "WTR191"
+    end
+
+    test "keeps one foil face when no regular exists in the group" do
+      faces = [
+        %{"face_id" => "SEA050-MV", "set_code" => "SEA", "art_type" => "extended-art", "layout_position" => 10, "finish_type" => "cold-foil"},
+        %{"face_id" => "SEA050-MV-ALT", "set_code" => "SEA", "art_type" => "extended-art", "layout_position" => 10, "finish_type" => "cold-foil"}
+      ]
+
+      result = Importer.foil_dedup(faces)
+      assert length(result) == 1
+      # Picks the alphabetically-first face_id for stability.
+      assert hd(result)["face_id"] == "SEA050-MV"
+    end
+
+    test "keeps separate groups across (set, art_type, layout) combinations" do
+      faces = [
+        %{"face_id" => "SEA050", "set_code" => "SEA", "art_type" => "regular", "layout_position" => 10, "finish_type" => "regular"},
+        %{"face_id" => "SEA050-MV", "set_code" => "SEA", "art_type" => "extended-art", "layout_position" => 10, "finish_type" => "cold-foil"},
+        %{"face_id" => "GEM046-RF", "set_code" => "GEM", "art_type" => "extended-art", "layout_position" => 10, "finish_type" => "rainbow-foil"}
+      ]
+
+      result = Importer.foil_dedup(faces)
+      face_ids = result |> Enum.map(& &1["face_id"]) |> Enum.sort()
+      assert face_ids == ["GEM046-RF", "SEA050", "SEA050-MV"]
+    end
+
+    test "keeps a back face (different layout_position) alongside the front" do
+      faces = [
+        %{"face_id" => "HNT261-MV", "set_code" => "HNT", "art_type" => "extended-art", "layout_position" => 10, "finish_type" => "cold-foil"},
+        %{"face_id" => "HNT261-MV_BACK", "set_code" => "HNT", "art_type" => "full-art", "layout_position" => 20, "finish_type" => "cold-foil"}
+      ]
+
+      result = Importer.foil_dedup(faces)
+      face_ids = result |> Enum.map(& &1["face_id"]) |> Enum.sort()
+      assert face_ids == ["HNT261-MV", "HNT261-MV_BACK"]
+    end
+  end
+
+  describe "build_card_with_prints/2" do
     setup do
       Req.Test.stub(Tabletop.Cards.ImporterTest, fn conn ->
         body = File.read!("#{@test_fixture_dir}/scar-for-a-scar-1.webp")
@@ -70,300 +88,41 @@ defmodule Tabletop.Cards.ImporterTest do
       {:ok, req_options: [plug: {Req.Test, Tabletop.Cards.ImporterTest}]}
     end
 
-    # Helper: get deduped faces from the API fixture (same structure import pipeline uses)
-    defp deduped_faces do
-      {:ok, content} = File.read("#{@test_fixture_dir}/scar-for-a-scar-1.json")
-      {:ok, data} = Jason.decode(content)
-      Importer.dedupe_card_prints(data["results"])
+    test "returns a card map with embedded prints", %{req_options: req_options} do
+      [first | _] = scar_results(1)
+      result = Importer.build_card_with_prints(first, req_options)
+
+      assert result.external_card_id == first["id"]
+      assert result.name == "Scar for a Scar"
+      assert result.pitch == 1
+      assert is_list(result.card_prints)
+      assert length(result.card_prints) > 0
+
+      Enum.each(result.card_prints, fn print ->
+        assert is_binary(print.face_id)
+        assert print.orientation == "vertical"
+        assert is_integer(print.image_phash)
+        assert is_integer(print.image_phash_full)
+        assert is_nil(print.image_phash_left)
+        assert is_nil(print.image_phash_right)
+      end)
     end
 
-    test "extracts pitch from face JSON", %{req_options: req_options} do
-      for face <- deduped_faces() do
-        changeset = Importer.import_changeset_from_json(face, req_options)
-        assert changeset.changes.pitch == face["printed_pitch"]
-      end
-    end
+    test "marks regular front faces as canonical", %{req_options: req_options} do
+      [first | _] = scar_results(1)
+      result = Importer.build_card_with_prints(first, req_options)
 
-    test "handles nil pitch", %{req_options: req_options} do
-      face_json = %{
-        "printed_name" => "Some Hero",
-        "face_id" => "TEST001",
-        "printed_pitch" => nil,
-        "image" => %{"large" => "https://example.com/test.webp"}
-      }
-
-      changeset = Importer.import_changeset_from_json(face_json, req_options)
-      assert changeset.changes[:pitch] == nil
-    end
-
-    test "extracts name, print_id, and image_url", %{req_options: req_options} do
-      face = List.first(deduped_faces())
-      changeset = Importer.import_changeset_from_json(face, req_options)
-
-      assert changeset.changes.name == "Scar for a Scar"
-      assert changeset.changes.print_id == face["face_id"]
-      assert changeset.changes.image_url == get_in(face, ["image", "large"])
-    end
-
-    test "generates normalized_name and tokens", %{req_options: req_options} do
-      face = List.first(deduped_faces())
-      changeset = Importer.import_changeset_from_json(face, req_options)
-
-      assert changeset.changes.normalized_name == "SCAR FOR A SCAR"
-      assert changeset.changes.tokens == ["scar", "for", "a", "scar"]
-    end
-  end
-
-  describe "Card.generated_changeset/2 with pitch" do
-    test "accepts pitch value" do
-      attrs = %{
-        "name" => "Test Card",
-        "print_id" => "TEST001",
-        "image_url" => "https://example.com/test.webp",
-        "normalized_name" => "TEST CARD",
-        "tokens" => ["test", "card"],
-        "image_phash" => 12345,
-        "pitch" => 2
-      }
-
-      changeset = Card.generated_changeset(%Card{}, attrs)
-
-      assert changeset.valid?
-      assert changeset.changes.pitch == 2
-    end
-
-    test "accepts nil pitch" do
-      attrs = %{
-        "name" => "Test Hero",
-        "print_id" => "TEST002",
-        "image_url" => "https://example.com/test.webp",
-        "normalized_name" => "TEST HERO",
-        "tokens" => ["test", "hero"],
-        "image_phash" => 67890,
-        "pitch" => nil
-      }
-
-      changeset = Card.generated_changeset(%Card{}, attrs)
-
-      assert changeset.valid?
-      refute Map.has_key?(changeset.changes, :pitch)
-    end
-  end
-
-  describe "card_as_json_string/1" do
-    test "includes pitch in JSON output" do
-      {:ok, card} =
-        %Card{}
-        |> Card.generated_changeset(%{
-          "name" => "Test Card",
-          "print_id" => "JSON_TEST_001",
-          "image_url" => "https://example.com/test.webp",
-          "normalized_name" => "TEST CARD",
-          "tokens" => ["test", "card"],
-          "image_phash" => 11111,
-          "pitch" => 2
-        })
-        |> Repo.insert()
-
-      json = Cards.card_as_json_string(card)
-      decoded = Jason.decode!(json)
-
-      assert decoded["pitch"] == 2
-    end
-
-    test "includes nil pitch in JSON output" do
-      {:ok, card} =
-        %Card{}
-        |> Card.generated_changeset(%{
-          "name" => "Test Hero",
-          "print_id" => "JSON_TEST_002",
-          "image_url" => "https://example.com/test.webp",
-          "normalized_name" => "TEST HERO",
-          "tokens" => ["test", "hero"],
-          "image_phash" => 22222
-        })
-        |> Repo.insert()
-
-      json = Cards.card_as_json_string(card)
-      decoded = Jason.decode!(json)
-
-      assert decoded["pitch"] == nil
-    end
-  end
-
-  describe "find_pitch_variants/1" do
-    test "returns all pitch variants for a card" do
-      for pitch <- [1, 2, 3] do
-        %Card{}
-        |> Card.generated_changeset(%{
-          "name" => "Variant Card",
-          "print_id" => "VAR_#{pitch}",
-          "image_url" => "https://example.com/var#{pitch}.webp",
-          "normalized_name" => "VARIANT CARD",
-          "tokens" => ["variant", "card"],
-          "image_phash" => 30000 + pitch,
-          "pitch" => pitch
-        })
-        |> Repo.insert!()
-      end
-
-      card = Cards.find_by_print_id("VAR_1")
-      variants = Cards.find_pitch_variants(card)
-
-      assert length(variants) == 3
-      assert Enum.map(variants, & &1.pitch) == [1, 2, 3]
-    end
-
-    test "returns empty list for cards without pitch" do
-      card =
-        %Card{}
-        |> Card.generated_changeset(%{
-          "name" => "No Pitch Card",
-          "print_id" => "NOPITCH_001",
-          "image_url" => "https://example.com/nopitch.webp",
-          "normalized_name" => "NO PITCH CARD",
-          "tokens" => ["no", "pitch", "card"],
-          "image_phash" => 40000
-        })
-        |> Repo.insert!()
-
-      variants = Cards.find_pitch_variants(card)
-
-      assert variants == []
-    end
-
-    test "variants are ordered by pitch ascending" do
-      # Insert in reverse order
-      for pitch <- [3, 1, 2] do
-        %Card{}
-        |> Card.generated_changeset(%{
-          "name" => "Order Card",
-          "print_id" => "ORD_#{pitch}",
-          "image_url" => "https://example.com/ord#{pitch}.webp",
-          "normalized_name" => "ORDER CARD",
-          "tokens" => ["order", "card"],
-          "image_phash" => 50000 + pitch,
-          "pitch" => pitch
-        })
-        |> Repo.insert!()
-      end
-
-      card = Cards.find_by_print_id("ORD_2")
-      variants = Cards.find_pitch_variants(card)
-
-      assert Enum.map(variants, & &1.pitch) == [1, 2, 3]
+      regular_prints = Enum.filter(result.card_prints, &(&1.art_type == "regular"))
+      assert Enum.all?(regular_prints, & &1.is_canonical)
     end
   end
 
   describe "import_and_generate/1 (E2E)" do
-    test "imports cards with pitch from raw JSON, mocking HTTP" do
+    setup do
       output_dir =
         System.tmp_dir!() |> Path.join("importer_test_#{System.unique_integer([:positive])}")
 
       File.mkdir_p!(output_dir)
-
-      on_exit(fn -> File.rm_rf!(output_dir) end)
-
-      # Use Req.Test to stub HTTP calls
-      Req.Test.stub(Tabletop.Cards.ImporterTest, fn conn ->
-        cond do
-          # API calls for card prints
-          String.contains?(conn.request_path, "/card_id/scar-for-a-scar-1/") ->
-            json = File.read!("#{@test_fixture_dir}/scar-for-a-scar-1.json")
-            Req.Test.json(conn, Jason.decode!(json))
-
-          String.contains?(conn.request_path, "/card_id/scar-for-a-scar-2/") ->
-            json = File.read!("#{@test_fixture_dir}/scar-for-a-scar-2.json")
-            Req.Test.json(conn, Jason.decode!(json))
-
-          String.contains?(conn.request_path, "/card_id/scar-for-a-scar-3/") ->
-            json = File.read!("#{@test_fixture_dir}/scar-for-a-scar-3.json")
-            Req.Test.json(conn, Jason.decode!(json))
-
-          # Image downloads — return the webp file bytes
-          String.ends_with?(conn.request_path, ".webp") ->
-            # Map image URLs to test fixture files by pitch
-            fixture =
-              cond do
-                String.contains?(conn.request_path, "IRA009") or
-                    String.contains?(conn.request_path, "WTR191") ->
-                  "scar-for-a-scar-1.webp"
-
-                String.contains?(conn.request_path, "UPR210") ->
-                  "scar-for-a-scar-2.webp"
-
-                String.contains?(conn.request_path, "UPR211") ->
-                  "scar-for-a-scar-3.webp"
-
-                true ->
-                  # Default to first image for any other face_id
-                  "scar-for-a-scar-1.webp"
-              end
-
-            body = File.read!("#{@test_fixture_dir}/#{fixture}")
-
-            conn
-            |> Plug.Conn.put_resp_content_type("image/webp")
-            |> Plug.Conn.send_resp(200, body)
-
-          true ->
-            Plug.Conn.send_resp(conn, 404, "Not found")
-        end
-      end)
-
-      req_options = [plug: {Req.Test, Tabletop.Cards.ImporterTest}]
-
-      Importer.import_and_generate(
-        raw_path: "#{@test_fixture_dir}/scar-for-a-scar-all.json",
-        output_dir: output_dir,
-        req_options: req_options
-      )
-
-      # Verify cards were inserted
-      cards = Cards.list_cards()
-      scar_cards = Enum.filter(cards, &(&1.name == "Scar for a Scar"))
-
-      assert length(scar_cards) >= 3,
-             "Expected at least 3 pitch variants, got #{length(scar_cards)}"
-
-      pitches = scar_cards |> Enum.map(& &1.pitch) |> Enum.sort()
-      assert 1 in pitches
-      assert 2 in pitches
-      assert 3 in pitches
-
-      # All cards should have valid fields
-      for card <- scar_cards do
-        assert card.name == "Scar for a Scar"
-        assert card.normalized_name == "SCAR FOR A SCAR"
-        assert card.tokens == ["scar", "for", "a", "scar"]
-        assert card.print_id != nil
-        assert card.image_url != nil
-      end
-
-      # Verify generated JSON was written
-      generated_files = Path.wildcard("#{output_dir}/cards-*.json")
-      assert length(generated_files) == 1
-
-      {:ok, generated_content} = File.read(List.first(generated_files))
-      {:ok, generated_cards} = Jason.decode(generated_content)
-
-      generated_pitches =
-        generated_cards
-        |> Enum.filter(&(&1["name"] == "Scar for a Scar"))
-        |> Enum.map(& &1["pitch"])
-        |> Enum.sort()
-
-      assert 1 in generated_pitches
-      assert 2 in generated_pitches
-      assert 3 in generated_pitches
-    end
-
-    test "imports all pitch variants from each set when card exists in multiple sets", %{} do
-      output_dir =
-        System.tmp_dir!() |> Path.join("importer_test_#{System.unique_integer([:positive])}")
-
-      File.mkdir_p!(output_dir)
-
       on_exit(fn -> File.rm_rf!(output_dir) end)
 
       Req.Test.stub(Tabletop.Cards.ImporterTest, fn conn ->
@@ -392,8 +151,41 @@ defmodule Tabletop.Cards.ImporterTest do
         end
       end)
 
-      req_options = [plug: {Req.Test, Tabletop.Cards.ImporterTest}]
+      {:ok, output_dir: output_dir, req_options: [plug: {Req.Test, Tabletop.Cards.ImporterTest}]}
+    end
 
+    test "writes a JSON snapshot with parent cards + embedded card_prints", %{
+      output_dir: output_dir,
+      req_options: req_options
+    } do
+      Importer.import_and_generate(
+        raw_path: "#{@test_fixture_dir}/scar-for-a-scar-all.json",
+        output_dir: output_dir,
+        req_options: req_options,
+        insert: false
+      )
+
+      generated_files = Path.wildcard("#{output_dir}/cards-*.json")
+      assert length(generated_files) == 1
+
+      {:ok, generated_content} = File.read(List.first(generated_files))
+      {:ok, generated_cards} = Jason.decode(generated_content)
+
+      scar_cards = Enum.filter(generated_cards, &(&1["name"] == "Scar for a Scar"))
+      pitches = scar_cards |> Enum.map(& &1["pitch"]) |> Enum.sort()
+      assert 1 in pitches and 2 in pitches and 3 in pitches
+
+      Enum.each(scar_cards, fn card ->
+        assert is_binary(card["external_card_id"])
+        assert is_list(card["card_prints"])
+        assert length(card["card_prints"]) > 0
+      end)
+    end
+
+    test "inserts Card + CardPrints linked by FK", %{
+      output_dir: output_dir,
+      req_options: req_options
+    } do
       Importer.import_and_generate(
         raw_path: "#{@test_fixture_dir}/scar-for-a-scar-all.json",
         output_dir: output_dir,
@@ -402,22 +194,141 @@ defmodule Tabletop.Cards.ImporterTest do
 
       cards = Cards.list_cards()
       scar_cards = Enum.filter(cards, &(&1.name == "Scar for a Scar"))
+      assert length(scar_cards) == 3
 
-      # The fixtures contain prints from multiple sets (e.g. 1HP, WTR, UPR, IRA).
-      # The dedup should preserve all pitch variants per set, not collapse across sets.
-      for set_code <- ["1HP", "WTR"] do
-        set_cards = Enum.filter(scar_cards, &(&1.set_code == set_code))
-        set_pitches = Enum.map(set_cards, & &1.pitch) |> Enum.sort()
+      pitches = scar_cards |> Enum.map(& &1.pitch) |> Enum.sort()
+      assert pitches == [1, 2, 3]
 
-        assert 1 in set_pitches,
-               "Expected pitch 1 for set #{set_code}, got pitches: #{inspect(set_pitches)}"
-
-        assert 2 in set_pitches,
-               "Expected pitch 2 for set #{set_code}, got pitches: #{inspect(set_pitches)}"
-
-        assert 3 in set_pitches,
-               "Expected pitch 3 for set #{set_code}, got pitches: #{inspect(set_pitches)}"
+      # Each parent Card should have at least one print across the major sets.
+      for card <- scar_cards do
+        prints = Repo.all(from cp in CardPrint, where: cp.card_id == ^card.id)
+        assert length(prints) > 0
+        sets = prints |> Enum.map(& &1.set_code) |> Enum.uniq()
+        assert "WTR" in sets or "1HP" in sets
       end
+    end
+  end
+
+  describe "fetch_raw_card_list/2" do
+    setup do
+      raw_dir =
+        System.tmp_dir!() |> Path.join("raw_fetch_test_#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(raw_dir)
+      on_exit(fn -> File.rm_rf!(raw_dir) end)
+
+      # Pre-seed an old file that the fetch should clean up first.
+      File.write!(Path.join(raw_dir, "api.cardvault.fabtcg.com-old.json"), "{}")
+
+      Req.Test.stub(Tabletop.Cards.ImporterTest, fn conn ->
+        page = conn.params["page"] |> String.to_integer()
+
+        body =
+          case page do
+            1 ->
+              %{
+                "count" => 3,
+                "next" => "http://example.com/next?page=2",
+                "previous" => nil,
+                "results" => [%{"card_id" => "a"}, %{"card_id" => "b"}]
+              }
+
+            2 ->
+              %{
+                "count" => 3,
+                "next" => nil,
+                "previous" => "http://example.com/prev?page=1",
+                "results" => [%{"card_id" => "c"}]
+              }
+          end
+
+        Req.Test.json(conn, body)
+      end)
+
+      {:ok, raw_dir: raw_dir, req_options: [plug: {Req.Test, Tabletop.Cards.ImporterTest}]}
+    end
+
+    test "writes one file per page and removes existing raw files", %{
+      raw_dir: raw_dir,
+      req_options: req_options
+    } do
+      :ok = Importer.fetch_raw_card_list(raw_dir, req_options)
+
+      files =
+        Path.wildcard(Path.join(raw_dir, "api.cardvault.fabtcg.com-*.json"))
+        |> Enum.map(&Path.basename/1)
+        |> Enum.sort()
+
+      assert files == [
+               "api.cardvault.fabtcg.com-1.json",
+               "api.cardvault.fabtcg.com-2.json"
+             ]
+
+      {:ok, page1_content} =
+        File.read(Path.join(raw_dir, "api.cardvault.fabtcg.com-1.json"))
+
+      {:ok, page1} = Jason.decode(page1_content)
+      assert length(page1["results"]) == 2
+    end
+  end
+
+  describe "find_pitch_variants/2" do
+    setup do
+      # Build three pitch variants of the same logical card, each with a
+      # canonical regular print.
+      for pitch <- [1, 2, 3] do
+        {:ok, card} =
+          %Card{}
+          |> Card.changeset(%{
+            "name" => "Variant Card",
+            "pitch" => pitch,
+            "external_card_id" => "variant-#{pitch}"
+          })
+          |> Repo.insert()
+
+        %CardPrint{}
+        |> CardPrint.changeset(%{
+          "card_id" => card.id,
+          "face_id" => "VAR_#{pitch}",
+          "set_code" => "TST",
+          "art_type" => "regular",
+          "orientation" => "vertical",
+          "layout_position" => 10,
+          "is_canonical" => true,
+          "image_url" => "https://example.com/var#{pitch}.webp"
+        })
+        |> Repo.insert!()
+      end
+
+      :ok
+    end
+
+    test "returns all pitch variants ordered by pitch ascending" do
+      card = Cards.find_by_external_card_id("variant-1")
+      variants = Cards.find_pitch_variants(card)
+
+      assert Enum.map(variants, & &1.pitch) == [1, 2, 3]
+    end
+
+    test "preloads canonical card_prints" do
+      card = Cards.find_by_external_card_id("variant-1")
+      [v1 | _] = Cards.find_pitch_variants(card)
+
+      assert is_list(v1.card_prints)
+      assert length(v1.card_prints) >= 1
+    end
+
+    test "returns empty list for a card without pitch" do
+      {:ok, no_pitch} =
+        %Card{}
+        |> Card.changeset(%{
+          "name" => "Hero Card",
+          "pitch" => nil,
+          "external_card_id" => "hero-1"
+        })
+        |> Repo.insert()
+
+      assert Cards.find_pitch_variants(no_pitch) == []
     end
   end
 end

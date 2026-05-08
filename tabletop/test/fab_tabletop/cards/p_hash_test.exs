@@ -37,17 +37,37 @@ defmodule Tabletop.Cards.PHashTest do
     end
   end
 
-  describe "save_art_region/2" do
-    test "extracts art region and writes a PNG" do
+  describe "save_art_region/3" do
+    test "extracts default art region and writes a PNG" do
       body = File.read!(@fixture_path)
-      assert :ok = PHash.save_art_region(body, @art_output_path)
+      assert :ok = PHash.save_art_region(body, [], @art_output_path)
       assert File.exists?(@art_output_path)
 
-      # Verify it's a valid PNG (starts with PNG magic bytes)
       <<0x89, "PNG", _rest::binary>> = File.read!(@art_output_path)
+    end
 
-      IO.puts("\n\n  Art crop saved to: #{@art_output_path}")
-      IO.puts("  Open it to verify the crop region visually.\n")
+    test "extracts a custom bbox" do
+      body = File.read!(@fixture_path)
+      assert :ok = PHash.save_art_region(body, [bbox: {0.0, 0.0, 1.0, 1.0}], @art_output_path)
+      assert File.exists?(@art_output_path)
+
+      <<0x89, "PNG", _rest::binary>> = File.read!(@art_output_path)
+    end
+  end
+
+  describe "compute_from_binary/2" do
+    test "matches compute_from_file for same bytes and bbox" do
+      body = File.read!(@fixture_path)
+      from_file = PHash.compute_from_file(@fixture_path)
+      from_binary = PHash.compute_from_binary(body)
+      assert from_file == from_binary
+    end
+
+    test "different bboxes produce different hashes" do
+      body = File.read!(@fixture_path)
+      art = PHash.compute_from_binary(body, bbox: {0.10, 0.16, 0.80, 0.42})
+      full = PHash.compute_from_binary(body, bbox: {0.0, 0.0, 1.0, 1.0})
+      assert art != full
     end
   end
 

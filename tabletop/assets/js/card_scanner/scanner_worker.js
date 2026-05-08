@@ -58,7 +58,7 @@ const MIN_SIDE_RATIO = 0.75       // opposite sides must be within 75% of each o
 const MAX_CORNER_DEVIATION = 25   // max degrees any corner can deviate from 90°
 
 // Title region: narrow banner near top of card
-const TITLE_Y_RATIO = 0.055
+const TITLE_Y_RATIO = 0.1
 const TITLE_H_RATIO = 0.04
 const TITLE_X_INSET = 0.19
 
@@ -353,23 +353,16 @@ self.onmessage = function (event) {
 
     if (bestQuad) {
       // bestQuad is ordered [TL, TR, BR, BL]
-      // Determine orientation: is the card portrait or landscape?
+      // Detect physical orientation from the quad's actual aspect — don't
+      // force landscape into portrait, since horizontal cards (Everbloom,
+      // Great Library of Solana) have art layouts that depend on it.
       const widthTop = dist(bestQuad[0], bestQuad[1])
       const heightLeft = dist(bestQuad[0], bestQuad[3])
+      const layout = heightLeft >= widthTop ? "vertical" : "horizontal"
 
-      let cardW, cardH, srcCorners
-      if (heightLeft >= widthTop) {
-        // Already portrait: top edge is the short side
-        cardW = Math.round(widthTop)
-        cardH = Math.round(heightLeft)
-        srcCorners = bestQuad // TL, TR, BR, BL maps to upright
-      } else {
-        // Landscape: the "top" of the card is actually the left edge
-        // Rotate the mapping: BL→TL, TL→TR, TR→BR, BR→BL
-        cardW = Math.round(heightLeft)
-        cardH = Math.round(widthTop)
-        srcCorners = [bestQuad[3], bestQuad[0], bestQuad[1], bestQuad[2]]
-      }
+      const cardW = Math.round(widthTop)
+      const cardH = Math.round(heightLeft)
+      const srcCorners = bestQuad // TL, TR, BR, BL — preserved as detected
 
       // Compute approximate angle for logging
       const dx = bestQuad[1].x - bestQuad[0].x
@@ -409,32 +402,41 @@ self.onmessage = function (event) {
 
       const cardData = new Uint8ClampedArray(warpedRGBA.data)
 
-      // Detect if the card is upside-down and flip if needed
-      const orientation = detectOrientation(cardData, cardW, cardH)
-      if (orientation === "flipped") {
-        console.log(`${LOG} Card is upside-down — rotating 180°`)
-        rotateBuffer180(cardData, cardW, cardH)
+      // For vertical cards, use the pitch-strip saturation check to detect
+      // upside-down captures. Horizontal cards (Everbloom split, Great
+      // Library landmark) don't have a top-edge pitch strip, so skip the
+      // check and let the backend's 4-way LEAST query absorb the flip.
+      let orientation
+      if (layout === "vertical") {
+        orientation = detectOrientation(cardData, cardW, cardH)
+        if (orientation === "flipped") {
+          console.log(`${LOG} Card is upside-down — rotating 180°`)
+          rotateBuffer180(cardData, cardW, cardH)
+        }
+      } else {
+        orientation = "uncertain"
       }
 
-      // Extract title and art regions from the deskewed card
-      const title = {
+      // Title + art regions only meaningful for vertical layouts. Horizontal
+      // captures are split into halves by the hook.
+      const title = layout === "vertical" ? {
         x: Math.round(cardW * TITLE_X_INSET),
         y: Math.round(cardH * TITLE_Y_RATIO),
         width: Math.round(cardW * (1 - 2 * TITLE_X_INSET)),
         height: Math.round(cardH * TITLE_H_RATIO),
-      }
+      } : null
 
-      const art = {
+      const art = layout === "vertical" ? {
         x: Math.round(cardW * ART_X_INSET),
         y: Math.round(cardH * ART_Y_RATIO),
         width: Math.round(cardW * (1 - 2 * ART_X_INSET)),
         height: Math.round(cardH * ART_H_RATIO),
-      }
+      } : null
 
       const cardArea = cardW * cardH
-      console.log(`${LOG} Card: ${cardW}x${cardH}, angle: ${angle.toFixed(1)}°, area: ${(cardArea / imgArea * 100).toFixed(1)}%, score: ${bestScore.toFixed(2)}`)
-      console.log(`${LOG} Title: ${title.width}x${title.height} at (${title.x},${title.y})`)
-      console.log(`${LOG} Art: ${art.width}x${art.height} at (${art.x},${art.y})`)
+      console.log(`${LOG} Card: ${cardW}x${cardH} (${layout}), angle: ${angle.toFixed(1)}°, area: ${(cardArea / imgArea * 100).toFixed(1)}%, score: ${bestScore.toFixed(2)}`)
+      if (title) console.log(`${LOG} Title: ${title.width}x${title.height} at (${title.x},${title.y})`)
+      if (art) console.log(`${LOG} Art: ${art.width}x${art.height} at (${art.x},${art.y})`)
 
       self.postMessage({
         type: "cardDetected",
@@ -442,6 +444,7 @@ self.onmessage = function (event) {
         card: { width: cardW, height: cardH },
         cardImageData: cardData.buffer,
         quad: bestQuad,
+        layout,
         title,
         art,
         angle,

@@ -4,25 +4,53 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
   import Bitwise, only: [bxor: 2]
 
   alias Tabletop.Cards
-  alias Tabletop.Cards.Card
+  alias Tabletop.Cards.{Card, CardPrint}
 
-  # Each entry: {ocr_text, expected_card_name, card_attrs_to_seed}
-  # Add new test cases here as you encounter OCR failures in the wild.
-  # card_attrs must include all required fields for Card.generated_changeset/2.
+  # Helper: insert a Card + canonical CardPrint pair.
+  defp insert_card_with_print(%{name: name} = attrs) do
+    {:ok, card} =
+      %Card{}
+      |> Card.changeset(%{
+        name: name,
+        pitch: attrs[:pitch],
+        external_card_id: attrs[:external_card_id]
+      })
+      |> Repo.insert()
+
+    print_attrs = %{
+      card_id: card.id,
+      face_id: attrs[:face_id],
+      set_code: attrs[:set_code] || "TST",
+      art_type: "regular",
+      orientation: "vertical",
+      layout_position: 10,
+      is_canonical: true,
+      image_url: attrs[:image_url] || "https://example.com/#{attrs[:face_id]}.webp",
+      image_phash: attrs[:image_phash],
+      image_phash_full: attrs[:image_phash_full]
+    }
+
+    {:ok, print} =
+      %CardPrint{}
+      |> CardPrint.changeset(print_attrs)
+      |> Repo.insert()
+
+    {card, print}
+  end
+
+  # Each entry: {ocr_text, expected_card_name, [seed cards...]}
   @ocr_cases [
     {
       "BEY RALLY THE COAST CASARD",
       "Rally the Coast Guard",
       [
         %{
-          "name" => "Rally the Coast Guard",
-          "print_id" => "SEA225",
-          "image_url" =>
-            "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/SEA225.webp",
-          "normalized_name" => "RALLY THE COAST GUARD",
-          "tokens" => ["rally", "the", "coast", "guard"],
-          "image_phash" => 1_484_317_916_512_072_972,
-          "pitch" => 3
+          name: "Rally the Coast Guard",
+          external_card_id: "rally-coast-guard-3",
+          pitch: 3,
+          face_id: "SEA225",
+          set_code: "SEA",
+          image_phash: 1_484_317_916_512_072_972
         }
       ]
     },
@@ -32,45 +60,31 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
       "Bravo",
       [
         %{
-          "name" => "Bravo",
-          "print_id" => "HER010",
-          "image_url" =>
-            "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/HER010.webp",
-          "normalized_name" => "BRAVO",
-          "tokens" => ["bravo"],
-          "image_phash" => 1_000_000_000_000_000_001
+          name: "Bravo",
+          external_card_id: "bravo-hero",
+          face_id: "HER010",
+          set_code: "HER",
+          image_phash: 1_000_000_000_000_000_001
         },
         %{
-          "name" => "Bravo, Showstopper",
-          "print_id" => "HER011",
-          "image_url" =>
-            "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/HER011.webp",
-          "normalized_name" => "BRAVO SHOWSTOPPER",
-          "tokens" => ["bravo", "showstopper"],
-          "image_phash" => 1_000_000_000_000_000_002
+          name: "Bravo, Showstopper",
+          external_card_id: "bravo-showstopper",
+          face_id: "HER011",
+          set_code: "HER",
+          image_phash: 1_000_000_000_000_000_002
         },
         %{
-          "name" => "Bravo, Flattering Showman",
-          "print_id" => "GEM077",
-          "image_url" =>
-            "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/GEM077.webp",
-          "normalized_name" => "BRAVO FLATTERING SHOWMAN",
-          "tokens" => ["bravo", "flattering", "showman"],
-          "image_phash" => 1_000_000_000_000_000_003
+          name: "Bravo, Flattering Showman",
+          external_card_id: "bravo-flattering",
+          face_id: "GEM077",
+          set_code: "GEM",
+          image_phash: 1_000_000_000_000_000_003
         }
       ]
     }
   ]
 
   # Reference hash (Rally the Coast Guard, pitch 3): 1_484_317_916_512_072_972
-  # Flipping N bits simulates the compression/noise a real pHash from the frontend might have.
-  #
-  # Each entry: {label, query_hash, expected_card_name, seed_phash}
-  # - query_hash: what the frontend sends (may differ slightly from the stored hash)
-  # - seed_phash: what is stored in the DB for that card
-  #
-  # To compute a flipped hash: bxor(base, 0b<N ones>)
-  # e.g. 3 bits: bxor(1_484_317_916_512_072_972, 0b111) => 1_484_317_916_512_072_971
   @phash_cases [
     {
       "exact match",
@@ -79,14 +93,12 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
       1_484_317_916_512_072_972
     },
     {
-      # 3 bits flipped — well within the default threshold of 10
       "3-bit difference (near match)",
       1_484_317_916_512_072_971,
       "Rally the Coast Guard",
       1_484_317_916_512_072_972
     },
     {
-      # 9 bits flipped — still within threshold
       "9-bit difference (at threshold boundary)",
       1_484_317_916_512_072_947,
       "Rally the Coast Guard",
@@ -94,7 +106,7 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
     }
   ]
 
-  describe "find_by_p_hash_similarity/1" do
+  describe "find_by_p_hash_similarity/2" do
     for {label, query_hash, expected_name, seed_phash} <- @phash_cases do
       @label label
       @query_hash query_hash
@@ -102,19 +114,15 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
       @seed_phash seed_phash
 
       test "returns correct card for #{label}" do
-        %Card{}
-        |> Card.generated_changeset(%{
-          "name" => @expected_name,
-          "print_id" => "PHASH_#{:erlang.phash2(@label)}",
-          "image_url" => "https://example.com/test.webp",
-          "normalized_name" => String.upcase(@expected_name),
-          "tokens" => @expected_name |> String.downcase() |> String.split(" "),
-          "image_phash" => @seed_phash
+        insert_card_with_print(%{
+          name: @expected_name,
+          external_card_id: "ext-#{:erlang.phash2(@label)}",
+          face_id: "PHASH_#{:erlang.phash2(@label)}",
+          image_phash: @seed_phash
         })
-        |> Repo.insert!()
 
-        results = Cards.find_by_p_hash_similarity(@query_hash)
-        names = Enum.map(results, & &1.name)
+        results = Cards.find_by_p_hash_similarity(%{art: @query_hash})
+        names = Enum.map(results, & &1.card.name)
 
         assert @expected_name in names,
                "Expected #{inspect(@expected_name)} in results, got: #{inspect(names)}"
@@ -126,65 +134,87 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
 
     test "excludes cards outside the threshold" do
       # 20 bits flipped — beyond the default threshold of 15
-      # bxor(1_484_317_916_512_072_972, (1 <<< 20) - 1) => 1_484_317_916_512_701_171
       far_hash = 1_484_317_916_512_701_171
 
-      %Card{}
-      |> Card.generated_changeset(%{
-        "name" => "Some Card",
-        "print_id" => "PHASH_FAR",
-        "image_url" => "https://example.com/far.webp",
-        "normalized_name" => "SOME CARD",
-        "tokens" => ["some", "card"],
-        "image_phash" => 1_484_317_916_512_072_972
+      insert_card_with_print(%{
+        name: "Some Card",
+        external_card_id: "some-card-1",
+        face_id: "PHASH_FAR",
+        image_phash: 1_484_317_916_512_072_972
       })
-      |> Repo.insert!()
 
-      results = Cards.find_by_p_hash_similarity(far_hash)
+      results = Cards.find_by_p_hash_similarity(%{art: far_hash})
       assert results == [], "Expected no results for 20-bit difference, got: #{inspect(results)}"
     end
 
     test "returns empty list when no cards are close" do
-      # Use a hash with all high bits set — maximally different from any real card hash
-      # (must be within signed int64 range: max is 9_223_372_036_854_775_807)
-      results = Cards.find_by_p_hash_similarity(9_223_372_036_854_775_807)
+      results = Cards.find_by_p_hash_similarity(%{art: 9_223_372_036_854_775_807})
       assert results == []
     end
 
     test "ranks closer matches first" do
       base_hash = 0x0F0F0F0F0F0F0F0F
 
-      # near: 2 bits flipped, far: 8 bits flipped — both within threshold
       near_hash = bxor(base_hash, 0b11)
       far_hash = bxor(base_hash, 0b1111_1111)
 
-      %Card{}
-      |> Card.generated_changeset(%{
-        "name" => "Near Card",
-        "print_id" => "PHASH_NEAR",
-        "image_url" => "https://example.com/near.webp",
-        "normalized_name" => "NEAR CARD",
-        "tokens" => ["near", "card"],
-        "image_phash" => near_hash
+      insert_card_with_print(%{
+        name: "Near Card",
+        external_card_id: "near-card",
+        face_id: "PHASH_NEAR",
+        image_phash: near_hash
       })
-      |> Repo.insert!()
 
-      %Card{}
-      |> Card.generated_changeset(%{
-        "name" => "Far Card",
-        "print_id" => "PHASH_FAR2",
-        "image_url" => "https://example.com/far2.webp",
-        "normalized_name" => "FAR CARD",
-        "tokens" => ["far", "card"],
-        "image_phash" => far_hash
+      insert_card_with_print(%{
+        name: "Far Card",
+        external_card_id: "far-card",
+        face_id: "PHASH_FAR2",
+        image_phash: far_hash
       })
-      |> Repo.insert!()
 
-      results = Cards.find_by_p_hash_similarity(base_hash)
-      names = Enum.map(results, & &1.name)
+      results = Cards.find_by_p_hash_similarity(%{art: base_hash})
+      names = Enum.map(results, & &1.card.name)
 
       assert List.first(names) == "Near Card",
              "Expected Near Card to rank before Far Card, got: #{inspect(names)}"
+    end
+
+    test "horizontal cards: matches via either half (4-way LEAST)" do
+      # A horizontal card has two stored hashes; the player can hold the card
+      # either way up, so the captured halves may correspond to either stored
+      # half. The query should match regardless of order.
+      {:ok, card} =
+        %Card{}
+        |> Card.changeset(%{
+          name: "Split Card",
+          external_card_id: "split-1",
+          pitch: 3
+        })
+        |> Repo.insert()
+
+      %CardPrint{}
+      |> CardPrint.changeset(%{
+        card_id: card.id,
+        face_id: "SPLIT001",
+        set_code: "TST",
+        art_type: "regular",
+        orientation: "horizontal",
+        layout_position: 10,
+        is_canonical: true,
+        image_url: "https://example.com/split.webp",
+        image_phash_left: 1_111_111_111_111_111,
+        image_phash_right: 2_222_222_222_222_222
+      })
+      |> Repo.insert!()
+
+      # Player held card flipped: their captured "left" matches stored "right".
+      results =
+        Cards.find_by_p_hash_similarity(%{
+          art_left: 2_222_222_222_222_222,
+          art_right: 1_111_111_111_111_111
+        })
+
+      assert Enum.map(results, & &1.card.name) == ["Split Card"]
     end
   end
 
@@ -196,7 +226,7 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
 
       test "resolves #{inspect(ocr_text)} to #{inspect(expected_name)}" do
         for attrs <- @seed_cards do
-          %Card{} |> Card.generated_changeset(attrs) |> Repo.insert!()
+          insert_card_with_print(attrs)
         end
 
         results = Cards.fuzzy_match_name(@ocr_text)

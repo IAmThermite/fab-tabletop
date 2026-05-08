@@ -2,48 +2,56 @@ defmodule Tabletop.Cards.Card do
   use Ecto.Schema
   import Ecto.Changeset
 
-  alias Tabletop.Cards.OcrNormalizer
+  alias Tabletop.Cards.{CardPrint, OcrNormalizer}
 
   @primary_key {:id, Ecto.UUID, autogenerate: true}
 
   schema "cards" do
     field :name, :string
-    field :print_id, :string
     field :pitch, :integer
-    field :set_code, :string
-    field :image_url, :string
+    field :external_card_id, :string
     field :normalized_name, :string
     field :tokens, {:array, :string}, default: []
-    field :image_phash, :integer
+
+    has_many :card_prints, CardPrint
 
     timestamps(type: :utc_datetime)
   end
 
-  @doc false
-  def import_changeset(card, attrs, opts \\ []) do
+  def changeset(card, attrs) do
     card
-    |> cast(attrs, [:name, :print_id, :image_url, :pitch, :set_code])
-    |> validate_required([:name, :print_id, :image_url])
+    |> cast(attrs, [:name, :pitch, :external_card_id])
+    |> validate_required([:name, :external_card_id])
     |> put_normalized_fields()
-    |> put_image_phash(opts)
-    |> unique_constraint(:print_id)
+    |> unique_constraint(:external_card_id)
   end
 
-  def generated_changeset(card, attrs) do
-    card
-    |> cast(attrs, [
-      :name,
-      :print_id,
-      :image_url,
-      :tokens,
-      :normalized_name,
-      :image_phash,
-      :pitch,
-      :set_code
-    ])
-    |> validate_required([:name, :print_id, :image_url, :tokens, :normalized_name, :image_phash])
-    |> unique_constraint(:print_id)
+  @doc """
+  Returns the canonical print for a card — the first regular front face,
+  preferring `preferred_set_code` if given. Falls back to any print.
+
+  Returns `nil` if `card_prints` is not preloaded; callers should keep their
+  own `card_print` reference as a fallback.
+  """
+  def canonical_print(card, preferred_set_code \\ nil)
+
+  def canonical_print(%__MODULE__{card_prints: prints}, preferred_set_code)
+      when is_list(prints) do
+    canonical = Enum.filter(prints, & &1.is_canonical)
+
+    preferred =
+      preferred_set_code &&
+        Enum.find(canonical, &(&1.set_code == preferred_set_code))
+
+    cond do
+      preferred -> preferred
+      canonical != [] -> hd(canonical)
+      prints != [] -> hd(prints)
+      true -> nil
+    end
   end
+
+  def canonical_print(%__MODULE__{}, _preferred_set_code), do: nil
 
   defp put_normalized_fields(changeset) do
     case get_change(changeset, :name) do
@@ -52,24 +60,11 @@ defmodule Tabletop.Cards.Card do
 
       name ->
         normalized = OcrNormalizer.normalize(name)
-
         tokens = OcrNormalizer.tokens(name)
 
         changeset
         |> put_change(:normalized_name, normalized)
         |> put_change(:tokens, tokens)
-    end
-  end
-
-  defp put_image_phash(changeset, opts) do
-    case get_change(changeset, :image_url) do
-      nil ->
-        changeset
-
-      image_url ->
-        req_options = Keyword.get(opts, :req_options, [])
-        phash = Tabletop.Cards.PHash.compute(image_url, req_options)
-        put_change(changeset, :image_phash, phash)
     end
   end
 end

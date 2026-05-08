@@ -283,6 +283,7 @@ defmodule TabletopWeb.GameComponents do
     tiles =
       case assigns.context do
         :remote -> build_tiles(assigns.game_state.opponent, "opponent")
+        :setup -> build_tiles(assigns.game_state.my, "my")
         _ -> build_tiles(assigns.game_state.my, "my")
       end
 
@@ -297,7 +298,7 @@ defmodule TabletopWeb.GameComponents do
             :local ->
               "pointer-events-none px-1 py-0.5 text-[8px] gap-0.5"
 
-            :expanded ->
+            ctx when ctx in [:expanded, :setup] ->
               "cursor-grab active:cursor-grabbing px-2 py-1 text-xs gap-1.5"
 
             _ ->
@@ -308,7 +309,9 @@ defmodule TabletopWeb.GameComponents do
         style={"left: #{tile.x}%; top: #{tile.y}%; transform: translate(-50%, -50%);"}
         data-tile-id={tile.id}
         data-tile-owner={tile.owner}
-        phx-hook={if @context == :expanded, do: "TabletopWeb.GameComponents.DraggableTile"}
+        phx-hook={
+          if @context in [:expanded, :setup], do: "TabletopWeb.GameComponents.DraggableTile"
+        }
         id={"tile-#{@context}-#{tile.owner}-#{tile.id}"}
       >
         <span class={[
@@ -347,7 +350,7 @@ defmodule TabletopWeb.GameComponents do
 
     <%!-- Opponent life (not in local preview) --%>
     <div
-      :if={@context != :local}
+      :if={@context not in [:local, :setup]}
       class="absolute bottom-2 right-2 bg-warning text-warning-content rounded p-2 text-center z-10"
     >
       <div class="text-2xl font-bold">{@game_state.opponent.life}</div>
@@ -610,6 +613,68 @@ defmodule TabletopWeb.GameComponents do
   defp pitch_color_class(3), do: "bg-blue-500"
   defp pitch_color_class(_), do: "bg-base-300"
 
+  # Hamming distance between a captured client phash (of `kind`) and the
+  # corresponding stored hash on `card_print`. For horizontal `art_left` /
+  # `art_right` we take the min over both stored halves to reflect how the
+  # server-side query absorbs the player's 180° flip.
+  defp phash_debug_distance(_kind, _value, nil), do: nil
+
+  defp phash_debug_distance(:art, value, %{image_phash: stored}) when is_integer(stored),
+    do: Tabletop.Cards.PHash.hamming_distance(value, stored)
+
+  defp phash_debug_distance(:art_flipped, value, %{image_phash: stored})
+       when is_integer(stored),
+       do: Tabletop.Cards.PHash.hamming_distance(value, stored)
+
+  defp phash_debug_distance(:full, value, %{image_phash_full: stored}) when is_integer(stored),
+    do: Tabletop.Cards.PHash.hamming_distance(value, stored)
+
+  defp phash_debug_distance(kind, value, %{image_phash_left: l, image_phash_right: r})
+       when kind in [:art_left, :art_right] do
+    candidates =
+      [l, r]
+      |> Enum.filter(&is_integer/1)
+      |> Enum.map(&Tabletop.Cards.PHash.hamming_distance(value, &1))
+
+    case candidates do
+      [] -> nil
+      ds -> Enum.min(ds)
+    end
+  end
+
+  defp phash_debug_distance(_kind, _value, _card_print), do: nil
+
+  # Per-kind thresholds — must mirror cards.ex. `:full` is stricter because
+  # whole-card hashes share frame/border content across cards.
+  defp phash_kind_threshold(:full), do: 8
+  defp phash_kind_threshold(_), do: 15
+
+  # Returns the phash `kind` with the smallest distance against the given
+  # card_print *that also passes its kind's threshold* — i.e. the arm that
+  # actually resolved this row. Returns nil if no kind qualifies.
+  defp winning_phash_kind(phashes, card_print) when is_map(phashes) do
+    phashes
+    |> Enum.flat_map(fn
+      {_kind, nil} ->
+        []
+
+      {kind, value} ->
+        case phash_debug_distance(kind, value, card_print) do
+          nil ->
+            []
+
+          d ->
+            if d < phash_kind_threshold(kind), do: [{kind, d}], else: []
+        end
+    end)
+    |> case do
+      [] -> nil
+      pairs -> pairs |> Enum.min_by(&elem(&1, 1)) |> elem(0)
+    end
+  end
+
+  defp winning_phash_kind(_, _), do: nil
+
   attr :qr_svg, :string, required: true
   attr :show_reconfigure_link, :boolean, default: true
   attr :game_id, :string, default: nil
@@ -731,7 +796,7 @@ defmodule TabletopWeb.GameComponents do
         </div>
         <div class="p-3 space-y-2">
           <img
-            src={card.card.image_url}
+            src={card.card_print && card.card_print.image_url}
             alt={card.card.name}
             class="w-full rounded"
           />
@@ -741,7 +806,7 @@ defmodule TabletopWeb.GameComponents do
               <select name="normalized_name" class="select select-bordered select-xs w-full">
                 <option value="" selected>{card.card.name}</option>
                 <%= for alt <- card.alternate_matches do %>
-                  <option value={alt.normalized_name}>{alt.name}</option>
+                  <option value={alt.card.normalized_name}>{alt.card.name}</option>
                 <% end %>
               </select>
             </form>
@@ -769,12 +834,30 @@ defmodule TabletopWeb.GameComponents do
           <% end %>
           <div class="card-popout-debug hidden border-t border-base-300 pt-2 mt-1 space-y-1 font-mono text-[10px] opacity-80">
             <div class="font-semibold text-[11px] opacity-60">Server (card DB)</div>
-            <div><span class="opacity-50">phash:</span> {card.card.image_phash}</div>
-            <div><span class="opacity-50">normalized:</span> {card.card.normalized_name}</div>
-            <div><span class="opacity-50">tokens:</span> {Enum.join(card.card.tokens, ", ")}</div>
+            <div><span class="opacity-50">face_id:</span> {card.card_print && card.card_print.face_id}</div>
+            <div><span class="opacity-50">orientation:</span> {card.card_print && card.card_print.orientation}</div>
+            <%= if card.card_print && card.card_print.image_phash do %>
+              <div><span class="opacity-50">phash (art):</span> {card.card_print.image_phash}</div>
+            <% end %>
+            <%= if card.card_print && card.card_print.image_phash_left do %>
+              <div><span class="opacity-50">phash (left):</span> {card.card_print.image_phash_left}</div>
+              <div><span class="opacity-50">phash (right):</span> {card.card_print.image_phash_right}</div>
+            <% end %>
+            <%= if card.card_print && card.card_print.image_phash_full do %>
+              <div><span class="opacity-50">phash (full):</span> {card.card_print.image_phash_full}</div>
+            <% end %>
             <%= if debug = Map.get(card, :debug) do %>
+              <% winning_kind = winning_phash_kind(Map.get(debug, :phashes, %{}), card.card_print) %>
               <div class="font-semibold text-[11px] opacity-60 pt-1">Client (scan)</div>
               <div><span class="opacity-50">match method:</span> {debug.match_method}</div>
+              <%= if winning_kind do %>
+                <div>
+                  <span class="opacity-50">resolved by:</span>
+                  <span class="ml-1 px-1.5 py-0.5 rounded bg-success text-success-content font-semibold">
+                    phash:{winning_kind}
+                  </span>
+                </div>
+              <% end %>
               <%= if debug[:detected_pitch] do %>
                 <div>
                   <span class="opacity-50">detected pitch:</span>
@@ -785,66 +868,21 @@ defmodule TabletopWeb.GameComponents do
                   <span class="ml-1">{debug.detected_pitch}</span>
                 </div>
               <% end %>
-              <%= if debug.phash do %>
-                <% distance =
-                  if card.card.image_phash,
-                    do: Tabletop.Cards.PHash.hamming_distance(debug.phash, card.card.image_phash),
-                    else: nil %>
-                <div>
-                  <span class="opacity-50">client phash:</span> {debug.phash}
+              <%= for {kind, value} <- Map.get(debug, :phashes, %{}), value do %>
+                <% distance = phash_debug_distance(kind, value, card.card_print) %>
+                <% is_winner = kind == winning_kind %>
+                <% kind_threshold = phash_kind_threshold(kind) %>
+                <div class={if is_winner, do: "font-semibold", else: ""}>
+                  <span class="opacity-50">{if is_winner, do: "★", else: " "} phash:{kind}:</span> {value}
                   <%= if distance do %>
                     <span class={[
                       "ml-1",
                       cond do
-                        distance < 5 -> "text-success"
-                        distance < 15 -> "text-warning"
+                        distance < kind_threshold -> "text-success"
                         true -> "text-error"
                       end
                     ]}>
-                      (distance: {distance})
-                    </span>
-                  <% end %>
-                </div>
-              <% end %>
-              <%= if debug[:phash_flipped] do %>
-                <% distance_flipped =
-                  if card.card.image_phash,
-                    do:
-                      Tabletop.Cards.PHash.hamming_distance(
-                        debug.phash_flipped,
-                        card.card.image_phash
-                      ),
-                    else: nil %>
-                <div>
-                  <span class="opacity-50">client phash (flipped):</span> {debug.phash_flipped}
-                  <%= if distance_flipped do %>
-                    <span class={[
-                      "ml-1",
-                      cond do
-                        distance_flipped < 5 -> "text-success"
-                        distance_flipped < 15 -> "text-warning"
-                        true -> "text-error"
-                      end
-                    ]}>
-                      (distance: {distance_flipped})
-                    </span>
-                  <% end %>
-                </div>
-              <% end %>
-              <%= for candidate <- debug.ocr_candidates do %>
-                <div>
-                  <span class="opacity-50">ocr:</span>
-                  "{candidate["text"]}"
-                  <%= if candidate["confidence"] do %>
-                    <span class={[
-                      "ml-1",
-                      cond do
-                        candidate["confidence"] >= 65 -> "text-success"
-                        candidate["confidence"] >= 40 -> "text-warning"
-                        true -> "text-error"
-                      end
-                    ]}>
-                      ({round(candidate["confidence"])})
+                      (distance: {distance} / threshold {kind_threshold})
                     </span>
                   <% end %>
                 </div>
@@ -872,14 +910,30 @@ defmodule TabletopWeb.GameComponents do
 
           const initX = parseFloat(el.dataset.x || "10")
           const initY = parseFloat(el.dataset.y || "10")
-          const maxX = container.clientWidth - el.offsetWidth
-          const maxY = container.clientHeight - el.offsetHeight
-          el.style.left = Math.max(0, Math.min(initX, maxX)) + "px"
-          el.style.top = Math.max(0, Math.min(initY, maxY)) + "px"
 
-          // Track position so updated() can restore it after LiveView re-renders
-          this._currentLeft = el.style.left
-          this._currentTop = el.style.top
+          // Clamp the popout's current position into the container's visible
+          // area. Called at mount and again after the card image loads — the
+          // image's height isn't known until then, so an early clamp would let
+          // half the popout end up below the viewport once the image grows.
+          const clampPosition = () => {
+            const left = parseFloat(el.style.left) || initX
+            const top = parseFloat(el.style.top) || initY
+            const maxX = Math.max(0, container.clientWidth - el.offsetWidth)
+            const maxY = Math.max(0, container.clientHeight - el.offsetHeight)
+            el.style.left = Math.max(0, Math.min(left, maxX)) + "px"
+            el.style.top = Math.max(0, Math.min(top, maxY)) + "px"
+            this._currentLeft = el.style.left
+            this._currentTop = el.style.top
+          }
+
+          clampPosition()
+
+          // Re-clamp once the image's intrinsic size is known.
+          const cardImg = el.querySelector("img")
+          if (cardImg && !cardImg.complete) {
+            cardImg.addEventListener("load", clampPosition, { once: true })
+            cardImg.addEventListener("error", clampPosition, { once: true })
+          }
 
           let offsetX = 0
           let offsetY = 0

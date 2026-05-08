@@ -11,7 +11,8 @@ jobs:
   deploy:
     name: Deploy app
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # disable deployment for now
+    if: ${{ github.event.workflow_run.conclusion == 'success' && false }}
     steps:
       - uses: actions/checkout@v4
 

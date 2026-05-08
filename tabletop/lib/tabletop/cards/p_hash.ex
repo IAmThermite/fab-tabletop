@@ -3,7 +3,7 @@ defmodule Tabletop.Cards.PHash do
   Perceptual hash (pHash) for card art images.
 
   Matches the DCT-based algorithm in `assets/js/card_scanner/p_hash.js`:
-  1. Crop to the art region of the card
+  1. Crop to a bbox (ratios in 0..1) of the source image
   2. Resize to 32x32 grayscale
   3. 2D DCT
   4. Take top-left 8x8 low-frequency block (excluding DC)
@@ -11,6 +11,9 @@ defmodule Tabletop.Cards.PHash do
 
   Uses ImageMagick `convert` for image decoding/cropping/resizing,
   which supports webp, png, jpg, gif, etc.
+
+  The bbox is supplied per call (typically by `Tabletop.Cards.ArtBboxDetector`
+  during import). Use `bbox: {0.0, 0.0, 1.0, 1.0}` to hash the whole image.
   """
 
   require Logger
@@ -18,28 +21,47 @@ defmodule Tabletop.Cards.PHash do
   @hash_size 8
   @dct_size 32
 
-  # these rations were determined by measuring a sample of cards and visually verifying the crop region
-  @art_y_ratio 0.16
-  @art_h_ratio 0.42
-  @art_x_inset 0.10
+  @default_bbox {0.10, 0.16, 0.80, 0.42}
 
-  # Precompute cosine table: cos((2j+1) * i * pi / (2*N))
   @cos_table (for i <- 0..(@dct_size - 1),
                   j <- 0..(@dct_size - 1),
                   into: %{} do
                 {{i, j}, :math.cos((2 * j + 1) * i * :math.pi() / (2 * @dct_size))}
               end)
 
+  @type bbox :: {number(), number(), number(), number()}
+
   @doc """
-  Downloads the image at `image_url`, crops the art region, and computes
+  Downloads the image at `image_url`, crops to `opts[:bbox]`, and computes
   a 64-bit integer pHash. Returns `nil` on failure.
+
+  Options:
+    * `:bbox` — `{x, y, w, h}` ratios (default: legacy art ratios).
+    * `:req_options` — passed through to `Req.get/2`.
   """
   @spec compute(String.t(), keyword()) :: integer() | nil
-  def compute(image_url, req_options \\ []) do
+  def compute(image_url, opts \\ []) do
+    bbox = Keyword.get(opts, :bbox, @default_bbox)
+    req_options = Keyword.get(opts, :req_options, [])
+
     with {:ok, body} <- download(image_url, req_options),
-         {:ok, gray} <- decode_art_region(body) do
+         {:ok, gray} <- decode_region(body, bbox) do
       gray |> dct_2d() |> hash_from_dct()
     else
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Computes a pHash from raw image bytes, cropping to `opts[:bbox]`.
+  Returns `nil` on failure.
+  """
+  @spec compute_from_binary(binary(), keyword()) :: integer() | nil
+  def compute_from_binary(image_binary, opts \\ []) when is_binary(image_binary) do
+    bbox = Keyword.get(opts, :bbox, @default_bbox)
+
+    case decode_region(image_binary, bbox) do
+      {:ok, gray} -> gray |> dct_2d() |> hash_from_dct()
       _ -> nil
     end
   end
@@ -47,38 +69,34 @@ defmodule Tabletop.Cards.PHash do
   @doc """
   Computes pHash from a local file path. Returns `nil` on failure.
   """
-  @spec compute_from_file(String.t()) :: integer() | nil
-  def compute_from_file(path) do
-    with {:ok, body} <- File.read(path),
-         {:ok, gray} <- decode_art_region(body) do
-      gray |> dct_2d() |> hash_from_dct()
-    else
+  @spec compute_from_file(String.t(), keyword()) :: integer() | nil
+  def compute_from_file(path, opts \\ []) do
+    case File.read(path) do
+      {:ok, body} -> compute_from_binary(body, opts)
       _ -> nil
     end
   end
 
   @doc """
-  Crops the art region from an image binary and writes it to `output_path` as PNG.
-  Useful for visually verifying the crop region.
+  Crops the bbox region from an image binary and writes it to `output_path` as
+  PNG. Useful for visually verifying a bbox.
   """
-  @spec save_art_region(binary(), String.t()) :: :ok | :error
-  def save_art_region(image_binary, output_path) do
+  @spec save_art_region(binary(), keyword(), String.t()) :: :ok | :error
+  def save_art_region(image_binary, opts, output_path) do
+    bbox = Keyword.get(opts, :bbox, @default_bbox)
+
     with_tempfile(image_binary, fn tmp_path ->
       case image_dimensions(tmp_path) do
         {:ok, w, h} ->
-          geometry = art_geometry(w, h)
+          geometry = bbox_to_geometry(bbox, w, h)
 
           case System.cmd(
                  "convert",
                  ["#{tmp_path}[0]", "-crop", geometry, "+repage", output_path],
                  stderr_to_stdout: true
                ) do
-            {_, 0} ->
-              :ok
-
-            {err, _} ->
-              Logger.warning("PHash: convert crop failed: #{err}")
-              :error
+            {_, 0} -> :ok
+            {err, _} -> Logger.warning("PHash: convert crop failed: #{err}"); :error
           end
 
         :error ->
@@ -117,16 +135,16 @@ defmodule Tabletop.Cards.PHash do
     end
   end
 
-  # --- ImageMagick pipeline: crop art region -> resize 32x32 -> grayscale -> raw bytes ---
+  # --- ImageMagick pipeline: crop bbox -> resize 32x32 -> grayscale -> raw bytes ---
 
-  defp decode_art_region(image_binary) do
+  defp decode_region(image_binary, bbox) do
     with_tempfile(image_binary, fn tmp_path ->
       with {:ok, w, h} <- image_dimensions(tmp_path) do
-        geometry = art_geometry(w, h)
+        geometry = bbox_to_geometry(bbox, w, h)
         n = @dct_size
 
-        # Output raw RGB (not grayscale) so we can apply the same
-        # luminance formula as the JS: 0.299R + 0.587G + 0.114B
+        # Output raw RGB so we can apply the same luminance formula as the JS
+        # client: 0.299R + 0.587G + 0.114B.
         case System.cmd(
                "convert",
                [
@@ -176,11 +194,11 @@ defmodule Tabletop.Cards.PHash do
     end
   end
 
-  defp art_geometry(w, h) do
-    x = round(w * @art_x_inset)
-    y = round(h * @art_y_ratio)
-    crop_w = round(w * (1 - 2 * @art_x_inset))
-    crop_h = round(h * @art_h_ratio)
+  defp bbox_to_geometry({bx, by, bw, bh}, w, h) do
+    crop_w = max(round(w * bw), 1)
+    crop_h = max(round(h * bh), 1)
+    x = round(w * bx)
+    y = round(h * by)
     "#{crop_w}x#{crop_h}+#{x}+#{y}"
   end
 

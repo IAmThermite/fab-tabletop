@@ -40,19 +40,19 @@ defmodule TabletopWeb.Layouts do
     ~H"""
     <header class="navbar px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
-        <.link navigate={~p"/"} class="btn btn-ghost normal-case text-xl">
-          Fab Tabletop
+        <.link navigate={~p"/"}>
+          <img src={~p"/images/logo.png"} alt="FaB Tabletop" class="h-24 w-auto" />
         </.link>
       </div>
 
-      <div class="flex items-center gap-4">
-        <.link navigate={~p"/about"} class="btn btn-ghost">
+      <div class="flex items-center">
+        <.link navigate={~p"/about"} class="btn btn-ghost text-2xl">
           About
         </.link>
       </div>
     </header>
 
-    <main class="px-3 py-10 sm:px-6 lg:px-8">
+    <main class="px-3 sm:px-6 lg:px-8">
       <div class={["mx-auto space-y-4", @max_width]}>
         {render_slot(@inner_block)}
       </div>

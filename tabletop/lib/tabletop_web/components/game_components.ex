@@ -183,7 +183,7 @@ defmodule TabletopWeb.GameComponents do
                   phx-value-type={effect[:name]}
                   phx-value-category="ability"
                 />
-                <.icon :if={effect[:icon] not in [nil, ""]} name={effect[:icon]} class="size-3" />
+                <.icon :if={effect[:icon] not in [nil, ""]} name={effect[:icon]} class="size-5" />
                 <span class="text-xs font-semibold">{effect[:name]}</span>
               </label>
             </li>
@@ -207,11 +207,11 @@ defmodule TabletopWeb.GameComponents do
         </button>
         <ul
           :if={@on_hits_open}
-          class="absolute z-30 menu bg-base-100 rounded-box w-32 p-2 shadow-sm mt-1"
+          class="absolute z-30 list-none bg-base-100 rounded-box p-2 shadow-sm mt-1 grid grid-cols-2 gap-x-4 gap-y-1 w-[28rem]"
         >
           <%= for {_key, effect} <- Tabletop.Fab.Effects.on_hit_effects() do %>
-            <li>
-              <label class="flex items-center gap-1 mb-1 cursor-pointer w-full">
+            <li class="flex items-center gap-1">
+              <label class="flex items-center gap-1 cursor-pointer flex-1 min-w-0">
                 <input
                   type="checkbox"
                   class="checkbox checkbox-xs accent-orange-500"
@@ -222,9 +222,34 @@ defmodule TabletopWeb.GameComponents do
                   phx-value-type={effect[:name]}
                   phx-value-category="on_hit"
                 />
-                <.icon :if={effect[:icon] not in [nil, ""]} name={effect[:icon]} class="size-3" />
-                <span class="text-xs font-semibold">{effect[:name]}</span>
+                <.icon :if={effect[:icon] not in [nil, ""]} name={effect[:icon]} class="size-5 shrink-0" />
+                <span class="text-xs font-semibold leading-tight">{effect[:name]}</span>
               </label>
+              <div :if={effect[:counterable]} class="flex items-center gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  class="btn btn-xs btn-circle btn-error"
+                  phx-click="change_effect_count"
+                  phx-value-type={effect[:name]}
+                  phx-value-category="on_hit"
+                  phx-value-delta="-1"
+                >
+                  -
+                </button>
+                <span class="text-xs font-bold w-3 text-center">
+                  {Map.get(@game_state.my.effect_counts || %{}, Tabletop.Fab.GameState.effect_key("on_hit", effect[:name]), 1)}
+                </span>
+                <button
+                  type="button"
+                  class="btn btn-xs btn-circle btn-success"
+                  phx-click="change_effect_count"
+                  phx-value-type={effect[:name]}
+                  phx-value-category="on_hit"
+                  phx-value-delta="1"
+                >
+                  +
+                </button>
+              </div>
             </li>
           <% end %>
         </ul>
@@ -520,6 +545,8 @@ defmodule TabletopWeb.GameComponents do
     on_hits_by_name =
       Map.new(Tabletop.Fab.Effects.on_hit_effects(), fn {_k, e} -> {e.name, e} end)
 
+    effect_counts = Map.get(player_state, :effect_counts, %{})
+
     Enum.reduce(player_state.effects, tiles, fn {key, active}, acc ->
       if active do
         pos = Map.get(player_state.tile_positions, key, %{x: 50.0, y: 50.0})
@@ -532,11 +559,14 @@ defmodule TabletopWeb.GameComponents do
             _ -> {nil, :effect}
           end
 
+        value = if effect && effect[:counterable], do: Map.get(effect_counts, key, 1)
+
         [
           %{
             id: key,
             owner: owner,
             label: name,
+            value: value,
             x: pos.x,
             y: pos.y,
             type: type,

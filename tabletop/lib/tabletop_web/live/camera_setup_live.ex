@@ -514,6 +514,17 @@ defmodule TabletopWeb.CameraSetupLive do
     apply_action(socket, GameState.toggle_effect(my(socket), category, type))
   end
 
+  def handle_event(
+        "change_effect_count",
+        %{"type" => type, "category" => category, "delta" => delta},
+        socket
+      ) do
+    apply_action(
+      socket,
+      GameState.change_effect_count(my(socket), category, type, String.to_integer(delta))
+    )
+  end
+
   def handle_event("change_life", %{"delta" => delta}, socket) do
     apply_action(socket, GameState.change_life(my(socket), String.to_integer(delta)))
   end

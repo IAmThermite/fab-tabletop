@@ -68,11 +68,124 @@ defmodule Tabletop.Fab.Effects do
         "At the beginning of your end phase, destroy Bloodrot Pox, then it deals 2 damage to you unless you pay {{ resource-icon }}{{ resource-icon }}{{ resource-icon }}.",
       card_img_src:
         "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/OUT234.webp"
-    }
+    },
+    lose_health: %{
+      name: "Lose Health",
+      icon: "hero-heart-broken",
+      description_html: "When this hits, lose X health.",
+      counterable: true
+    },
+    deal_damage: %{
+      name: "Deal Damage",
+      icon: "hero-bolt",
+      description_html: "When this hits, deal Xdamage to a target.",
+      counterable: true
+    },
+    deal_arcane_damage: %{
+      name: "Deal Arcane Damage",
+      icon: "hero-sparkles",
+      description_html: "When this hits, deal X arcane damage to a target.",
+      counterable: true
+    },
+    draw_card: %{
+      name: "Draw a Card",
+      icon: "hero-rectangle-stack",
+      description_html: "When this hits, draw X cards.",
+      counterable: true
+    },
+    gain_health: %{
+      name: "Gain Health",
+      icon: "hero-heart",
+      description_html: "When this hits, gain health.",
+      counterable: true
+    },
+    discard_from_hand: %{
+      name: "Discard from Hand",
+      icon: "hero-x-mark",
+      description_html: "When this hits, discard a random card from your hand."
+    },
+    look_at_hand_and_discard: %{
+      name: "Look and Discard",
+      icon: "hero-eye",
+      description_html:
+        "When this hits, your opponent looks at your hand and chooses a card. You discard it."
+    },
+    look_at_hand_and_banish: %{
+      name: "Look and Banish from Hand",
+      icon: "hero-eye",
+      description_html:
+        "When this hits, your opponent looks at your hand and banishes a card."
+    },
+    look_at_top_of_deck: %{
+      name: "Look at Deck",
+      icon: "hero-eye",
+      description_html: "When this hits, your opponent looks at the top cards of your deck."
+    },
+    destroy_top_of_deck: %{
+      name: "Destroy Top of Deck",
+      icon: "hero-trash",
+      description_html: "When this hits, destroy the top card of your deck."
+    },
+    banish_top_of_deck: %{
+      name: "Banish Top of Deck",
+      icon: "hero-archive-box-x-mark",
+      description_html: "When this hits, banish the top card of your deck."
+    },
+    banish_from_graveyard: %{
+      name: "Banish from Graveyard",
+      icon: "hero-archive-box-x-mark",
+      description_html: "When this hits, your opponent banishes a card from your graveyard."
+    },
+    banish_and_play: %{
+      name: "Banish and Play",
+      icon: "hero-archive-box-arrow-down",
+      description_html:
+        "When this hits, banish the top card of your deck. Your opponent may play it until end of turn."
+    },
+    destroy_arsenal_card: %{
+      name: "Destroy Arsenal",
+      icon: "hero-trash",
+      description_html: "When this hits, destroy a card from your arsenal."
+    },
+    banish_arsenal_card: %{
+      name: "Banish Arsenal",
+      icon: "hero-archive-box-x-mark",
+      description_html: "When this hits, banish a card from your arsenal."
+    },
+    destroy_aura: %{
+      name: "Destroy Aura",
+      icon: "hero-trash",
+      description_html: "When this hits, destroy an aura you control."
+    },
+    destroy_all_auras: %{
+      name: "Destroy All Auras",
+      icon: "hero-trash",
+      description_html: "When this hits, destroy all auras you control."
+    },
+    destroy_item: %{
+      name: "Destroy Item",
+      icon: "hero-wrench",
+      description_html: "When this hits, destroy an item you control."
+    },
+    gain_gold: %{
+      name: "Gain Gold",
+      icon: "hero-currency-dollar",
+      description_html: "When this hits, create a Gold token.",
+    },
   }
 
   def abilities, do: @abilities_map
   def on_hit_effects, do: @on_hit_effects_map
+
+  def counterable?("ability", name) do
+    Enum.any?(@abilities_map, fn {_k, e} -> e[:name] == name and Map.get(e, :counterable, false) end)
+  end
+
+  def counterable?("on_hit", name) do
+    Enum.any?(@on_hit_effects_map, fn {_k, e} -> e[:name] == name and Map.get(e, :counterable, false) end)
+  end
+
+  def counterable?(_, _), do: false
 
   @inline_icons %{
     "power-icon" => "/images/fab/power-icon.png",

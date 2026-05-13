@@ -90,6 +90,14 @@ defmodule TabletopWeb.GameLive.Show do
     dispatch(socket, {:toggle_effect, category, type})
   end
 
+  def handle_event(
+        "change_effect_count",
+        %{"type" => type, "category" => category, "delta" => delta},
+        socket
+      ) do
+    dispatch(socket, {:change_effect_count, category, type, String.to_integer(delta)})
+  end
+
   def handle_event("change_life", %{"delta" => delta}, socket) do
     dispatch(socket, {:change_life, String.to_integer(delta)})
   end

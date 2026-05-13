@@ -19,6 +19,7 @@ defmodule Tabletop.Fab.GameState do
     arcane: %{active: false, damage: 0},
     goagain: false,
     effects: %{},
+    effect_counts: %{},
     tile_positions: %{},
     tile_order: []
   }
@@ -83,6 +84,32 @@ defmodule Tabletop.Fab.GameState do
 
   def toggle_effect(_, _, _), do: {:error, :invalid_effect}
 
+  def change_effect_count(player, category, effect_name, delta)
+      when category in @valid_effect_categories and is_integer(delta) do
+    if valid_effect?(category, effect_name) and Effects.counterable?(category, effect_name) do
+      key = effect_key(category, effect_name)
+      counts = Map.get(player, :effect_counts, %{})
+      current = Map.get(counts, key, 1)
+      new_count = max(1, current + delta)
+      new_counts = Map.put(counts, key, new_count)
+      new_player = Map.put(player, :effect_counts, new_counts)
+
+      new_player =
+        if Map.get(new_player.effects, key, false) do
+          new_player
+        else
+          new_effects = Map.put(new_player.effects, key, true)
+          %{new_player | effects: new_effects} |> ensure_tile_position(key)
+        end
+
+      {:ok, new_player, {:effect_count_changed, category, effect_name, new_count}}
+    else
+      {:error, :invalid_effect}
+    end
+  end
+
+  def change_effect_count(_, _, _, _), do: {:error, :invalid_effect}
+
   def effect_key(category, name), do: "#{category}:#{name}"
 
   def move_tile(player, tile_id, x, y)
@@ -143,9 +170,9 @@ defmodule Tabletop.Fab.GameState do
   # is gone (tile toggled off), we fall through to the next most recent, so
   # new tiles stay clustered with the existing group. If we'd run off the
   # bottom we wrap to the top of the next column.
-  @tile_offset_x 3.0
-  @tile_offset_y 8.0
-  @tile_column_step 12.0
+  @tile_offset_x 0.5
+  @tile_offset_y 3.5
+  @tile_column_step 5.0
   @max_y 92.0
   @min_y 8.0
   @min_x 5.0

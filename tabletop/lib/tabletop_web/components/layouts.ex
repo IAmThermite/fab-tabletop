@@ -40,7 +40,7 @@ defmodule TabletopWeb.Layouts do
     ~H"""
     <header class="navbar px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
-        <.link navigate={~p"/"}>
+        <.link navigate={~p"/"} class="inline-block">
           <img src={~p"/images/logo.png"} alt="FaB Tabletop" class="h-24 w-auto" />
         </.link>
       </div>

@@ -20,6 +20,34 @@ defmodule TabletopWeb.GameLive.PreJoin do
         data-camera-relay-token={@camera_relay_token}
         class="flex flex-col h-full"
       >
+        <%!-- Share-code prompt (one-time, after creating a private game) --%>
+        <div
+          :if={@share_code_prompt}
+          class="px-3 py-2 bg-success/10 border-b border-success/30 flex items-center gap-3"
+        >
+          <.icon name="hero-check-circle" class="size-5 text-success shrink-0" />
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-sm">Private game created</p>
+            <p class="text-xs opacity-75 truncate">
+              Send this code to your opponent:
+              <span class="font-mono ml-1 select-all">{@share_code_prompt}</span>
+            </p>
+          </div>
+          <.share_code_button
+            id="pre-join-prompt-share-btn"
+            code={@share_code_prompt}
+            label="Share code"
+          />
+          <button
+            type="button"
+            phx-click="dismiss_share_prompt"
+            class="btn btn-xs btn-ghost btn-circle"
+            aria-label="Dismiss"
+          >
+            <.icon name="hero-x-mark" class="size-4" />
+          </button>
+        </div>
+
         <%!-- Top bar --%>
         <div class="flex items-center gap-3 px-3 py-2 bg-base-200 border-b border-base-300">
           <video id="pre-join-video" autoplay muted playsinline class="hidden"></video>
@@ -35,6 +63,21 @@ defmodule TabletopWeb.GameLive.PreJoin do
           <div id="pre-join-status" phx-update="ignore" class="badge badge-sm badge-outline">
             Initializing...
           </div>
+        </div>
+
+        <%!-- Waiting-for-opponent banner (creator only, no active joiner) --%>
+        <div
+          :if={@mode == :creator and @game.status == :waiting and not joiner_reserved?(@game)}
+          class="px-3 py-2 bg-primary/10 border-b border-primary/30 flex items-center gap-3"
+        >
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-sm">Waiting for opponent</p>
+            <p class="text-xs opacity-75 truncate">
+              Share this code so they can join:
+              <span class="font-mono ml-1 select-all">{@game.id}</span>
+            </p>
+          </div>
+          <.share_code_button id="pre-join-banner-share-btn" code={@game.id} label="Share code" />
         </div>
 
         <%!-- Main area --%>
@@ -99,6 +142,17 @@ defmodule TabletopWeb.GameLive.PreJoin do
               </div>
 
               <div class="divider divider-horizontal mx-0"></div>
+
+              <%!-- Share (creator only) --%>
+              <%= if @mode == :creator do %>
+                <.share_code_button
+                  id="pre-join-bottom-share-btn"
+                  code={@game.id}
+                  label="Share"
+                  class="btn btn-xs btn-outline"
+                />
+                <div class="divider divider-horizontal mx-0"></div>
+              <% end %>
 
               <%!-- Actions --%>
               <.link navigate={~p"/"} class="btn btn-sm btn-outline">
@@ -395,8 +449,24 @@ defmodule TabletopWeb.GameLive.PreJoin do
           :joiner
         end
 
-      socket = mount_pre_join(socket, game, mode, scope)
+      socket =
+        socket
+        |> mount_pre_join(game, mode, scope)
+        |> assign_share_code_prompt()
+
       {:ok, socket}
+    end
+  end
+
+  defp assign_share_code_prompt(socket) do
+    case Phoenix.Flash.get(socket.assigns.flash, :share_code) do
+      nil ->
+        assign(socket, :share_code_prompt, nil)
+
+      code ->
+        socket
+        |> clear_flash(:share_code)
+        |> assign(:share_code_prompt, code)
     end
   end
 
@@ -496,6 +566,10 @@ defmodule TabletopWeb.GameLive.PreJoin do
     end
   end
 
+  def handle_event("dismiss_share_prompt", _params, socket) do
+    {:noreply, assign(socket, :share_code_prompt, nil)}
+  end
+
   @impl true
   def handle_info(:reservation_expired, socket) do
     if socket.assigns.mode == :joiner do
@@ -515,9 +589,19 @@ defmodule TabletopWeb.GameLive.PreJoin do
      |> push_navigate(to: ~p"/")}
   end
 
+  def handle_info({:updated, %Game{id: id} = game}, %{assigns: %{game: %Game{id: id}}} = socket) do
+    {:noreply, assign(socket, :game, game)}
+  end
+
   def handle_info({_type, %Game{}}, socket) do
     {:noreply, socket}
   end
+
+  defp joiner_reserved?(%Game{joining_user_id: nil}), do: false
+  defp joiner_reserved?(%Game{joining_expires_at: nil}), do: false
+
+  defp joiner_reserved?(%Game{joining_expires_at: expires}),
+    do: DateTime.compare(expires, DateTime.utc_now()) == :gt
 
   @impl true
   def terminate(_reason, socket) do

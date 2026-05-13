@@ -19,6 +19,7 @@ defmodule Tabletop.Games.Game do
     field :user1_left_at, :utc_datetime_usec
     field :user2_left_at, :utc_datetime_usec
     field :joining_expires_at, :utc_datetime_usec
+    field :private, :boolean, default: false
 
     belongs_to :user, Tabletop.Accounts.User, type: Ecto.UUID
     belongs_to :user2, Tabletop.Accounts.User, type: Ecto.UUID
@@ -42,7 +43,7 @@ defmodule Tabletop.Games.Game do
   @doc false
   def changeset(game, attrs, user_scope) do
     game
-    |> cast(attrs, [:title, :format, :hero, :decklist])
+    |> cast(attrs, [:title, :format, :hero, :decklist, :private])
     |> validate_required([:title, :format])
     |> validate_inclusion(:format, Map.keys(@valid_formats))
     |> put_change(:user_id, user_scope.user.id)

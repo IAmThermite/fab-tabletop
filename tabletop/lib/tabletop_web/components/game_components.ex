@@ -66,7 +66,7 @@ defmodule TabletopWeb.GameComponents do
 
   def game_sidebar(assigns) do
     ~H"""
-    <div class="flex flex-col gap-2 p-2 bg-base-200 border-r border-base-300 w-36 overflow-y-auto">
+    <div class="flex flex-col gap-2 p-2 bg-base-200 border-r border-base-300 w-36 overflow-visible">
       <%!-- Physical Damage --%>
       <div class="bg-warning/20 rounded p-2">
         <div class="flex items-center gap-1 mb-1">
@@ -309,9 +309,7 @@ defmodule TabletopWeb.GameComponents do
         style={"left: #{tile.x}%; top: #{tile.y}%; transform: translate(-50%, -50%);"}
         data-tile-id={tile.id}
         data-tile-owner={tile.owner}
-        phx-hook={
-          if @context in [:expanded, :setup], do: "TabletopWeb.GameComponents.DraggableTile"
-        }
+        phx-hook={if @context in [:expanded, :setup], do: "TabletopWeb.GameComponents.DraggableTile"}
         id={"tile-#{@context}-#{tile.owner}-#{tile.id}"}
       >
         <span class={[
@@ -675,6 +673,61 @@ defmodule TabletopWeb.GameComponents do
 
   defp winning_phash_kind(_, _), do: nil
 
+  attr :id, :string, required: true
+  attr :code, :string, required: true
+  attr :label, :string, default: "Share"
+  attr :class, :string, default: "btn btn-sm btn-outline"
+  attr :rest, :global
+
+  def share_code_button(assigns) do
+    ~H"""
+    <button
+      type="button"
+      phx-hook=".ShareCode"
+      id={@id}
+      data-code={@code}
+      data-share-text={"Join my Flesh and Blood game with code: #{@code}"}
+      class={@class}
+      {@rest}
+    >
+      <.icon name="hero-share" class="size-4" /> {@label}
+    </button>
+
+    <script :type={ColocatedHook} name=".ShareCode">
+      export default {
+        mounted() {
+          this.handleClick = async () => {
+            const code = this.el.dataset.code
+            const text = this.el.dataset.shareText || code
+            if (!code) return
+
+            let label = "Copied!"
+            try {
+              if (navigator.share) {
+                await navigator.share({ title: "Join my game", text })
+                label = "Shared!"
+              } else {
+                await navigator.clipboard.writeText(code)
+              }
+            } catch (err) {
+              if (err && err.name === "AbortError") return
+              try { await navigator.clipboard.writeText(code) } catch (_) {}
+            }
+            const original = this.el.innerHTML
+            this.el.textContent = label
+            this._t = setTimeout(() => { this.el.innerHTML = original }, 1500)
+          }
+          this.el.addEventListener("click", this.handleClick)
+        },
+        destroyed() {
+          if (this._t) clearTimeout(this._t)
+          if (this.handleClick) this.el.removeEventListener("click", this.handleClick)
+        },
+      }
+    </script>
+    """
+  end
+
   attr :qr_svg, :string, required: true
   attr :show_reconfigure_link, :boolean, default: true
   attr :game_id, :string, default: nil
@@ -693,6 +746,21 @@ defmodule TabletopWeb.GameComponents do
             <span class="label-text">Card scan debug overlay</span>
             <input id="debug-scan-toggle" type="checkbox" class="toggle" />
           </label>
+
+          <div :if={@game_id} class="divider text-xs">Share game</div>
+          <div :if={@game_id} class="space-y-1">
+            <p class="text-sm">Share this code so your opponent can join.</p>
+            <div class="flex gap-2">
+              <input
+                id="share-game-code"
+                type="text"
+                readonly
+                value={@game_id}
+                class="input input-sm input-bordered flex-1 font-mono text-xs"
+              />
+              <.share_code_button id="settings-share-code-btn" code={@game_id} label="Copy" />
+            </div>
+          </div>
 
           <div class="divider text-xs">Camera Source</div>
           <div id="camera-source-section" class="space-y-2">
@@ -834,17 +902,28 @@ defmodule TabletopWeb.GameComponents do
           <% end %>
           <div class="card-popout-debug hidden border-t border-base-300 pt-2 mt-1 space-y-1 font-mono text-[10px] opacity-80">
             <div class="font-semibold text-[11px] opacity-60">Server (card DB)</div>
-            <div><span class="opacity-50">face_id:</span> {card.card_print && card.card_print.face_id}</div>
-            <div><span class="opacity-50">orientation:</span> {card.card_print && card.card_print.orientation}</div>
+            <div>
+              <span class="opacity-50">face_id:</span> {card.card_print && card.card_print.face_id}
+            </div>
+            <div>
+              <span class="opacity-50">orientation:</span> {card.card_print &&
+                card.card_print.orientation}
+            </div>
             <%= if card.card_print && card.card_print.image_phash do %>
               <div><span class="opacity-50">phash (art):</span> {card.card_print.image_phash}</div>
             <% end %>
             <%= if card.card_print && card.card_print.image_phash_left do %>
-              <div><span class="opacity-50">phash (left):</span> {card.card_print.image_phash_left}</div>
-              <div><span class="opacity-50">phash (right):</span> {card.card_print.image_phash_right}</div>
+              <div>
+                <span class="opacity-50">phash (left):</span> {card.card_print.image_phash_left}
+              </div>
+              <div>
+                <span class="opacity-50">phash (right):</span> {card.card_print.image_phash_right}
+              </div>
             <% end %>
             <%= if card.card_print && card.card_print.image_phash_full do %>
-              <div><span class="opacity-50">phash (full):</span> {card.card_print.image_phash_full}</div>
+              <div>
+                <span class="opacity-50">phash (full):</span> {card.card_print.image_phash_full}
+              </div>
             <% end %>
             <%= if debug = Map.get(card, :debug) do %>
               <% winning_kind = winning_phash_kind(Map.get(debug, :phashes, %{}), card.card_print) %>

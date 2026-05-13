@@ -64,6 +64,7 @@ defmodule Tabletop.Games do
     query =
       from g in Game,
         where: g.status == :waiting,
+        where: g.private == false,
         where: is_nil(g.user2_id),
         where: g.user_id != ^scope.user.id,
         where: is_nil(g.joining_user_id) or g.joining_expires_at < ^now,
@@ -86,6 +87,7 @@ defmodule Tabletop.Games do
     query =
       from g in Game,
         where: g.status == :waiting,
+        where: g.private == false,
         where: is_nil(g.user2_id),
         where: is_nil(g.joining_user_id) or g.joining_expires_at < ^now,
         order_by: [desc: g.inserted_at],
@@ -117,6 +119,26 @@ defmodule Tabletop.Games do
   """
   def get_game!(%Scope{} = _scope, id) do
     Repo.get_by!(Game, id: id) |> Repo.preload([:user, :user2])
+  end
+
+  @doc """
+  Looks up a game by its UUID for the "join by code" flow.
+
+  Returns `{:ok, game}` if the id is a valid UUID and the game is in :waiting
+  status, otherwise `{:error, :not_found}`. Does not enforce the public/private
+  filter — possession of the UUID is the access token.
+  """
+  def get_joinable_game_by_code(code) when is_binary(code) do
+    case Ecto.UUID.cast(String.trim(code)) do
+      {:ok, id} ->
+        case Repo.get_by(Game, id: id, status: :waiting) do
+          nil -> {:error, :not_found}
+          %Game{} = game -> {:ok, Repo.preload(game, [:user, :user2])}
+        end
+
+      :error ->
+        {:error, :invalid_code}
+    end
   end
 
   @doc """

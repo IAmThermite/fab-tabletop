@@ -1,13 +1,9 @@
 <Layouts.app flash={@flash}>
   <div class="mx-auto max-w-4xl px-4 py-10 space-y-10">
     <header class="space-y-4">
-      <h1 class="text-4xl font-bold">How to use Fab Tabletop</h1>
+      <h1 class="text-4xl font-bold">How to use FaB Tabletop</h1>
       <p class="text-lg">
-        <%!-- TODO: write a 2-3 sentence orientation. Mention that this guide covers
-              the three places you'll spend time in the app — camera setup,
-              the lobby, and the in-game screen — with examples from real
-              Flesh and Blood gameplay. --%>
-        Fab Tabletop is a free platform for playing Flesh and Blood TCG online
+        FaB Tabletop is a free platform for playing Flesh and Blood TCG online
         with live video, life tracking, and combat chain management. This guide
         walks you through camera setup, the lobby, and the in-game screen with
         examples from real FaB play.
@@ -27,12 +23,17 @@
     <section id="camera-setup" class="space-y-6">
       <h2 class="text-3xl font-bold border-b border-base-300 pb-2">1. Camera setup</h2>
       <p class="text-lg">
-        <%!-- TODO: 1-2 sentence intro. What does "camera setup" do, when do
-              you need to do it, and why is it worth getting right before
-              joining a game? --%>
         Before joining your first game, configure your camera so your opponent
-        can see your playmat clearly. Your zoom, rotation, and tile placement
+        can see your playmat and cards clearly. Your zoom, and rotation settings
         are saved in your browser — you only need to do this once.
+      </p>
+      <p class="text-lg">
+        It is important to get this right. Be sure that you are in a well lit
+        environment, but no direct lighting on the cards as the glare can make
+        them hard to read. Center your playmat in the preview and zoom in so
+        your hero card and pitch zone are clearly visible. Set the rotation so
+        that the cards are orientated on your screen as you would read them on
+        a physical playmat.        
       </p>
 
       <figure class="rounded-box border border-base-300 bg-base-200 p-2">
@@ -49,14 +50,10 @@
         </figcaption>
       </figure>
 
-      <%!-- 2.1 --%>
+      <%!-- 1.1 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">1.1 Granting camera & mic permissions</h3>
         <p>
-          <%!-- TODO: explain that your browser will prompt for camera + mic
-                permission the first time you open setup, and what to do if
-                the page says "Camera not available" (re-check browser
-                permissions, ensure no other app is using the camera). --%>
           The first time you open camera setup your browser will ask permission
           to use your camera and microphone. Allow both. If you ever see
           "Camera not available," check your browser's site permissions and
@@ -76,18 +73,16 @@
         </figure>
       </div>
 
-      <%!-- 2.2 --%>
+      <%!-- 1.2 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">1.2 Framing your play area (zoom & rotation)</h3>
         <p>
           <%!-- TODO: explain the 16:9 crop, why centering the playmat matters
                 so the opponent sees your pitch zone and hero clearly, and
                 that zoom/rotation are saved per browser in localStorage. --%>
-          The preview is a 16:9 crop of your webcam feed. Use the rotation
-          slider if your camera is mounted sideways or upside-down, then use
-          zoom to fill the frame with your playmat — aim to have your hero card
-          and pitch zone clearly visible. These settings save automatically
-          when you click <strong>Save & Continue</strong>.
+          Use the rotation slider if your camera is mounted sideways or upside-down,
+          then use zoom to fill the frame with your playmat. These settings save
+          automatically when you click <strong>Save & Continue</strong>.
         </p>
         <div class="grid md:grid-cols-2 gap-4">
           <figure class="rounded-box border border-base-300 bg-base-200 p-2">
@@ -117,7 +112,7 @@
         </div>
       </div>
 
-      <%!-- 2.3 --%>
+      <%!-- 1.3 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">1.3 Using your phone as a camera <span class="text-base font-normal text-base-content/60">(optional)</span></h3>
         <p>
@@ -125,10 +120,12 @@
                 scan the QR code with your phone, accept the camera permission
                 on the phone, then switch the camera source. Mention this is
                 great when your laptop webcam can't see the table. --%>
-          If your laptop webcam can't see the table, you can use your phone as
-          a camera instead. Open the settings dialog, scan the QR code with
-          your phone, accept the camera permission on the phone, then switch
-          the camera source to your phone.
+          If your laptop webcam can't see the table, or if you'd prefer, you
+          can use your phone as a camera instead. Open the settings dialog,
+          scan the QR code with your phone, accept the camera permission on
+          the phone, then switch the camera source to your phone once it is
+          connected. Please note that this can drain your phones battery, so
+          it's a good idea to have it plugged in during play.
         </p>
         <div class="grid md:grid-cols-2 gap-4">
           <figure class="rounded-box border border-base-300 bg-base-200 p-2">
@@ -158,9 +155,9 @@
         </div>
       </div>
 
-      <%!-- 2.4 --%>
+      <%!-- 1.4 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">1.4 Placing your tracker tiles</h3>
+        <h3 class="text-xl font-semibold">1.4 Combat chain preview</h3>
         <p>
           <%!-- TODO: explain that the Physical, Arcane, and Go Again tiles
                 are draggable overlays on the camera preview. Mention default
@@ -216,38 +213,13 @@
         </figcaption>
       </figure>
 
-      <%!-- 3.1 --%>
+      <%!-- 2.1 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">2.1 Email confirmation & camera setup banners</h3>
-        <p>
-          <%!-- TODO: explain that these two banners appear if you haven't
-                verified your email or completed camera setup, and that they
-                block you from joining a game until resolved. --%>
-          If you haven't verified your email or completed camera setup, banners
-          at the top of the lobby remind you. Both must be resolved before you
-          can join a game.
-        </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
-          <%!-- TODO: capture `lobby-banners.png` — both email confirmation
-                and camera setup banners visible. --%>
-          <img
-            src={~p"/images/guide/lobby-banners.png"}
-            alt="Email confirmation and camera setup banners"
-            class="w-full rounded"
-          />
-          <figcaption class="text-sm text-base-content/70 pt-2">
-            Resolve these banners before trying to join a game.
-          </figcaption>
-        </figure>
-      </div>
-
-      <%!-- 3.2 --%>
-      <div class="space-y-3">
-        <h3 class="text-xl font-semibold">2.2 Browsing public games</h3>
+        <h3 class="text-xl font-semibold">2.1 Browsing public games</h3>
         <p>
           <%!-- TODO: explain that public games are grouped by format
                 (e.g. Classic Constructed). Click a row to join. --%>
-          Public games are grouped by format — Classic Constructed, Blitz,
+          Public games are grouped by format — Classic Constructed, SAGE,
           etc. Expand a format to see open games and click a row to join.
         </p>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
@@ -264,9 +236,9 @@
         </figure>
       </div>
 
-      <%!-- 3.3 --%>
+      <%!-- 2.2 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">2.3 Creating a game</h3>
+        <h3 class="text-xl font-semibold">2.2 Creating a game</h3>
         <p>
           <%!-- TODO: walk through the create-game form fields — format,
                 game title, hero name, decklist URL, private toggle.
@@ -295,9 +267,9 @@
         </figure>
       </div>
 
-      <%!-- 3.4 --%>
+      <%!-- 2.3 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">2.4 Joining a private game</h3>
+        <h3 class="text-xl font-semibold">2.3 Joining a private game</h3>
         <p>
           <%!-- TODO: explain how to get a game code from your opponent
                 (they open in-game settings → share code), then enter it
@@ -320,9 +292,9 @@
         </figure>
       </div>
 
-      <%!-- 3.5 --%>
+      <%!-- 2.4 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">2.5 Resuming a game in progress</h3>
+        <h3 class="text-xl font-semibold">2.4 Resuming a game in progress</h3>
         <p>
           <%!-- TODO: explain the "Game in progress" panel — what it shows,
                 how to rejoin after a disconnect, and how to leave a game. --%>
@@ -373,7 +345,7 @@
         </figcaption>
       </figure>
 
-      <%!-- 4.1 --%>
+      <%!-- 3.1 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">3.1 Top bar: camera, mic, connection, settings, leave</h3>
         <p>
@@ -400,7 +372,7 @@
         </figure>
       </div>
 
-      <%!-- 4.2 --%>
+      <%!-- 3.2 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">3.2 Life total</h3>
         <p>
@@ -426,7 +398,7 @@
         </figure>
       </div>
 
-      <%!-- 4.3 --%>
+      <%!-- 3.3 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">3.3 Tracking damage (Physical & Arcane)</h3>
         <p>
@@ -461,7 +433,7 @@
         </figure>
       </div>
 
-      <%!-- 4.4 --%>
+      <%!-- 3.4 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">3.4 Go Again and chain management</h3>
         <p>
@@ -489,7 +461,7 @@
         </figure>
       </div>
 
-      <%!-- 4.5 --%>
+      <%!-- 3.5 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">3.5 Abilities</h3>
         <p>
@@ -515,7 +487,7 @@
         </figure>
       </div>
 
-      <%!-- 4.6 --%>
+      <%!-- 3.6 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">3.6 On-hit effects</h3>
         <p>
@@ -552,7 +524,7 @@
         </figure>
       </div>
 
-      <%!-- 4.7 --%>
+      <%!-- 3.7 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">3.7 Tokens & proxy tokens</h3>
         <p>
@@ -587,7 +559,7 @@
         </figure>
       </div>
 
-      <%!-- 4.8 --%>
+      <%!-- 3.8 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">3.8 Card search</h3>
         <p>
@@ -612,7 +584,7 @@
         </figure>
       </div>
 
-      <%!-- 4.9 --%>
+      <%!-- 3.9 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">3.9 Reading your opponent's board</h3>
         <p>
@@ -640,7 +612,7 @@
         </figure>
       </div>
 
-      <%!-- 4.10 --%>
+      <%!-- 3.10 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">3.10 In-game settings</h3>
         <p>

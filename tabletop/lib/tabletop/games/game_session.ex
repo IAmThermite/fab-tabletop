@@ -136,6 +136,12 @@ defmodule Tabletop.Games.GameSession do
   defp dispatch({:change_effect_count, category, name, delta}, player),
     do: GameState.change_effect_count(player, category, name, delta)
 
+  defp dispatch({:add_proxy_token, name}, player),
+    do: GameState.add_proxy_token(player, name)
+
+  defp dispatch({:remove_proxy_token, name}, player),
+    do: GameState.remove_proxy_token(player, name)
+
   defp dispatch({:change_life, delta}, player), do: GameState.change_life(player, delta)
   defp dispatch({:reset_chain}, player), do: GameState.reset_chain(player)
   defp dispatch(_, _), do: {:error, :unknown_action}

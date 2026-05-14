@@ -76,6 +76,8 @@
         game_state={@game_state}
         abilities_open={@abilities_open}
         on_hits_open={@on_hits_open}
+        create_token_open={@create_token_open}
+        create_proxy_token_open={@create_proxy_token_open}
       />
 
       <%!-- Central game area with canvas --%>
@@ -124,6 +126,8 @@
         </div>
 
         <.game_tiles game_state={@game_state} context={:remote} />
+
+        <.proxy_tokens_panel game_state={@game_state} expanded={@proxy_tokens_expanded} />
 
         <.card_popouts open_cards={@open_cards} />
       </div>

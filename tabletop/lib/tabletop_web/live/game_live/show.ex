@@ -50,6 +50,9 @@ defmodule TabletopWeb.GameLive.Show do
        |> assign_session_state(session_state)
        |> assign(:abilities_open, false)
        |> assign(:on_hits_open, false)
+       |> assign(:create_token_open, false)
+       |> assign(:create_proxy_token_open, false)
+       |> assign(:proxy_tokens_expanded, false)
        |> assign(:preview_open, false)
        |> assign(:open_cards, [])}
     else
@@ -125,7 +128,35 @@ defmodule TabletopWeb.GameLive.Show do
   end
 
   def handle_event("toggle_dropdown", %{"name" => "on_hits"}, socket) do
-    {:noreply, assign(socket, :on_hits_open, !socket.assigns.on_hits_open)}
+    new_open = !socket.assigns.on_hits_open
+
+    socket =
+      socket
+      |> assign(:on_hits_open, new_open)
+      |> assign(:create_token_open, new_open && socket.assigns.create_token_open)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "create_token"}, socket) do
+    {:noreply, assign(socket, :create_token_open, !socket.assigns.create_token_open)}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "create_proxy_token"}, socket) do
+    {:noreply,
+     assign(socket, :create_proxy_token_open, !socket.assigns.create_proxy_token_open)}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "proxy_tokens_panel"}, socket) do
+    {:noreply, assign(socket, :proxy_tokens_expanded, !socket.assigns.proxy_tokens_expanded)}
+  end
+
+  def handle_event("add_proxy_token", %{"type" => name}, socket) do
+    dispatch(socket, {:add_proxy_token, name})
+  end
+
+  def handle_event("remove_proxy_token", %{"type" => name}, socket) do
+    dispatch(socket, {:remove_proxy_token, name})
   end
 
   def handle_event("toggle_preview", _params, socket) do

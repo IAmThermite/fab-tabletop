@@ -63,6 +63,8 @@ defmodule TabletopWeb.GameComponents do
   attr :game_state, :any, required: true
   attr :abilities_open, :boolean, default: false
   attr :on_hits_open, :boolean, default: false
+  attr :create_token_open, :boolean, default: false
+  attr :create_proxy_token_open, :boolean, default: false
 
   def game_sidebar(assigns) do
     ~H"""
@@ -211,45 +213,101 @@ defmodule TabletopWeb.GameComponents do
         >
           <%= for {_key, effect} <- Tabletop.Fab.Effects.on_hit_effects() do %>
             <li class="flex items-center gap-1">
+              <%= if effect[:popup] do %>
+                <button
+                  type="button"
+                  class="flex items-center gap-1 flex-1 min-w-0 text-left hover:bg-base-200 rounded px-0.5 py-0.5"
+                  phx-click="toggle_dropdown"
+                  phx-value-name={to_string(effect[:popup])}
+                >
+                  <.icon
+                    :if={effect[:icon] not in [nil, ""]}
+                    name={effect[:icon]}
+                    class="size-5 shrink-0"
+                  />
+                  <span class="text-xs font-semibold leading-tight">{effect[:name]}…</span>
+                </button>
+              <% else %>
+                <label class="flex items-center gap-1 cursor-pointer flex-1 min-w-0">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs accent-orange-500"
+                    checked={
+                      @game_state.my.effects[Tabletop.Fab.GameState.effect_key("on_hit", effect[:name])]
+                    }
+                    phx-click="toggle_effect"
+                    phx-value-type={effect[:name]}
+                    phx-value-category="on_hit"
+                  />
+                  <.icon
+                    :if={effect[:icon] not in [nil, ""]}
+                    name={effect[:icon]}
+                    class="size-5 shrink-0"
+                  />
+                  <span class="text-xs font-semibold leading-tight">{effect[:name]}</span>
+                </label>
+                <div :if={effect[:counterable]} class="flex items-center gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-circle btn-error"
+                    phx-click="change_effect_count"
+                    phx-value-type={effect[:name]}
+                    phx-value-category="on_hit"
+                    phx-value-delta="-1"
+                  >
+                    -
+                  </button>
+                  <span class="text-xs font-bold w-3 text-center">
+                    {Map.get(
+                      @game_state.my.effect_counts || %{},
+                      Tabletop.Fab.GameState.effect_key("on_hit", effect[:name]),
+                      1
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-circle btn-success"
+                    phx-click="change_effect_count"
+                    phx-value-type={effect[:name]}
+                    phx-value-category="on_hit"
+                    phx-value-delta="1"
+                  >
+                    +
+                  </button>
+                </div>
+              <% end %>
+            </li>
+          <% end %>
+        </ul>
+
+        <%!-- Create Token popup (to the right of the on-hits dropdown) --%>
+        <ul
+          :if={@create_token_open}
+          class="absolute z-40 list-none bg-base-100 rounded-box p-2 shadow-lg mt-1 left-[calc(28rem+1.5rem)] grid grid-cols-2 gap-x-4 gap-y-1 w-[26rem] border border-base-300"
+        >
+          <li class="col-span-2 text-[10px] uppercase tracking-wide font-bold opacity-60 px-1 pb-1 border-b border-base-300">
+            Create Token
+          </li>
+          <%= for {_key, token} <- Tabletop.Fab.Effects.tokens_for_player() do %>
+            <li class="flex items-center gap-1">
               <label class="flex items-center gap-1 cursor-pointer flex-1 min-w-0">
                 <input
                   type="checkbox"
-                  class="checkbox checkbox-xs accent-orange-500"
+                  class="checkbox checkbox-xs accent-emerald-500"
                   checked={
-                    @game_state.my.effects[Tabletop.Fab.GameState.effect_key("on_hit", effect[:name])]
+                    @game_state.my.effects[Tabletop.Fab.GameState.effect_key("token", token[:name])]
                   }
                   phx-click="toggle_effect"
-                  phx-value-type={effect[:name]}
-                  phx-value-category="on_hit"
+                  phx-value-type={token[:name]}
+                  phx-value-category="token"
                 />
-                <.icon :if={effect[:icon] not in [nil, ""]} name={effect[:icon]} class="size-5 shrink-0" />
-                <span class="text-xs font-semibold leading-tight">{effect[:name]}</span>
+                <.icon
+                  :if={token[:icon] not in [nil, ""]}
+                  name={token[:icon]}
+                  class="size-5 shrink-0"
+                />
+                <span class="text-xs font-semibold leading-tight">{token[:name]}</span>
               </label>
-              <div :if={effect[:counterable]} class="flex items-center gap-0.5 shrink-0">
-                <button
-                  type="button"
-                  class="btn btn-xs btn-circle btn-error"
-                  phx-click="change_effect_count"
-                  phx-value-type={effect[:name]}
-                  phx-value-category="on_hit"
-                  phx-value-delta="-1"
-                >
-                  -
-                </button>
-                <span class="text-xs font-bold w-3 text-center">
-                  {Map.get(@game_state.my.effect_counts || %{}, Tabletop.Fab.GameState.effect_key("on_hit", effect[:name]), 1)}
-                </span>
-                <button
-                  type="button"
-                  class="btn btn-xs btn-circle btn-success"
-                  phx-click="change_effect_count"
-                  phx-value-type={effect[:name]}
-                  phx-value-category="on_hit"
-                  phx-value-delta="1"
-                >
-                  +
-                </button>
-              </div>
             </li>
           <% end %>
         </ul>
@@ -273,6 +331,63 @@ defmodule TabletopWeb.GameComponents do
         />
       </form>
 
+      <%!-- Create Proxy Token --%>
+      <div class="relative">
+        <button
+          type="button"
+          class="btn btn-sm w-full bg-emerald-300 hover:bg-emerald-400 text-emerald-950 border-emerald-400"
+          phx-click="toggle_dropdown"
+          phx-value-name="create_proxy_token"
+        >
+          Create Proxy Token
+          <.icon
+            name={if @create_proxy_token_open, do: "hero-chevron-up", else: "hero-chevron-down"}
+            class="size-4"
+          />
+        </button>
+        <ul
+          :if={@create_proxy_token_open}
+          class="absolute z-40 list-none bg-base-100 rounded-box p-2 shadow-lg mb-1 bottom-full left-full ml-2 grid grid-cols-2 gap-x-4 gap-y-1 w-[26rem] border border-base-300"
+        >
+          <li class="col-span-2 text-[10px] uppercase tracking-wide font-bold opacity-60 px-1 pb-1 border-b border-base-300">
+            Add Proxy Token
+          </li>
+            <%= for {_key, token} <- Tabletop.Fab.Effects.tokens_for_opponent() do %>
+            <li class="flex items-center gap-1">
+              <div class="flex items-center gap-1 flex-1 min-w-0 px-0.5 py-0.5">
+                <.icon
+                  :if={token[:icon] not in [nil, ""]}
+                  name={token[:icon]}
+                  class="size-5 shrink-0"
+                />
+                <span class="text-xs font-semibold leading-tight">{token[:name]}</span>
+              </div>
+              <div class="flex items-center gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  class="btn btn-xs btn-circle btn-error"
+                  phx-click="remove_proxy_token"
+                  phx-value-type={token[:name]}
+                >
+                  -
+                </button>
+                <span class="text-xs font-bold w-3 text-center">
+                  {Map.get(@game_state.my.proxy_tokens || %{}, token[:name], 0)}
+                </span>
+                <button
+                  type="button"
+                  class="btn btn-xs btn-circle btn-success"
+                  phx-click="add_proxy_token"
+                  phx-value-type={token[:name]}
+                >
+                  +
+                </button>
+              </div>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+
       <%!-- Player life --%>
       <div class="bg-warning text-warning-content rounded p-2 text-center">
         <div class="text-2xl font-bold">{@game_state.my.life}</div>
@@ -293,6 +408,101 @@ defmodule TabletopWeb.GameComponents do
           >
             -
           </button>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  attr :game_state, :any, required: true
+  attr :expanded, :boolean, default: false
+
+  def proxy_tokens_panel(assigns) do
+    proxy_tokens = Map.get(assigns.game_state.my, :proxy_tokens, %{})
+
+    tokens_by_name =
+      Map.new(Tabletop.Fab.Effects.tokens(), fn {_k, t} -> {t.name, t} end)
+
+    entries =
+      proxy_tokens
+      |> Enum.map(fn {name, count} -> {name, count, Map.get(tokens_by_name, name)} end)
+      |> Enum.filter(fn {_n, _c, token} -> token end)
+      |> Enum.sort_by(fn {name, _c, _t} -> name end)
+
+    total = Enum.reduce(proxy_tokens, 0, fn {_n, c}, acc -> acc + c end)
+
+    assigns =
+      assigns
+      |> assign(:entries, entries)
+      |> assign(:total, total)
+
+    ~H"""
+    <div
+      :if={@entries != []}
+      class="absolute top-2 right-2 z-30 bg-base-100/95 backdrop-blur rounded-lg shadow-lg border border-base-300 text-base-content max-w-[80%]"
+    >
+      <button
+        type="button"
+        class="flex items-center gap-2 w-full px-3 py-2 hover:bg-base-200 rounded-lg text-left"
+        phx-click="toggle_dropdown"
+        phx-value-name="proxy_tokens_panel"
+      >
+        <span class="text-xs font-bold uppercase tracking-wide opacity-70">
+          Proxy Tokens ({@total})
+        </span>
+        <div :if={!@expanded} class="flex flex-wrap items-center gap-1 flex-1 min-w-0">
+          <span
+            :for={{name, count, token} <- @entries}
+            class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-900 rounded px-1.5 py-0.5 text-[11px] font-semibold"
+          >
+            <.icon
+              :if={token[:icon] not in [nil, ""]}
+              name={token[:icon]}
+              class="size-3 shrink-0"
+            />
+            {name}
+            <span :if={count > 1} class="opacity-70">×{count}</span>
+          </span>
+        </div>
+        <.icon
+          name={if @expanded, do: "hero-chevron-up", else: "hero-chevron-down"}
+          class="size-4 ml-auto shrink-0"
+        />
+      </button>
+
+      <div :if={@expanded} class="p-2 border-t border-base-300 flex flex-wrap gap-3 max-w-[60rem]">
+        <div :for={{name, count, token} <- @entries} class="flex flex-col items-center gap-1 w-60">
+          <img
+            :if={token[:card_img_src] not in [nil, ""]}
+            src={token[:card_img_src]}
+            alt={name}
+            class="w-60 rounded shadow"
+          />
+          <div
+            :if={token[:card_img_src] in [nil, ""]}
+            class="w-60 h-56 rounded bg-base-200 flex items-center justify-center text-xs p-2 text-center"
+          >
+            {name}
+          </div>
+          <div class="flex items-center gap-1">
+            <button
+              type="button"
+              class="btn btn-xs btn-circle btn-error"
+              phx-click="remove_proxy_token"
+              phx-value-type={name}
+            >
+              -
+            </button>
+            <span class="text-sm font-bold w-6 text-center">{count}</span>
+            <button
+              type="button"
+              class="btn btn-xs btn-circle btn-success"
+              phx-click="add_proxy_token"
+              phx-value-type={name}
+            >
+              +
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -334,6 +544,7 @@ defmodule TabletopWeb.GameComponents do
         style={"left: #{tile.x}%; top: #{tile.y}%; transform: translate(-50%, -50%);"}
         data-tile-id={tile.id}
         data-tile-owner={tile.owner}
+        data-tile-group={tile_group_name(tile)}
         phx-hook={if @context in [:expanded, :setup], do: "TabletopWeb.GameComponents.DraggableTile"}
         id={"tile-#{@context}-#{tile.owner}-#{tile.id}"}
       >
@@ -367,7 +578,7 @@ defmodule TabletopWeb.GameComponents do
         >
           {tile.value}
         </span>
-        <.tile_hover_preview :if={@context == :remote} tile={tile} />
+        <.tile_hover_preview :if={@context != :local} tile={tile} />
       </div>
     <% end %>
 
@@ -385,9 +596,12 @@ defmodule TabletopWeb.GameComponents do
           const el = this.el
           const tileId = el.dataset.tileId
           const owner = el.dataset.tileOwner
+          const group = el.dataset.tileGroup
 
           let isDragging = false
           let currentDragPos = null
+          let startPosPercent = null
+          let siblingStarts = []
 
           const toPercent = (clientX, clientY) => {
             const container = el.parentElement
@@ -408,6 +622,23 @@ defmodule TabletopWeb.GameComponents do
 
             startX = e.clientX
             startY = e.clientY
+            startPosPercent = {
+              x: parseFloat(el.style.left) || 0,
+              y: parseFloat(el.style.top) || 0
+            }
+
+            siblingStarts = []
+            if (group) {
+              const selector = `[data-tile-group="${group}"][data-tile-owner="${owner}"]`
+              const siblings = Array.from(el.parentElement.querySelectorAll(selector))
+                .filter(s => s !== el)
+              siblingStarts = siblings.map(s => ({
+                el: s,
+                left: parseFloat(s.style.left) || 0,
+                top: parseFloat(s.style.top) || 0
+              }))
+            }
+
             el.setPointerCapture(e.pointerId)
           }
 
@@ -427,6 +658,15 @@ defmodule TabletopWeb.GameComponents do
             currentDragPos = pos
             el.style.left = pos.x + "%"
             el.style.top = pos.y + "%"
+
+            if (siblingStarts.length > 0 && startPosPercent) {
+              const dxPct = pos.x - startPosPercent.x
+              const dyPct = pos.y - startPosPercent.y
+              for (const s of siblingStarts) {
+                s.el.style.left = Math.max(0, Math.min(100, s.left + dxPct)) + "%"
+                s.el.style.top = Math.max(0, Math.min(100, s.top + dyPct)) + "%"
+              }
+            }
           }
 
           const onPointerUp = (e) => {
@@ -436,6 +676,8 @@ defmodule TabletopWeb.GameComponents do
             if (!isDragging) return
             isDragging = false
             currentDragPos = null
+            startPosPercent = null
+            siblingStarts = []
             el.style.cursor = ""
             el.style.zIndex = ""
 
@@ -545,6 +787,9 @@ defmodule TabletopWeb.GameComponents do
     on_hits_by_name =
       Map.new(Tabletop.Fab.Effects.on_hit_effects(), fn {_k, e} -> {e.name, e} end)
 
+    tokens_by_name =
+      Map.new(Tabletop.Fab.Effects.tokens_for_player(), fn {_k, t} -> {t.name, t} end)
+
     effect_counts = Map.get(player_state, :effect_counts, %{})
 
     Enum.reduce(player_state.effects, tiles, fn {key, active}, acc ->
@@ -556,6 +801,7 @@ defmodule TabletopWeb.GameComponents do
           case category do
             "ability" -> {Map.get(abilities_by_name, name), :ability}
             "on_hit" -> {Map.get(on_hits_by_name, name), :on_hit}
+            "token" -> {Map.get(tokens_by_name, name), :token}
             _ -> {nil, :effect}
           end
 
@@ -609,6 +855,9 @@ defmodule TabletopWeb.GameComponents do
   defp tile_color_class(%{owner: "my", type: :on_hit}),
     do: "from-orange-400 to-orange-500/70 text-orange-950"
 
+  defp tile_color_class(%{owner: "my", type: :token}),
+    do: "from-emerald-300 to-emerald-400/70 text-emerald-950"
+
   defp tile_color_class(%{owner: "my", type: :effect}),
     do: "from-secondary to-secondary/70 text-secondary-content"
 
@@ -627,6 +876,9 @@ defmodule TabletopWeb.GameComponents do
   defp tile_color_class(%{owner: "opponent", type: :on_hit}),
     do: "from-orange-400/60 to-orange-500/40 text-orange-950 border border-orange-500"
 
+  defp tile_color_class(%{owner: "opponent", type: :token}),
+    do: "from-emerald-300/60 to-emerald-400/40 text-emerald-950 border border-emerald-400"
+
   defp tile_color_class(%{owner: "opponent", type: :effect}),
     do: "from-secondary/60 to-secondary/40 text-secondary-content border border-secondary"
 
@@ -635,6 +887,11 @@ defmodule TabletopWeb.GameComponents do
   defp tile_icon(%{type: :physical}), do: "hero-bolt"
   defp tile_icon(%{type: :arcane}), do: "hero-sparkles"
   defp tile_icon(_), do: "hero-star"
+
+  defp tile_group_name(%{type: :ability}), do: "ability"
+  defp tile_group_name(%{type: :on_hit}), do: "on_hit"
+  defp tile_group_name(%{type: :token}), do: "on_hit"
+  defp tile_group_name(_), do: nil
 
   defp pitch_color_class(1), do: "bg-red-500"
   defp pitch_color_class(2), do: "bg-yellow-400"

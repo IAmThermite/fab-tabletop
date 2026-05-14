@@ -96,6 +96,8 @@ defmodule TabletopWeb.CameraSetupLive do
             game_state={@game_state}
             abilities_open={@abilities_open}
             on_hits_open={@on_hits_open}
+            create_token_open={@create_token_open}
+            create_proxy_token_open={@create_proxy_token_open}
           />
 
           <%!-- Central area — camera preview canvas --%>
@@ -157,6 +159,8 @@ defmodule TabletopWeb.CameraSetupLive do
             </div>
 
             <.game_tiles game_state={@game_state} context={:setup} />
+
+            <.proxy_tokens_panel game_state={@game_state} expanded={@proxy_tokens_expanded} />
 
             <.card_popouts open_cards={@open_cards} />
           </div>
@@ -491,6 +495,9 @@ defmodule TabletopWeb.CameraSetupLive do
      |> assign(:game_state, new_preview_state())
      |> assign(:abilities_open, false)
      |> assign(:on_hits_open, false)
+     |> assign(:create_token_open, false)
+     |> assign(:create_proxy_token_open, false)
+     |> assign(:proxy_tokens_expanded, false)
      |> assign(:open_cards, [])}
   end
 
@@ -546,7 +553,35 @@ defmodule TabletopWeb.CameraSetupLive do
   end
 
   def handle_event("toggle_dropdown", %{"name" => "on_hits"}, socket) do
-    {:noreply, assign(socket, :on_hits_open, !socket.assigns.on_hits_open)}
+    new_open = !socket.assigns.on_hits_open
+
+    socket =
+      socket
+      |> assign(:on_hits_open, new_open)
+      |> assign(:create_token_open, new_open && socket.assigns.create_token_open)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "create_token"}, socket) do
+    {:noreply, assign(socket, :create_token_open, !socket.assigns.create_token_open)}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "create_proxy_token"}, socket) do
+    {:noreply,
+     assign(socket, :create_proxy_token_open, !socket.assigns.create_proxy_token_open)}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "proxy_tokens_panel"}, socket) do
+    {:noreply, assign(socket, :proxy_tokens_expanded, !socket.assigns.proxy_tokens_expanded)}
+  end
+
+  def handle_event("add_proxy_token", %{"type" => name}, socket) do
+    apply_action(socket, GameState.add_proxy_token(my(socket), name))
+  end
+
+  def handle_event("remove_proxy_token", %{"type" => name}, socket) do
+    apply_action(socket, GameState.remove_proxy_token(my(socket), name))
   end
 
   defp my(socket), do: socket.assigns.game_state.my

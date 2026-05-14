@@ -20,6 +20,7 @@ defmodule Tabletop.Fab.GameState do
     goagain: false,
     effects: %{},
     effect_counts: %{},
+    proxy_tokens: %{},
     tile_positions: %{},
     tile_order: []
   }
@@ -61,7 +62,7 @@ defmodule Tabletop.Fab.GameState do
     {:ok, new_player, {:goagain_toggled, new_val}}
   end
 
-  @valid_effect_categories ["ability", "on_hit"]
+  @valid_effect_categories ["ability", "on_hit", "token"]
 
   def toggle_effect(player, category, effect_name)
       when category in @valid_effect_categories do
@@ -110,17 +111,91 @@ defmodule Tabletop.Fab.GameState do
 
   def change_effect_count(_, _, _, _), do: {:error, :invalid_effect}
 
+  def add_proxy_token(player, name) when is_binary(name) do
+    if Effects.valid_token?(name) do
+      counts = Map.get(player, :proxy_tokens, %{})
+      new_count = Map.get(counts, name, 0) + 1
+      new_counts = Map.put(counts, name, new_count)
+      new_player = Map.put(player, :proxy_tokens, new_counts)
+      {:ok, new_player, {:proxy_token_changed, name, new_count}}
+    else
+      {:error, :invalid_token}
+    end
+  end
+
+  def add_proxy_token(_, _), do: {:error, :invalid_token}
+
+  def remove_proxy_token(player, name) when is_binary(name) do
+    if Effects.valid_token?(name) do
+      counts = Map.get(player, :proxy_tokens, %{})
+
+      case Map.get(counts, name, 0) do
+        n when n <= 1 ->
+          new_counts = Map.delete(counts, name)
+          new_player = Map.put(player, :proxy_tokens, new_counts)
+          {:ok, new_player, {:proxy_token_changed, name, 0}}
+
+        n ->
+          new_counts = Map.put(counts, name, n - 1)
+          new_player = Map.put(player, :proxy_tokens, new_counts)
+          {:ok, new_player, {:proxy_token_changed, name, n - 1}}
+      end
+    else
+      {:error, :invalid_token}
+    end
+  end
+
+  def remove_proxy_token(_, _), do: {:error, :invalid_token}
+
   def effect_key(category, name), do: "#{category}:#{name}"
 
   def move_tile(player, tile_id, x, y)
       when is_binary(tile_id) and is_number(x) and is_number(y) do
     x = max(0.0, min(100.0, x / 1))
     y = max(0.0, min(100.0, y / 1))
-    new_positions = Map.put(player.tile_positions, tile_id, %{x: x, y: y})
+
+    old_pos = Map.get(player.tile_positions, tile_id)
+    base_positions = Map.put(player.tile_positions, tile_id, %{x: x, y: y})
+
+    new_positions =
+      case {tile_group(tile_id), old_pos} do
+        {nil, _} ->
+          base_positions
+
+        {_, nil} ->
+          base_positions
+
+        {group, %{x: ox, y: oy}} ->
+          dx = x - ox
+          dy = y - oy
+
+          Enum.reduce(player.tile_positions, base_positions, fn {sib_id, %{x: sx, y: sy}}, acc ->
+            if sib_id != tile_id and tile_group(sib_id) == group do
+              Map.put(acc, sib_id, %{
+                x: max(0.0, min(100.0, sx + dx)),
+                y: max(0.0, min(100.0, sy + dy))
+              })
+            else
+              acc
+            end
+          end)
+      end
+
     new_order = [tile_id | List.delete(Map.get(player, :tile_order, []), tile_id)]
     new_player = %{player | tile_positions: new_positions, tile_order: new_order}
     {:ok, new_player, {:tile_moved, tile_id, x, y}}
   end
+
+  defp tile_group(tile_id) when is_binary(tile_id) do
+    cond do
+      String.starts_with?(tile_id, "ability:") -> :ability
+      String.starts_with?(tile_id, "on_hit:") -> :on_hit
+      String.starts_with?(tile_id, "token:") -> :on_hit
+      true -> nil
+    end
+  end
+
+  defp tile_group(_), do: nil
 
   def change_life(player, delta) do
     new_life = player.life + delta
@@ -128,7 +203,13 @@ defmodule Tabletop.Fab.GameState do
   end
 
   def reset_chain(player) do
-    reset = %{@default_player | life: player.life, tile_positions: %{}}
+    reset = %{
+      @default_player
+      | life: player.life,
+        tile_positions: %{},
+        proxy_tokens: Map.get(player, :proxy_tokens, %{})
+    }
+
     {:ok, reset, :chain_reset}
   end
 
@@ -139,6 +220,8 @@ defmodule Tabletop.Fab.GameState do
   defp valid_effect?("on_hit", name) do
     Enum.any?(Effects.on_hit_effects(), fn {_key, effect} -> effect[:name] == name end)
   end
+
+  defp valid_effect?("token", name), do: Effects.valid_token?(name)
 
   defp valid_effect?(_, _), do: false
 
@@ -165,14 +248,15 @@ defmodule Tabletop.Fab.GameState do
     }
   end
 
-  # Place each new tile slightly below and to the right of the anchor tile —
-  # the most recently placed/moved tile still on the canvas. When the anchor
-  # is gone (tile toggled off), we fall through to the next most recent, so
-  # new tiles stay clustered with the existing group. If we'd run off the
-  # bottom we wrap to the top of the next column.
-  @tile_offset_x 0.5
-  @tile_offset_y 3.5
-  @tile_column_step 5.0
+  # Stack new tiles in a vertical column directly below the anchor (the most
+  # recently placed or moved tile still on the canvas). We scan slots
+  # downward from the anchor and pick the first one not already occupied, so
+  # when a tile is removed the gap it leaves gets filled by the next tile
+  # added before the column extends further.
+  @tile_w 10.0
+  @tile_h 2.5
+  @slot_step 3.0
+  @max_slots 16
   @max_y 92.0
   @min_y 8.0
   @min_x 5.0
@@ -183,15 +267,38 @@ defmodule Tabletop.Fab.GameState do
       nil ->
         {10.0, 10.0}
 
-      %{x: x, y: y} ->
-        new_y = y + @tile_offset_y
+      anchor ->
+        occupied =
+          player.tile_positions
+          |> Map.values()
+          |> Enum.map(fn %{x: x, y: y} -> {x, y} end)
 
-        if new_y > @max_y do
-          {min(@max_x, x + @tile_column_step), @min_y}
-        else
-          {min(@max_x, max(@min_x, x + @tile_offset_x)), new_y}
-        end
+        find_column_position(anchor, occupied, 1)
     end
+  end
+
+  defp find_column_position(%{x: cx, y: cy} = anchor, occupied, slot)
+       when slot <= @max_slots do
+    candidate = {cx, cy + slot * @slot_step}
+
+    if position_open?(candidate, occupied) do
+      clamp_position(candidate)
+    else
+      find_column_position(anchor, occupied, slot + 1)
+    end
+  end
+
+  defp find_column_position(%{x: cx, y: cy}, _occupied, _slot),
+    do: clamp_position({cx, cy + @slot_step})
+
+  defp position_open?({x, y}, occupied) do
+    Enum.all?(occupied, fn {ox, oy} ->
+      abs(x - ox) >= @tile_w or abs(y - oy) >= @tile_h
+    end)
+  end
+
+  defp clamp_position({x, y}) do
+    {min(@max_x, max(@min_x, x)), min(@max_y, max(@min_y, y))}
   end
 
   defp anchor_position(player) do

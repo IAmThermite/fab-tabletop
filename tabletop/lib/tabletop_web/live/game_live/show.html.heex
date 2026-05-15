@@ -5,6 +5,7 @@
     data-game-id={@game.id}
     data-user-token={@user_token}
     data-camera-relay-token={@camera_relay_token}
+    data-relay-user-id={@user_id}
     class="flex flex-col h-full"
   >
     <%!-- Top bar --%>
@@ -340,7 +341,7 @@
         })
 
         // --- Phone Camera Relay ---
-        const relayToken = this.el.dataset.cameraRelayToken
+        const relayUserId = this.el.dataset.relayUserId
         const phoneStatusEl = document.getElementById("phone-camera-status")
         const usePhoneBtn = document.getElementById("use-phone-camera-btn")
         const useWebcamBtn = document.getElementById("use-webcam-btn")
@@ -365,7 +366,7 @@
 
         this.cameraRelay = new CameraRelayReceiver({
           token,
-          relayToken,
+          relayUserId,
           onStream: (stream) => {
             phoneStream = stream
             phoneStatusEl.innerHTML = '<span class="badge badge-sm badge-success">Phone connected</span>'

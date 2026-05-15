@@ -12,8 +12,9 @@ const ICE_SERVERS = [
 ]
 
 export default class PhoneCameraRelay {
-  constructor({ relayToken, onStatusChange }) {
+  constructor({ relayToken, relayUserId, onStatusChange }) {
     this.relayToken = relayToken
+    this.relayUserId = relayUserId
     this.onStatusChange = onStatusChange || (() => {})
 
     this.socket = null
@@ -32,7 +33,9 @@ export default class PhoneCameraRelay {
     })
     this.socket.connect()
 
-    this.channel = this.socket.channel(`camera_relay:${this.relayToken}`, {})
+    // Topic is keyed by user_id (stable), while the signed token above is
+    // only used to authenticate the socket connection.
+    this.channel = this.socket.channel(`camera_relay:${this.relayUserId}`, {})
 
     this.channel.on("peer_joined", () => this._createOffer())
     this.channel.on("peer_exists", () => {

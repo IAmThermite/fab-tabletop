@@ -11,9 +11,9 @@ const ICE_SERVERS = [
 ]
 
 export default class CameraRelayReceiver {
-  constructor({ token, relayToken, onStream, onDisconnect, onStatusChange }) {
+  constructor({ token, relayUserId, onStream, onDisconnect, onStatusChange }) {
     this.token = token
-    this.relayToken = relayToken
+    this.relayUserId = relayUserId
     this.onStream = onStream || (() => {})
     this.onDisconnect = onDisconnect || (() => {})
     this.onStatusChange = onStatusChange || (() => {})
@@ -32,7 +32,9 @@ export default class CameraRelayReceiver {
     this.socket = new Socket("/socket", { params: { token: this.token } })
     this.socket.connect()
 
-    this.channel = this.socket.channel(`camera_relay:${this.relayToken}`, {})
+    // Topic is keyed by user_id (stable across page mounts); the socket
+    // connection above is authenticated by the user-socket token.
+    this.channel = this.socket.channel(`camera_relay:${this.relayUserId}`, {})
 
     this.channel.on("peer_joined", () => this._createOffer())
     this.channel.on("peer_exists", () => {

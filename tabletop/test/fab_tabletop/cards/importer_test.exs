@@ -3,6 +3,7 @@ defmodule Tabletop.Cards.ImporterTest do
 
   alias Tabletop.Cards
   alias Tabletop.Cards.{Card, CardPrint, Importer}
+  alias Tabletop.Repo
 
   @test_fixture_dir "priv/cards/test"
 
@@ -246,8 +247,8 @@ defmodule Tabletop.Cards.ImporterTest do
         req_options: req_options
       )
 
-      cards = Cards.list_cards()
-      scar_cards = Enum.filter(cards, &(&1.name == "Scar for a Scar"))
+      card_prints = Tabletop.Repo.all(CardPrint) |> Repo.preload(:card)
+      scar_cards = Enum.filter(card_prints, &(&1.card.name == "Scar for a Scar")) |> Enum.map(& &1.card) |> Enum.uniq()
       assert length(scar_cards) == 3
 
       pitches = scar_cards |> Enum.map(& &1.pitch) |> Enum.sort()

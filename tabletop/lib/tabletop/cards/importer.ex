@@ -199,7 +199,7 @@ defmodule Tabletop.Cards.Importer do
   end
 
   # --- Face collection & dedup ---
-  
+
   def collect_english_faces(card_prints) when is_list(card_prints) do
     card_prints
     |> Enum.flat_map(fn card_print ->
@@ -244,7 +244,9 @@ defmodule Tabletop.Cards.Importer do
 
     case download(image_url, req_options) do
       {:ok, image_binary} ->
-        bbox = ArtBboxDetector.detect(image_binary, %{orientation: orientation, art_type: art_type})
+        bbox =
+          ArtBboxDetector.detect(image_binary, %{orientation: orientation, art_type: art_type})
+
         hashes = compute_hashes(image_binary, bbox, orientation)
 
         %{

@@ -377,7 +377,8 @@ defmodule Tabletop.Fab.Effects do
     gold_2: %{
       name: "Gold",
       icon: "hero-currency-dollar",
-      description_html: "<b>Action</b> – {{ resource-icon }}{{ resource-icon }}, destroy Gold: Draw a card. <b>Go again</b>",
+      description_html:
+        "<b>Action</b> – {{ resource-icon }}{{ resource-icon }}, destroy Gold: Draw a card. <b>Go again</b>",
       card_img_src:
         "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/SEN036.webp",
       for_opponent: true

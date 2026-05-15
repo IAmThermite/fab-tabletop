@@ -95,8 +95,12 @@ defmodule Tabletop.Cards.PHash do
                  ["#{tmp_path}[0]", "-crop", geometry, "+repage", output_path],
                  stderr_to_stdout: true
                ) do
-            {_, 0} -> :ok
-            {err, _} -> Logger.warning("PHash: convert crop failed: #{err}"); :error
+            {_, 0} ->
+              :ok
+
+            {err, _} ->
+              Logger.warning("PHash: convert crop failed: #{err}")
+              :error
           end
 
         :error ->

@@ -143,8 +143,7 @@ defmodule TabletopWeb.GameLive.Show do
   end
 
   def handle_event("toggle_dropdown", %{"name" => "create_proxy_token"}, socket) do
-    {:noreply,
-     assign(socket, :create_proxy_token_open, !socket.assigns.create_proxy_token_open)}
+    {:noreply, assign(socket, :create_proxy_token_open, !socket.assigns.create_proxy_token_open)}
   end
 
   def handle_event("toggle_dropdown", %{"name" => "proxy_tokens_panel"}, socket) do

@@ -233,7 +233,9 @@ defmodule TabletopWeb.GameComponents do
                     type="checkbox"
                     class="checkbox checkbox-xs accent-orange-500"
                     checked={
-                      @game_state.my.effects[Tabletop.Fab.GameState.effect_key("on_hit", effect[:name])]
+                      @game_state.my.effects[
+                        Tabletop.Fab.GameState.effect_key("on_hit", effect[:name])
+                      ]
                     }
                     phx-click="toggle_effect"
                     phx-value-type={effect[:name]}
@@ -352,7 +354,7 @@ defmodule TabletopWeb.GameComponents do
           <li class="col-span-2 text-[10px] uppercase tracking-wide font-bold opacity-60 px-1 pb-1 border-b border-base-300">
             Add Proxy Token
           </li>
-            <%= for {_key, token} <- Tabletop.Fab.Effects.tokens_for_opponent() do %>
+          <%= for {_key, token} <- Tabletop.Fab.Effects.tokens_for_opponent() do %>
             <li class="flex items-center gap-1">
               <div class="flex items-center gap-1 flex-1 min-w-0 px-0.5 py-0.5">
                 <.icon

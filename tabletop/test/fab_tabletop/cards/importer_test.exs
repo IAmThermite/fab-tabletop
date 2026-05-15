@@ -30,8 +30,20 @@ defmodule Tabletop.Cards.ImporterTest do
   describe "foil_dedup/1" do
     test "prefers regular finish over foil within the same (set, art_type, layout) group" do
       faces = [
-        %{"face_id" => "WTR191", "set_code" => "WTR", "art_type" => "regular", "layout_position" => 10, "finish_type" => "regular"},
-        %{"face_id" => "WTR191-RF", "set_code" => "WTR", "art_type" => "regular", "layout_position" => 10, "finish_type" => "rainbow-foil"}
+        %{
+          "face_id" => "WTR191",
+          "set_code" => "WTR",
+          "art_type" => "regular",
+          "layout_position" => 10,
+          "finish_type" => "regular"
+        },
+        %{
+          "face_id" => "WTR191-RF",
+          "set_code" => "WTR",
+          "art_type" => "regular",
+          "layout_position" => 10,
+          "finish_type" => "rainbow-foil"
+        }
       ]
 
       result = Importer.foil_dedup(faces)
@@ -41,8 +53,20 @@ defmodule Tabletop.Cards.ImporterTest do
 
     test "keeps one foil face when no regular exists in the group" do
       faces = [
-        %{"face_id" => "SEA050-MV", "set_code" => "SEA", "art_type" => "extended-art", "layout_position" => 10, "finish_type" => "cold-foil"},
-        %{"face_id" => "SEA050-MV-ALT", "set_code" => "SEA", "art_type" => "extended-art", "layout_position" => 10, "finish_type" => "cold-foil"}
+        %{
+          "face_id" => "SEA050-MV",
+          "set_code" => "SEA",
+          "art_type" => "extended-art",
+          "layout_position" => 10,
+          "finish_type" => "cold-foil"
+        },
+        %{
+          "face_id" => "SEA050-MV-ALT",
+          "set_code" => "SEA",
+          "art_type" => "extended-art",
+          "layout_position" => 10,
+          "finish_type" => "cold-foil"
+        }
       ]
 
       result = Importer.foil_dedup(faces)
@@ -53,9 +77,27 @@ defmodule Tabletop.Cards.ImporterTest do
 
     test "keeps separate groups across (set, art_type, layout) combinations" do
       faces = [
-        %{"face_id" => "SEA050", "set_code" => "SEA", "art_type" => "regular", "layout_position" => 10, "finish_type" => "regular"},
-        %{"face_id" => "SEA050-MV", "set_code" => "SEA", "art_type" => "extended-art", "layout_position" => 10, "finish_type" => "cold-foil"},
-        %{"face_id" => "GEM046-RF", "set_code" => "GEM", "art_type" => "extended-art", "layout_position" => 10, "finish_type" => "rainbow-foil"}
+        %{
+          "face_id" => "SEA050",
+          "set_code" => "SEA",
+          "art_type" => "regular",
+          "layout_position" => 10,
+          "finish_type" => "regular"
+        },
+        %{
+          "face_id" => "SEA050-MV",
+          "set_code" => "SEA",
+          "art_type" => "extended-art",
+          "layout_position" => 10,
+          "finish_type" => "cold-foil"
+        },
+        %{
+          "face_id" => "GEM046-RF",
+          "set_code" => "GEM",
+          "art_type" => "extended-art",
+          "layout_position" => 10,
+          "finish_type" => "rainbow-foil"
+        }
       ]
 
       result = Importer.foil_dedup(faces)
@@ -65,8 +107,20 @@ defmodule Tabletop.Cards.ImporterTest do
 
     test "keeps a back face (different layout_position) alongside the front" do
       faces = [
-        %{"face_id" => "HNT261-MV", "set_code" => "HNT", "art_type" => "extended-art", "layout_position" => 10, "finish_type" => "cold-foil"},
-        %{"face_id" => "HNT261-MV_BACK", "set_code" => "HNT", "art_type" => "full-art", "layout_position" => 20, "finish_type" => "cold-foil"}
+        %{
+          "face_id" => "HNT261-MV",
+          "set_code" => "HNT",
+          "art_type" => "extended-art",
+          "layout_position" => 10,
+          "finish_type" => "cold-foil"
+        },
+        %{
+          "face_id" => "HNT261-MV_BACK",
+          "set_code" => "HNT",
+          "art_type" => "full-art",
+          "layout_position" => 20,
+          "finish_type" => "cold-foil"
+        }
       ]
 
       result = Importer.foil_dedup(faces)

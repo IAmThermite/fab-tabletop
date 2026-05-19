@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(jq*)",
+      "Bash(mix compile*)",
+      "Bash(mix deps.get*)",
+      "Bash(mix test *)",
+      "Bash(mix run *)",
+      "Bash(mix ecto.migrate)",
+      "Bash(mix format)",
+      "Bash(mix esbuild tabletop)",
+      "Bash(grep *)",
+      "Bash(jq *)",
+      "Bash(git stash)",
+      "Bash(git stash pop)",
+      "WebSearch",
+      "WebFetch(domain:github.com)"
+    ],
+    "ask": [
+      "Bash(fly*)"
+    ]
+  }
+}

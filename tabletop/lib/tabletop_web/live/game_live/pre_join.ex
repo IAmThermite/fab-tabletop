@@ -437,24 +437,25 @@ defmodule TabletopWeb.GameLive.PreJoin do
        |> put_flash(:error, "Please confirm your email address before joining a game.")
        |> redirect(to: ~p"/")}
     else
-      game = Games.get_game!(scope, id)
+      # Unscoped lookup: the user reaching pre-join may not yet be a participant
+      # (they're considering joining); possession of the UUID is the invitation.
+      case Games.fetch_game(id) do
+        {:ok, game} ->
+          mode = if Games.user_part_of_game?(scope, game), do: :creator, else: :joiner
 
-      # If the user already belongs to the game (creator or already-joined opponent),
-      # treat as :creator mode (no reservation needed, just camera confirm).
-      # Only use :joiner mode for users who haven't joined yet.
-      mode =
-        if Games.user_part_of_game?(scope, game) do
-          :creator
-        else
-          :joiner
-        end
+          socket =
+            socket
+            |> mount_pre_join(game, mode, scope)
+            |> assign_share_code_prompt()
 
-      socket =
-        socket
-        |> mount_pre_join(game, mode, scope)
-        |> assign_share_code_prompt()
+          {:ok, socket}
 
-      {:ok, socket}
+        {:error, :not_found} ->
+          {:ok,
+           socket
+           |> put_flash(:error, "Game not found.")
+           |> redirect(to: ~p"/")}
+      end
     end
   end
 

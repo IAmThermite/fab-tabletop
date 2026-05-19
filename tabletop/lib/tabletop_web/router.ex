@@ -20,8 +20,8 @@ defmodule TabletopWeb.Router do
   scope "/", TabletopWeb do
     pipe_through(:browser)
 
-    # get("/", PageController, :home)
     get("/about", PageController, :about)
+    get("/health", PageController, :health)
 
     live_session :phone_camera do
       live "/phone-camera/:token", PhoneCameraLive, :index

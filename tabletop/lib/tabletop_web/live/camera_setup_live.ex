@@ -520,7 +520,7 @@ defmodule TabletopWeb.CameraSetupLive do
     game_id = socket.assigns.game_id
 
     with %{user: %{id: _}} <- scope,
-         game when not is_nil(game) <- safe_get_game(scope, game_id) do
+         {:ok, game} <- fetch_game_for_setup(scope, game_id) do
       if Games.user_part_of_game?(scope, game) do
         {:noreply, push_navigate(socket, to: ~p"/games/#{game}")}
       else
@@ -635,13 +635,8 @@ defmodule TabletopWeb.CameraSetupLive do
 
   defp my(socket), do: socket.assigns.game_state.my
 
-  defp safe_get_game(_scope, nil), do: nil
-
-  defp safe_get_game(scope, id) do
-    Games.get_game!(scope, id)
-  rescue
-    Ecto.NoResultsError -> nil
-  end
+  defp fetch_game_for_setup(_scope, nil), do: {:error, :not_found}
+  defp fetch_game_for_setup(scope, id), do: Games.get_game(scope, id)
 
   defp apply_action(socket, {:ok, new_player, _broadcast_msg}) do
     {:noreply, assign(socket, :game_state, %{socket.assigns.game_state | my: new_player})}

@@ -1,4 +1,6 @@
 defmodule TabletopWeb.GameLive.Show do
+  require Logger
+
   use TabletopWeb, :live_view
   use TabletopWeb.CardLookup
 
@@ -11,6 +13,9 @@ defmodule TabletopWeb.GameLive.Show do
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     scope = socket.assigns.current_scope
+    # get_game!/2 is participant-scoped — raises Ecto.NoResultsError (→ 404)
+    # for non-participants or unknown ids, so we never assign metadata for a
+    # game the user isn't in.
     game = Games.get_game!(scope, id)
 
     user_id = scope.user.id
@@ -18,50 +23,40 @@ defmodule TabletopWeb.GameLive.Show do
     if connected?(socket) do
       Games.subscribe_games(scope)
       Phoenix.PubSub.subscribe(Tabletop.PubSub, "game_session:#{game.id}")
+      LeaveTimer.cancel_leave(game.id, user_id)
+      LeaveTimer.track_connection(game.id, user_id)
+      Games.rejoin_game(scope, game)
+      GameSession.ensure_started(game)
     end
 
-    if Games.user_part_of_game?(scope, game) do
-      if connected?(socket) do
-        LeaveTimer.cancel_leave(game.id, user_id)
-        LeaveTimer.track_connection(game.id, user_id)
-        Games.rejoin_game(scope, game)
-        GameSession.ensure_started(game)
-      end
+    session_state =
+      if connected?(socket), do: GameSession.get_state(game.id), else: empty_state()
 
-      session_state =
-        if connected?(socket), do: GameSession.get_state(game.id), else: empty_state()
+    user_token = Phoenix.Token.sign(socket, "user socket", user_id)
+    camera_relay_token = Phoenix.Token.sign(socket, "camera relay", user_id)
 
-      user_token = Phoenix.Token.sign(socket, "user socket", user_id)
-      camera_relay_token = Phoenix.Token.sign(socket, "camera relay", user_id)
+    qr_url = "#{TabletopWeb.Endpoint.url()}/phone-camera/#{camera_relay_token}"
+    qr_svg = qr_url |> EQRCode.encode() |> EQRCode.svg(width: 200)
 
-      qr_url = "#{TabletopWeb.Endpoint.url()}/phone-camera/#{camera_relay_token}"
-      qr_svg = qr_url |> EQRCode.encode() |> EQRCode.svg(width: 200)
-
-      {:ok,
-       socket
-       |> assign(:page_title, game.title)
-       |> assign(:game, game)
-       |> assign(:user_token, user_token)
-       |> assign(:user_id, user_id)
-       |> assign(:user1_id, game.user_id)
-       |> assign(:user2_id, game.user2_id)
-       |> assign(:camera_relay_token, camera_relay_token)
-       |> assign(:qr_svg, qr_svg)
-       |> assign(:peer_connected, false)
-       |> assign_session_state(session_state)
-       |> assign(:abilities_open, false)
-       |> assign(:on_hits_open, false)
-       |> assign(:create_token_open, false)
-       |> assign(:create_proxy_token_open, false)
-       |> assign(:proxy_tokens_expanded, false)
-       |> assign(:preview_open, false)
-       |> assign(:open_cards, [])}
-    else
-      {:ok,
-       socket
-       |> put_flash(:error, "You are not a participant in this game.")
-       |> push_navigate(to: ~p"/")}
-    end
+    {:ok,
+     socket
+     |> assign(:page_title, game.title)
+     |> assign(:game, game)
+     |> assign(:user_token, user_token)
+     |> assign(:user_id, user_id)
+     |> assign(:user1_id, game.user_id)
+     |> assign(:user2_id, game.user2_id)
+     |> assign(:camera_relay_token, camera_relay_token)
+     |> assign(:qr_svg, qr_svg)
+     |> assign(:peer_connected, false)
+     |> assign_session_state(session_state)
+     |> assign(:abilities_open, false)
+     |> assign(:on_hits_open, false)
+     |> assign(:create_token_open, false)
+     |> assign(:create_proxy_token_open, false)
+     |> assign(:proxy_tokens_expanded, false)
+     |> assign(:preview_open, false)
+     |> assign(:open_cards, [])}
   end
 
   # --- User events ---
@@ -233,8 +228,11 @@ defmodule TabletopWeb.GameLive.Show do
         {:noreply, socket}
 
       {:error, reason} ->
-        IO.inspect(reason, label: "Action error")
-        {:noreply, socket}
+        Logger.warning("Action error: #{inspect(reason)}")
+
+        {:noreply,
+         socket
+         |> put_flash(:error, "Action error: #{inspect(reason)}")}
     end
   end
 

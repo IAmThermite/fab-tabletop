@@ -1,6 +1,8 @@
 defmodule TabletopWeb.CameraRelayChannel do
   use Phoenix.Channel
 
+  require Logger
+
   @impl true
   def join("camera_relay:" <> relay_user_id, _payload, socket) do
     # The relay topic is keyed by user_id, which is stable across page mounts.
@@ -44,6 +46,14 @@ defmodule TabletopWeb.CameraRelayChannel do
 
   def handle_in("ice_candidate", %{"candidate" => candidate}, socket) do
     broadcast_from!(socket, "ice_candidate", %{candidate: candidate})
+    {:noreply, socket}
+  end
+
+  def handle_in(event, _payload, socket) do
+    Logger.warning(
+      "CameraRelayChannel: ignoring unexpected event #{inspect(event)} on #{socket.topic}"
+    )
+
     {:noreply, socket}
   end
 

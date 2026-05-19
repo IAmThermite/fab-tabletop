@@ -104,9 +104,12 @@ defmodule Tabletop.Games do
   end
 
   @doc """
-  Gets a single game.
+  Gets a single game the scoped user is a participant in (creator or opponent).
 
-  Raises `Ecto.NoResultsError` if the Game does not exist.
+  Raises `Ecto.NoResultsError` if the game does not exist OR if the scoped user
+  is not a participant. Authorization is intentionally folded into the lookup so
+  callers cannot accidentally leak metadata about games the user doesn't belong
+  to (see `fetch_game/1` for the unscoped variant used by the pre-join flow).
 
   ## Examples
 
@@ -117,8 +120,47 @@ defmodule Tabletop.Games do
       ** (Ecto.NoResultsError)
 
   """
-  def get_game!(%Scope{} = _scope, id) do
-    Repo.get_by!(Game, id: id) |> Repo.preload([:user, :user2])
+  def get_game!(%Scope{} = scope, id) do
+    case get_game(scope, id) do
+      {:ok, game} -> game
+      {:error, :not_found} -> raise Ecto.NoResultsError, queryable: Game
+    end
+  end
+
+  @doc """
+  Gets a single game the scoped user is a participant in.
+
+  Returns `{:ok, %Game{}}` or `{:error, :not_found}`. Same authorization rules
+  as `get_game!/2`.
+  """
+  def get_game(%Scope{} = scope, id) do
+    case Repo.get(Game, id) do
+      nil ->
+        {:error, :not_found}
+
+      %Game{} = game ->
+        game = Repo.preload(game, [:user, :user2])
+
+        if user_part_of_game?(scope, game) do
+          {:ok, game}
+        else
+          {:error, :not_found}
+        end
+    end
+  end
+
+  @doc """
+  Fetches a game by id without any participant scoping. Used by the pre-join
+  flow where the requesting user is not yet a participant but has been given
+  the game's UUID as the invitation token.
+
+  Returns `{:ok, %Game{}}` or `{:error, :not_found}`.
+  """
+  def fetch_game(id) do
+    case Repo.get(Game, id) do
+      nil -> {:error, :not_found}
+      %Game{} = game -> {:ok, Repo.preload(game, [:user, :user2])}
+    end
   end
 
   @doc """

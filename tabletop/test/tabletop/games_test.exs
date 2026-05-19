@@ -29,6 +29,40 @@ defmodule Tabletop.GamesTest do
       assert fetched.user.id == scope.user.id
     end
 
+    test "get_game!/2 raises when the scoped user is not a participant" do
+      owner_scope = user_scope_fixture()
+      outsider_scope = user_scope_fixture()
+      game = game_fixture(owner_scope)
+
+      assert_raise Ecto.NoResultsError, fn ->
+        Games.get_game!(outsider_scope, game.id)
+      end
+    end
+
+    test "get_game/2 returns :not_found when the scoped user is not a participant" do
+      owner_scope = user_scope_fixture()
+      outsider_scope = user_scope_fixture()
+      game = game_fixture(owner_scope)
+
+      assert {:error, :not_found} = Games.get_game(outsider_scope, game.id)
+    end
+
+    test "get_game/2 returns {:ok, game} when the scoped user is a participant" do
+      scope = user_scope_fixture()
+      game = game_fixture(scope)
+
+      assert {:ok, fetched} = Games.get_game(scope, game.id)
+      assert fetched.id == game.id
+    end
+
+    test "fetch_game/1 returns the game regardless of participation" do
+      owner_scope = user_scope_fixture()
+      game = game_fixture(owner_scope)
+
+      assert {:ok, fetched} = Games.fetch_game(game.id)
+      assert fetched.id == game.id
+    end
+
     test "create_game/2 with valid data creates a game" do
       valid_attrs = %{title: "some title"}
       scope = user_scope_fixture()

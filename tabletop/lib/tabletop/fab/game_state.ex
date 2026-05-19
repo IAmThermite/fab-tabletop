@@ -11,7 +11,6 @@ defmodule Tabletop.Fab.GameState do
   alias Tabletop.Fab.Effects
 
   @valid_damage_types [:physical, :arcane]
-  @min_damage 0
 
   @default_player %{
     life: 40,
@@ -53,7 +52,7 @@ defmodule Tabletop.Fab.GameState do
   def toggle_damage(_, _), do: {:error, :invalid_damage_type}
 
   def change_damage(player, type, delta) when type in @valid_damage_types do
-    new_val = max(@min_damage, player[type].damage + delta)
+    new_val = max(0, player[type].damage + delta)
     new_player = put_in(player, [type, :damage], new_val)
     {:ok, new_player, {:damage_changed, type, new_val}}
   end

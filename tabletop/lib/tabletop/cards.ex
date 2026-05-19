@@ -297,7 +297,7 @@ defmodule Tabletop.Cards do
   def fuzzy_match_name(ocr_text) do
     normalized = OcrNormalizer.normalize(ocr_text)
 
-    if String.length(normalized) < 3 do
+    if String.length(normalized) < 3 || String.length(normalized) > 100 do
       []
     else
       fuzzy_match_normalized(normalized, OcrNormalizer.tokens(ocr_text))

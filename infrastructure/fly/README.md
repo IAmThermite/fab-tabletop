@@ -37,8 +37,11 @@ fly launch --config infrastructure/fly/fly.toml --no-deploy
 fly secrets set \
   DATABASE_URL="ecto://fabtabletop:<your-secure-password>@fabtabletop-db.internal:5432/fabtabletop" \
   SECRET_KEY_BASE=$(openssl rand -base64 64 | tr -d '\n')
+```
 
-# Deploy
+To deploy:
+
+```bash
 fly deploy --config infrastructure/fly/fly.toml
 ```
 
@@ -94,10 +97,3 @@ fly ssh console --app fabtabletop-db -C "pg_dump -U fabtabletop fabtabletop" > b
 - **DATABASE_URL**: Set via `fly secrets set`, uses Fly private DNS (`.internal`, IPv6)
 - **ECTO_IPV6**: Set in fly.toml — required because `.internal` DNS resolves to IPv6
 - **SECRET_KEY_BASE**: Set via `fly secrets set`
-
-## Cost
-
-Both apps run on the free VM allowance:
-- Web app: shared-cpu-1x, 256MB (scales to zero when idle)
-- Postgres: shared-cpu-1x, 256MB, 1GB volume (always on)
-- Automatic TLS certificates included

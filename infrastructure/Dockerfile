@@ -30,6 +30,7 @@ RUN mix deps.compile
 COPY tabletop/priv priv
 COPY tabletop/lib lib
 COPY tabletop/assets assets
+COPY tabletop/rel rel
 
 # Copy runtime config and compile (must happen before assets.deploy
 # so Phoenix generates colocated JS into _build/prod/phoenix-colocated/)

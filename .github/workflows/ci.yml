@@ -45,6 +45,13 @@ jobs:
           elixir-version: "1.19.5"
           otp-version: "28.3.1"
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.11.1"
+          cache: "npm"
+          cache-dependency-path: tabletop/assets/package-lock.json
+
       - name: Cache deps
         uses: actions/cache@v4
         with:
@@ -62,6 +69,9 @@ jobs:
 
       - name: Run tests
         run: mix test
+
+      - name: Run asset tests
+        run: mix test.assets
 
   lint:
     name: Lint

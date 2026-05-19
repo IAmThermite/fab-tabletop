@@ -97,3 +97,7 @@ Two non-obvious bits worth knowing before changing it:
 - Don't move ephemeral game state into Ecto — sessions are intentionally in-memory; persistence is limited to `Game` metadata.
 - When adding a new `GameSession` action, both `dispatch/2` (in `game_session.ex`) and the corresponding `GameState` transform must be added; broadcasts go out automatically via `broadcast_update/4`.
 - Don't add any Elixir `@spec` documentation, but be sure to document other functions where necessary.
+
+# Important instructions
+
+- If you discover a pre existing issue to anything, please fix it and make note of it, do not ignore and pass it off as a comment.

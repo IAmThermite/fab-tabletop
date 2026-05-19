@@ -49,8 +49,18 @@ defmodule TabletopWeb.CameraRelayChannel do
 
   @impl true
   def terminate(_reason, socket) do
-    :pg.leave(:game_channels, relay_group(socket.assigns.relay_user_id), self())
-    broadcast_from!(socket, "peer_left", %{})
+    # terminate/2 is still invoked when join/3 returns {:error, _}, so the
+    # relay assigns may never have been set. Only clean up if we actually
+    # joined the relay group.
+    case socket.assigns do
+      %{relay_user_id: relay_user_id} ->
+        :pg.leave(:game_channels, relay_group(relay_user_id), self())
+        broadcast_from!(socket, "peer_left", %{})
+
+      _ ->
+        :ok
+    end
+
     :ok
   end
 

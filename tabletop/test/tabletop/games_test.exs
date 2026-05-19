@@ -171,6 +171,27 @@ defmodule Tabletop.GamesTest do
       assert {:error, :already_in_game} = Games.reserve_join(scope2, target)
     end
 
+    test "reserve_join/2 is idempotent for the same user (LiveView dead+live mount)" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      target = game_fixture(scope1)
+
+      assert {:ok, game1} = Games.reserve_join(scope2, target)
+      assert game1.joining_user_id == scope2.user.id
+      assert {:ok, game2} = Games.reserve_join(scope2, target)
+      assert game2.joining_user_id == scope2.user.id
+    end
+
+    test "reserve_join/2 refuses when a different user already holds an unexpired reservation" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      scope3 = user_scope_fixture()
+      target = game_fixture(scope1)
+
+      assert {:ok, _} = Games.reserve_join(scope2, target)
+      assert {:error, :unavailable} = Games.reserve_join(scope3, target)
+    end
+
     test "DB-level partial unique index blocks duplicate active games for user1" do
       scope = user_scope_fixture()
       _game = game_fixture(scope)

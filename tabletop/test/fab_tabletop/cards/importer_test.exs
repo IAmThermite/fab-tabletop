@@ -248,7 +248,12 @@ defmodule Tabletop.Cards.ImporterTest do
       )
 
       card_prints = Tabletop.Repo.all(CardPrint) |> Repo.preload(:card)
-      scar_cards = Enum.filter(card_prints, &(&1.card.name == "Scar for a Scar")) |> Enum.map(& &1.card) |> Enum.uniq()
+
+      scar_cards =
+        Enum.filter(card_prints, &(&1.card.name == "Scar for a Scar"))
+        |> Enum.map(& &1.card)
+        |> Enum.uniq()
+
       assert length(scar_cards) == 3
 
       pitches = scar_cards |> Enum.map(& &1.pitch) |> Enum.sort()

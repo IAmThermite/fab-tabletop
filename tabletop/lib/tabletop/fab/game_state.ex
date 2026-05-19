@@ -22,10 +22,20 @@ defmodule Tabletop.Fab.GameState do
     effect_counts: %{},
     proxy_tokens: %{},
     tile_positions: %{},
-    tile_order: []
+    tile_order: [],
+    mic: true,
+    camera: true
   }
 
   def default_player, do: @default_player
+
+  @valid_media_kinds [:mic, :camera]
+
+  def set_media(player, kind, value) when kind in @valid_media_kinds and is_boolean(value) do
+    {:ok, Map.put(player, kind, value), {:media_changed, kind, value}}
+  end
+
+  def set_media(_, _, _), do: {:error, :invalid_media}
 
   def toggle_damage(player, type) when type in @valid_damage_types do
     new_val = !player[type].active
@@ -198,7 +208,7 @@ defmodule Tabletop.Fab.GameState do
   defp tile_group(_), do: nil
 
   def change_life(player, delta) do
-    new_life = player.life + delta
+    new_life = max(0, player.life + delta)
     {:ok, %{player | life: new_life}, {:life_changed, new_life}}
   end
 

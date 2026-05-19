@@ -6,6 +6,8 @@
     data-user-token={@user_token}
     data-camera-relay-token={@camera_relay_token}
     data-relay-user-id={@user_id}
+    data-mic-enabled={to_string(@game_state.my.mic)}
+    data-camera-enabled={to_string(@game_state.my.camera)}
     class="flex flex-col h-full"
   >
     <%!-- Top bar --%>
@@ -23,25 +25,27 @@
       <button
         id="toggle-camera"
         type="button"
-        class="btn btn-circle btn-sm"
+        class={["btn btn-circle btn-sm", not @game_state.my.camera && "btn-error"]}
         title="Toggle camera"
       >
-        <span class="icon-on"><.icon name="hero-video-camera" class="size-5" /></span>
-        <span class="icon-off hidden">
+        <%= if @game_state.my.camera do %>
+          <.icon name="hero-video-camera" class="size-5" />
+        <% else %>
           <.icon name="hero-video-camera-slash" class="size-5" />
-        </span>
+        <% end %>
       </button>
 
       <button
         id="toggle-mic"
         type="button"
-        class="btn btn-circle btn-sm"
+        class={["btn btn-circle btn-sm", not @game_state.my.mic && "btn-error"]}
         title="Toggle microphone"
       >
-        <span class="icon-on"><.icon name="hero-microphone" class="size-5" /></span>
-        <span class="icon-off hidden">
+        <%= if @game_state.my.mic do %>
+          <.icon name="hero-microphone" class="size-5" />
+        <% else %>
           <.icon name="hero-microphone" class="size-5 opacity-50" />
-        </span>
+        <% end %>
       </button>
 
       <div class="flex-1 text-center font-semibold truncate">
@@ -106,20 +110,22 @@
 
         <%!-- Remote peer media status --%>
         <div
+          :if={
+            @peer_connected and (not @game_state.opponent.camera or not @game_state.opponent.mic)
+          }
           id="remote-media-status"
-          phx-update="ignore"
-          class="absolute top-2 right-2 flex gap-1 hidden"
+          class="absolute top-2 right-2 flex gap-1"
         >
           <div
-            id="remote-camera-off"
-            class="badge badge-error gap-1 hidden"
+            :if={not @game_state.opponent.camera}
+            class="badge badge-error gap-1"
             title="Opponent's camera is off"
           >
             <.icon name="hero-video-camera-slash" class="size-3" /> Camera off
           </div>
           <div
-            id="remote-mic-off"
-            class="badge badge-error gap-1 hidden"
+            :if={not @game_state.opponent.mic}
+            class="badge badge-error gap-1"
             title="Opponent is muted"
           >
             <.icon name="hero-microphone" class="size-3 opacity-50" /> Muted
@@ -181,13 +187,6 @@
         const remoteVideoEl = document.getElementById("remote-video")
         const canvasEl = document.getElementById("remote-canvas")
         const statusEl = document.getElementById("connection-status")
-        const toggleCameraBtn = document.getElementById("toggle-camera")
-        const toggleMicBtn = document.getElementById("toggle-mic")
-
-        const remoteStatusEl = document.getElementById("remote-media-status")
-        const remoteCameraOff = document.getElementById("remote-camera-off")
-        const remoteMicOff = document.getElementById("remote-mic-off")
-
         const settingsBtn = document.getElementById("settings-btn")
         const settingsDialog = document.getElementById("settings-dialog")
         const flipToggle = document.getElementById("flip-opponent-toggle")
@@ -252,20 +251,14 @@
         }
         this._localPreviewFrameId = requestAnimationFrame(renderLocalPreview)
 
-        const updateButtonIcons = (btn, enabled) => {
-          const on = btn.querySelector(".icon-on")
-          const off = btn.querySelector(".icon-off")
-          if (on) on.classList.toggle("hidden", !enabled)
-          if (off) off.classList.toggle("hidden", enabled)
-          btn.classList.toggle("btn-error", !enabled)
-        }
-
         this.webrtc = new WebRTCManager({
           token,
           gameId,
           localVideoEl,
           remoteVideoEl,
           canvasEl,
+          micEnabled: this.el.dataset.micEnabled === "true",
+          cameraEnabled: this.el.dataset.cameraEnabled === "true",
           onStatusChange: (status) => {
             const labels = {
               connecting: "Connecting...",
@@ -290,29 +283,29 @@
               preloadTesseract()
             } else if (status === "waiting" || status === "disconnected") {
               this.pushEvent("peer_disconnected", {})
-              remoteStatusEl.classList.add("hidden")
             }
-          },
-          onRemoteMediaStatus: ({ camera, mic }) => {
-            const anyOff = !camera || !mic
-            remoteStatusEl.classList.toggle("hidden", !anyOff)
-            remoteCameraOff.classList.toggle("hidden", camera)
-            remoteMicOff.classList.toggle("hidden", mic)
           },
         })
 
         this.webrtc.start()
 
+        // Toggle handlers: flip the local track immediately for zero-latency
+        // feedback, then persist the new state through the LiveView. The
+        // server is authoritative for the button visuals — it re-renders the
+        // template with the matching classes — so no JS class manipulation
+        // is needed here.
         this.el.addEventListener("click", (e) => {
           const btn = e.target.closest("#toggle-camera, #toggle-mic")
           if (!btn) return
 
           if (btn.id === "toggle-camera") {
-            const enabled = this.webrtc.toggleCamera()
-            updateButtonIcons(btn, enabled)
+            const newVal = !this.webrtc.cameraEnabled
+            this.webrtc.setCameraEnabled(newVal)
+            this.pushEvent("set_media", { kind: "camera", value: newVal })
           } else if (btn.id === "toggle-mic") {
-            const enabled = this.webrtc.toggleMic()
-            updateButtonIcons(btn, enabled)
+            const newVal = !this.webrtc.micEnabled
+            this.webrtc.setMicEnabled(newVal)
+            this.pushEvent("set_media", { kind: "mic", value: newVal })
           }
         })
 
@@ -476,6 +469,16 @@
         const canvasEl = document.getElementById("remote-canvas")
         const flipped = localStorage.getItem("tabletop:flip-opponent") === "true"
         canvasEl.style.transform = flipped ? "rotate(180deg)" : ""
+
+        // Keep the local tracks aligned with the server-authoritative state.
+        // Normally these are the same — the click handler updates both — but
+        // if the server state diverges (e.g. session_reset), follow the server.
+        if (this.webrtc) {
+          const serverMic = this.el.dataset.micEnabled === "true"
+          const serverCam = this.el.dataset.cameraEnabled === "true"
+          if (serverMic !== this.webrtc.micEnabled) this.webrtc.setMicEnabled(serverMic)
+          if (serverCam !== this.webrtc.cameraEnabled) this.webrtc.setCameraEnabled(serverCam)
+        }
       },
 
       destroyed() {

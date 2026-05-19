@@ -188,11 +188,11 @@ defmodule Tabletop.Fab.GameStateTest do
       assert new_player.life == 39
     end
 
-    test "allows life to go negative" do
-      assert {:ok, new_player, {:life_changed, -10}} =
+    test "does not allow life to go negative" do
+      assert {:ok, new_player, {:life_changed, 0}} =
                GameState.change_life(GameState.default_player(), -50)
 
-      assert new_player.life == -10
+      assert new_player.life == 0
     end
   end
 
@@ -224,6 +224,40 @@ defmodule Tabletop.Fab.GameStateTest do
       assert new_player.goagain == false
       assert new_player.effects == %{}
       assert new_player.tile_positions == %{}
+    end
+  end
+
+  describe "set_media/3" do
+    test "defaults mic and camera to enabled" do
+      player = GameState.default_player()
+      assert player.mic == true
+      assert player.camera == true
+    end
+
+    test "sets the mic flag and returns a media_changed delta" do
+      assert {:ok, new_player, {:media_changed, :mic, false}} =
+               GameState.set_media(GameState.default_player(), :mic, false)
+
+      assert new_player.mic == false
+      assert new_player.camera == true
+    end
+
+    test "sets the camera flag and returns a media_changed delta" do
+      assert {:ok, new_player, {:media_changed, :camera, false}} =
+               GameState.set_media(GameState.default_player(), :camera, false)
+
+      assert new_player.camera == false
+      assert new_player.mic == true
+    end
+
+    test "rejects unknown kinds" do
+      assert {:error, :invalid_media} =
+               GameState.set_media(GameState.default_player(), :speaker, true)
+    end
+
+    test "rejects non-boolean values" do
+      assert {:error, :invalid_media} =
+               GameState.set_media(GameState.default_player(), :mic, "true")
     end
   end
 end

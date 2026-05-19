@@ -252,7 +252,9 @@ defmodule Tabletop.Games do
       where: g.status == :waiting,
       where: is_nil(g.user2_id),
       where: g.user_id != ^user_id,
-      where: is_nil(g.joining_user_id) or g.joining_expires_at < ^now
+      where:
+        is_nil(g.joining_user_id) or g.joining_expires_at < ^now or
+          g.joining_user_id == ^user_id
     )
     |> Repo.update_all(set: [joining_user_id: user_id, joining_expires_at: expires])
     |> case do

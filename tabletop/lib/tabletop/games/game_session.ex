@@ -144,6 +144,10 @@ defmodule Tabletop.Games.GameSession do
 
   defp dispatch({:change_life, delta}, player), do: GameState.change_life(player, delta)
   defp dispatch({:reset_chain}, player), do: GameState.reset_chain(player)
+
+  defp dispatch({:set_media, kind, value}, player),
+    do: GameState.set_media(player, kind, value)
+
   defp dispatch(_, _), do: {:error, :unknown_action}
 
   defp broadcast_update(game_id, target_side, delta, actor_user_id) do

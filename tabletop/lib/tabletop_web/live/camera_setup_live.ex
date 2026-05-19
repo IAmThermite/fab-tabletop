@@ -3,6 +3,7 @@ defmodule TabletopWeb.CameraSetupLive do
   use TabletopWeb.CardLookup
 
   alias Tabletop.Fab.GameState
+  alias Tabletop.Games
 
   @impl true
   def render(assigns) do
@@ -379,8 +380,18 @@ defmodule TabletopWeb.CameraSetupLive do
             localStorage.setItem("tabletop:camera-rotation", rotationSlider.value)
             localStorage.setItem("tabletop:camera-setup-done", "true")
 
-            const redirect = el.dataset.redirect
-            window.location.href = redirect || "/"
+            const gameId = el.dataset.gameId
+            if (gameId) {
+              // When invoked from a game's pre-join flow, jump straight into
+              // the game (joining if needed) instead of bouncing back through
+              // pre-join.
+              localStorage.setItem(`tabletop:camera-confirmed:${gameId}`, "true")
+              localStorage.setItem("tabletop:camera-source", this._usingPhone ? "phone" : "webcam")
+              this.pushEvent("save_and_join", {})
+            } else {
+              const redirect = el.dataset.redirect
+              window.location.href = redirect || "/"
+            }
           })
 
           start()
@@ -504,6 +515,43 @@ defmodule TabletopWeb.CameraSetupLive do
   end
 
   @impl true
+  def handle_event("save_and_join", _params, socket) do
+    scope = socket.assigns.current_scope
+    game_id = socket.assigns.game_id
+
+    with %{user: %{id: _}} <- scope,
+         game when not is_nil(game) <- safe_get_game(scope, game_id) do
+      if Games.user_part_of_game?(scope, game) do
+        {:noreply, push_navigate(socket, to: ~p"/games/#{game}")}
+      else
+        case Games.join_game(scope, game) do
+          {:ok, game} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Joined game successfully")
+             |> push_navigate(to: ~p"/games/#{game}")}
+
+          {:error, :already_in_game} ->
+            {:noreply,
+             socket
+             |> put_flash(
+               :error,
+               "You're already in a game. Finish or leave it before joining another."
+             )
+             |> push_navigate(to: ~p"/")}
+
+          {:error, _reason} ->
+            {:noreply,
+             socket
+             |> put_flash(:error, "Unable to join game. It may no longer be available.")
+             |> push_navigate(to: ~p"/")}
+        end
+      end
+    else
+      _ -> {:noreply, push_navigate(socket, to: ~p"/")}
+    end
+  end
+
   def handle_event("toggle_damage", %{"type" => type}, socket) do
     apply_action(socket, GameState.toggle_damage(my(socket), validate_damage_type(type)))
   end
@@ -586,6 +634,14 @@ defmodule TabletopWeb.CameraSetupLive do
   end
 
   defp my(socket), do: socket.assigns.game_state.my
+
+  defp safe_get_game(_scope, nil), do: nil
+
+  defp safe_get_game(scope, id) do
+    Games.get_game!(scope, id)
+  rescue
+    Ecto.NoResultsError -> nil
+  end
 
   defp apply_action(socket, {:ok, new_player, _broadcast_msg}) do
     {:noreply, assign(socket, :game_state, %{socket.assigns.game_state | my: new_player})}

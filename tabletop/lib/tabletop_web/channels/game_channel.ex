@@ -64,11 +64,6 @@ defmodule TabletopWeb.GameChannel do
     {:noreply, socket}
   end
 
-  def handle_in("media_status", %{"camera" => camera, "mic" => mic}, socket) do
-    broadcast_from!(socket, "media_status", %{camera: camera, mic: mic})
-    {:noreply, socket}
-  end
-
   @impl true
   def terminate(_reason, socket) do
     :pg.leave(:game_channels, game_group(socket.assigns.game_id), self())

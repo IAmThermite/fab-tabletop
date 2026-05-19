@@ -23,6 +23,7 @@ defmodule TabletopWeb.GameLive.Show do
     if Games.user_part_of_game?(scope, game) do
       if connected?(socket) do
         LeaveTimer.cancel_leave(game.id, user_id)
+        LeaveTimer.track_connection(game.id, user_id)
         Games.rejoin_game(scope, game)
         GameSession.ensure_started(game)
       end
@@ -160,6 +161,11 @@ defmodule TabletopWeb.GameLive.Show do
 
   def handle_event("toggle_preview", _params, socket) do
     {:noreply, assign(socket, :preview_open, !socket.assigns.preview_open)}
+  end
+
+  def handle_event("set_media", %{"kind" => kind, "value" => value}, socket)
+      when kind in ["mic", "camera"] and is_boolean(value) do
+    dispatch(socket, {:set_media, String.to_existing_atom(kind), value})
   end
 
   def handle_event("leave_game", _params, socket) do

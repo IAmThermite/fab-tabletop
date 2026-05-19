@@ -268,31 +268,46 @@ export default class WebRTCManager {
   }
 
   async _createOffer() {
-    console.log("[WebRTC] Creating offer (peer joined)")
-    this._createPeerConnection()
+    try {
+      console.log("[WebRTC] Creating offer (peer joined)")
+      this._createPeerConnection()
 
-    const offer = await this.peerConnection.createOffer()
-    await this.peerConnection.setLocalDescription(offer)
+      const offer = await this.peerConnection.createOffer()
+      await this.peerConnection.setLocalDescription(offer)
 
-    this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+      this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+    } catch (err) {
+      console.error("[WebRTC] Error creating offer:", err)
+      this._setStatus("error")
+    }
   }
 
   async _handleOffer({ sdp }) {
-    console.log("[WebRTC] Received offer, creating answer")
-    this._createPeerConnection()
+    try {
+      console.log("[WebRTC] Received offer, creating answer")
+      this._createPeerConnection()
 
-    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
+      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
 
-    const answer = await this.peerConnection.createAnswer()
-    await this.peerConnection.setLocalDescription(answer)
+      const answer = await this.peerConnection.createAnswer()
+      await this.peerConnection.setLocalDescription(answer)
 
-    this.channel.push("answer", { sdp: this.peerConnection.localDescription })
+      this.channel.push("answer", { sdp: this.peerConnection.localDescription })
+    } catch (err) {
+      console.error("[WebRTC] Error handling offer:", err)
+      this._setStatus("error")
+    }
   }
 
   async _handleAnswer({ sdp }) {
-    console.log("[WebRTC] Received answer")
-    if (this.peerConnection) {
-      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
+    try {
+      console.log("[WebRTC] Received answer")
+      if (this.peerConnection) {
+        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
+      }
+    } catch (err) {
+      console.error("[WebRTC] Error handling answer:", err)
+      this._setStatus("error")
     }
   }
 

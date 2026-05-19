@@ -149,32 +149,47 @@ export default class PhoneCameraRelay {
   }
 
   async _createOffer() {
-    console.log("[PhoneRelay] Creating offer")
-    this._createPeerConnection()
+    try {
+      console.log("[PhoneRelay] Creating offer")
+      this._createPeerConnection()
 
-    const offer = await this.peerConnection.createOffer()
-    await this.peerConnection.setLocalDescription(offer)
-    this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+      const offer = await this.peerConnection.createOffer()
+      await this.peerConnection.setLocalDescription(offer)
+      this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+    } catch (err) {
+      console.error("[PhoneRelay] Error creating offer:", err)
+      this._setStatus("error")
+    }
   }
 
   async _handleOffer({ sdp }) {
-    console.log("[PhoneRelay] Received offer, creating answer")
-    this._createPeerConnection()
+    try {
+      console.log("[PhoneRelay] Received offer, creating answer")
+      this._createPeerConnection()
 
-    await this.peerConnection.setRemoteDescription(
-      new RTCSessionDescription(sdp)
-    )
-    const answer = await this.peerConnection.createAnswer()
-    await this.peerConnection.setLocalDescription(answer)
-    this.channel.push("answer", { sdp: this.peerConnection.localDescription })
-  }
-
-  async _handleAnswer({ sdp }) {
-    console.log("[PhoneRelay] Received answer")
-    if (this.peerConnection) {
       await this.peerConnection.setRemoteDescription(
         new RTCSessionDescription(sdp)
       )
+      const answer = await this.peerConnection.createAnswer()
+      await this.peerConnection.setLocalDescription(answer)
+      this.channel.push("answer", { sdp: this.peerConnection.localDescription })
+    } catch (err) {
+      console.error("[PhoneRelay] Error handling offer:", err)
+      this._setStatus("error")
+    }
+  }
+
+  async _handleAnswer({ sdp }) {
+    try {
+      console.log("[PhoneRelay] Received answer")
+      if (this.peerConnection) {
+        await this.peerConnection.setRemoteDescription(
+          new RTCSessionDescription(sdp)
+        )
+      }
+    } catch (err) {
+      console.error("[PhoneRelay] Error handling answer:", err)
+      this._setStatus("error")
     }
   }
 

@@ -274,6 +274,11 @@ defmodule TabletopWeb.GameLive.Show do
   @impl true
   def terminate(_reason, socket) do
     if game = socket.assigns[:game] do
+      # Phoenix would clean these up on process exit anyway, but being explicit
+      # makes the subscription lifecycle obvious.
+      Phoenix.PubSub.unsubscribe(Tabletop.PubSub, "game_session:#{game.id}")
+      Phoenix.PubSub.unsubscribe(Tabletop.PubSub, "games")
+
       if scope = socket.assigns[:current_scope] do
         user_id = scope.user.id
         LeaveTimer.schedule_leave(game.id, user_id, scope)

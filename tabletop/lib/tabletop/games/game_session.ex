@@ -43,7 +43,7 @@ defmodule Tabletop.Games.GameSession do
   end
 
   def set_user2(game_id, user2_id) do
-    GenServer.cast(via(game_id), {:set_user2, user2_id})
+    GenServer.call(via(game_id), {:set_user2, user2_id})
   end
 
   def stop(game_id) do
@@ -98,9 +98,8 @@ defmodule Tabletop.Games.GameSession do
     end
   end
 
-  @impl true
-  def handle_cast({:set_user2, user2_id}, state) do
-    {:noreply, %{state | user2_id: user2_id}}
+  def handle_call({:set_user2, user2_id}, _from, state) do
+    {:reply, :ok, %{state | user2_id: user2_id}}
   end
 
   defp snapshot(state), do: %{user1: state.user1, user2: state.user2}

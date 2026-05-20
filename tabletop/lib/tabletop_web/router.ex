@@ -10,6 +10,7 @@ defmodule TabletopWeb.Router do
     plug(:put_root_layout, html: {TabletopWeb.Layouts, :root})
     plug(:protect_from_forgery)
     plug(:put_secure_browser_headers)
+    plug(TabletopWeb.Plugs.SecurityHeaders)
     plug(:fetch_current_scope_for_user)
   end
 

@@ -4,6 +4,7 @@
     phx-hook=".GameVideo"
     data-game-id={@game.id}
     data-user-token={@user_token}
+    data-ice-servers={Jason.encode!(@ice_servers)}
     data-camera-relay-token={@camera_relay_token}
     data-relay-user-id={@user_id}
     data-mic-enabled={to_string(@game_state.my.mic)}
@@ -175,6 +176,7 @@
       mounted() {
         const gameId = this.el.dataset.gameId
         const token = this.el.dataset.userToken
+        const iceServers = JSON.parse(this.el.dataset.iceServers)
 
         // Redirect to pre-join if camera settings haven't been confirmed for this game
         if (localStorage.getItem(`tabletop:camera-confirmed:${gameId}`) !== "true") {
@@ -254,6 +256,7 @@
         this.webrtc = new WebRTCManager({
           token,
           gameId,
+          iceServers,
           localVideoEl,
           remoteVideoEl,
           canvasEl,
@@ -360,6 +363,7 @@
         this.cameraRelay = new CameraRelayReceiver({
           token,
           relayUserId,
+          iceServers,
           onStream: (stream) => {
             phoneStream = stream
             phoneStatusEl.innerHTML = '<span class="badge badge-sm badge-success">Phone connected</span>'

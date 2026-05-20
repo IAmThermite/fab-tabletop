@@ -26,6 +26,10 @@ config :tabletop,
 
 config :tabletop, Tabletop.Repo, migration_primary_key: [type: :uuid]
 
+# WebRTC TURN/STUN. STUN-only by default (safe for test); dev.exs points at the
+# local coturn and runtime.exs reads TURN_SECRET/TURN_URLS in prod.
+config :tabletop, Tabletop.Turn, secret: nil, urls: []
+
 # Configure the endpoint
 config :tabletop, TabletopWeb.Endpoint,
   url: [host: "localhost"],

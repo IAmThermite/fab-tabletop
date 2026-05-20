@@ -43,6 +43,7 @@ defmodule TabletopWeb.GameLive.Show do
      |> assign(:page_title, game.title)
      |> assign(:game, game)
      |> assign(:user_token, user_token)
+     |> assign(:ice_servers, Tabletop.Turn.ice_servers(user_id))
      |> assign(:user_id, user_id)
      |> assign(:user1_id, game.user_id)
      |> assign(:user2_id, game.user2_id)

@@ -17,6 +17,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
         phx-hook=".PreJoinCamera"
         data-game-id={@game.id}
         data-user-token={@user_token}
+        data-ice-servers={Jason.encode!(@ice_servers)}
         data-camera-relay-token={@camera_relay_token}
         class="flex flex-col h-full"
       >
@@ -352,10 +353,12 @@ defmodule TabletopWeb.GameLive.PreJoin do
           // Phone camera relay
           const token = el.dataset.userToken
           const relayToken = el.dataset.cameraRelayToken
+          const iceServers = JSON.parse(el.dataset.iceServers)
 
           this.cameraRelay = new CameraRelayReceiver({
             token,
             relayToken,
+            iceServers,
             onStream: (remoteStream) => {
               phoneStream = remoteStream
               phoneStatusEl.innerHTML = '<span class="badge badge-sm badge-success">Phone connected</span>'
@@ -487,6 +490,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
     |> assign(:mode, :creator)
     |> assign(:user_token, user_token)
     |> assign(:camera_relay_token, camera_relay_token)
+    |> assign(:ice_servers, Tabletop.Turn.ice_servers(scope.user.id))
     |> assign(:qr_svg, qr_svg)
   end
 
@@ -512,6 +516,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:mode, :joiner)
         |> assign(:user_token, user_token)
         |> assign(:camera_relay_token, camera_relay_token)
+        |> assign(:ice_servers, Tabletop.Turn.ice_servers(scope.user.id))
         |> assign(:qr_svg, qr_svg)
 
       {:error, reason} ->

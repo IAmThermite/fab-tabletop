@@ -11,6 +11,7 @@ defmodule TabletopWeb.PhoneCameraLive do
         phx-hook=".PhoneCamera"
         data-relay-token={@token}
         data-relay-user-id={@relay_user_id}
+        data-ice-servers={Jason.encode!(@ice_servers)}
         class="flex flex-col h-full"
       >
         <%!-- Top bar --%>
@@ -94,6 +95,7 @@ defmodule TabletopWeb.PhoneCameraLive do
         mounted() {
           const relayToken = this.el.dataset.relayToken
           const relayUserId = this.el.dataset.relayUserId
+          const iceServers = JSON.parse(this.el.dataset.iceServers)
           const videoEl = document.getElementById("phone-video")
           const noCameraEl = document.getElementById("phone-no-camera")
           const statusEl = document.getElementById("phone-status")
@@ -113,6 +115,7 @@ defmodule TabletopWeb.PhoneCameraLive do
           this.relay = new PhoneCameraRelay({
             relayToken,
             relayUserId,
+            iceServers,
             onStatusChange: (status) => {
               const labels = {
                 connecting: "Connecting...",
@@ -303,6 +306,7 @@ defmodule TabletopWeb.PhoneCameraLive do
      |> assign(:page_title, "Phone Camera")
      |> assign(:token, token)
      |> assign(:relay_user_id, relay_user_id)
+     |> assign(:ice_servers, Tabletop.Turn.ice_servers(relay_user_id))
      |> assign(:valid, valid)}
   end
 end

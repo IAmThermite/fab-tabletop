@@ -126,4 +126,11 @@ if config_env() == :prod do
     from_email:
       System.get_env("MAILER_FROM_EMAIL") ||
         raise("MAILER_FROM_EMAIL is required")
+
+  # WebRTC TURN. TURN_SECRET must match the coturn app's static-auth-secret;
+  # TURN_URLS is a comma-separated list (e.g. "turn:<turn-ip>:3478").
+  # If unset, clients fall back to STUN-only.
+  config :tabletop, Tabletop.Turn,
+    secret: System.get_env("TURN_SECRET"),
+    urls: System.get_env("TURN_URLS", "") |> String.split(",", trim: true)
 end

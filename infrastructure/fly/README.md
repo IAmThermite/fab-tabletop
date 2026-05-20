@@ -45,6 +45,50 @@ To deploy:
 fly deploy --config infrastructure/fly/fly.toml
 ```
 
+### 3. Create the TURN server app
+
+WebRTC needs a TURN relay for users behind symmetric NATs (most cellular networks).
+coturn runs as its own Fly app and authenticates clients with time-limited HMAC
+credentials minted by the web app (`Tabletop.Turn`), using a shared secret.
+
+```bash
+# Create the TURN app (config + Dockerfile live in infrastructure/coturn/).
+# Run from the repo root — the Dockerfile COPYs paths relative to root.
+fly launch --config infrastructure/coturn/fly.toml --no-deploy
+
+# TURN must own a stable public IP and hand it out as the relay address,
+# so allocate a DEDICATED IPv4 (shared Anycast v4 will not work). ~$2/mo.
+fly ips allocate-v4 --app fabtabletop-turn
+
+# Generate a shared secret and set it on the TURN app.
+TURN_SECRET=$(openssl rand -hex 32)
+fly secrets set TURN_SECRET="$TURN_SECRET" --app fabtabletop-turn
+
+# Deploy coturn.
+fly deploy --config infrastructure/coturn/fly.toml
+
+# Find the dedicated IPv4 you allocated:
+fly ips list --app fabtabletop-turn
+
+# Point the web app at the TURN server with the SAME secret.
+# TURN_URLS is comma-separated; use the dedicated IPv4 from above.
+fly secrets set \
+  TURN_SECRET="$TURN_SECRET" \
+  TURN_URLS="turn:<turn-ipv4>:3478" \
+  --app fabtabletop
+```
+
+The relay UDP port range (`49160-49169`) is declared in both
+`infrastructure/coturn/turnserver.conf` (`min-port`/`max-port`) and
+`infrastructure/coturn/fly.toml` (one `[[services]]` block per port). Keep them
+in sync — Fly only routes ports it knows about. Widen both together if you need
+more concurrent relayed calls.
+
+**Verify TURN works** with the [Trickle ICE tester](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/):
+enter `turn:<turn-ipv4>:3478` plus a username/credential pair (mint one in
+`iex` via `Tabletop.Turn.ice_servers("test")`), and confirm a candidate of type
+`relay` appears. If you only see `host`/`srflx`, TURN isn't reachable.
+
 ## Custom Domain
 
 ```bash
@@ -97,3 +141,6 @@ fly ssh console --app fabtabletop-db -C "pg_dump -U fabtabletop fabtabletop" > b
 - **DATABASE_URL**: Set via `fly secrets set`, uses Fly private DNS (`.internal`, IPv6)
 - **ECTO_IPV6**: Set in fly.toml — required because `.internal` DNS resolves to IPv6
 - **SECRET_KEY_BASE**: Set via `fly secrets set`
+- **TURN_SECRET**: Shared HMAC secret for TURN auth — must be identical on the web app and the `fabtabletop-turn` app. If unset, clients fall back to STUN-only.
+- **TURN_URLS**: Comma-separated `turn:`/`turns:` URLs on the web app (e.g. `turn:<turn-ipv4>:3478`).
+- **MAILERSEND_API_KEY** / **MAILER_FROM_EMAIL**: Required for registration-confirmation emails — the app raises on boot if `MAILER_FROM_EMAIL` is unset.

@@ -6,6 +6,7 @@ config :tabletop, Tabletop.Repo,
   password: "postgres",
   hostname: "localhost",
   database: "tabletop_dev",
+  port: 5555,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
@@ -59,6 +60,9 @@ config :tabletop, TabletopWeb.Endpoint,
 # If desired, both `http:` and `https:` keys can be
 # configured to run both http and https servers on
 # different ports.
+
+# Local coturn (docker-compose). Secret must match infrastructure/coturn/coturn.dev.conf.
+config :tabletop, Tabletop.Turn, secret: "dev_turn_secret", urls: ["turn:localhost:3478"]
 
 # Reload browser tabs when matching files change.
 config :tabletop, TabletopWeb.Endpoint,

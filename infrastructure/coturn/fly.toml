@@ -1,0 +1,116 @@
+# fly.toml for the coturn TURN/STUN server (app: fabtabletop-turn).
+#
+# This is a SEPARATE Fly app from the web app and the database. It needs a
+# DEDICATED IPv4 — TURN servers must own their public IP and hand it out as the
+# relay address, so a shared Anycast v4 will not work:
+#
+#   fly ips allocate-v4 --app fabtabletop-turn   (~$2/mo)
+#
+# Fly routes only the ports declared below, so the coturn relay range
+# (min-port..max-port in turnserver.conf) must be enumerated here. Keep the two
+# in sync: turnserver.conf uses 49160-49169.
+#
+# Secrets (set with `fly secrets set ... --app fabtabletop-turn`):
+#   TURN_SECRET  — shared HMAC secret, must match the web app's TURN_SECRET.
+#   EXTERNAL_IP  — optional; the dedicated v4. entrypoint.sh falls back to
+#                  FLY_PUBLIC_IP if unset.
+
+app = 'fabtabletop-turn'
+primary_region = 'iad'
+
+[build]
+  dockerfile = '../Dockerfile'
+
+# coturn is stateless and cheap; keep one machine always up so the relay IP is
+# stable and reachable (auto-stop would break in-flight calls).
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'
+  cpus = 1
+
+# --- STUN/TURN signaling: 3478 TCP + UDP ---
+[[services]]
+  protocol = 'tcp'
+  internal_port = 3478
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 3478
+
+[[services]]
+  protocol = 'udp'
+  internal_port = 3478
+
+  [[services.ports]]
+    port = 3478
+
+# --- TLS listener: 5349 TCP (turns:) ---
+[[services]]
+  protocol = 'tcp'
+  internal_port = 5349
+
+  [[services.ports]]
+    port = 5349
+
+# --- UDP relay range 49160-49169 (must match turnserver.conf min/max-port) ---
+[[services]]
+  protocol = 'udp'
+  internal_port = 49160
+  [[services.ports]]
+    port = 49160
+
+[[services]]
+  protocol = 'udp'
+  internal_port = 49161
+  [[services.ports]]
+    port = 49161
+
+[[services]]
+  protocol = 'udp'
+  internal_port = 49162
+  [[services.ports]]
+    port = 49162
+
+[[services]]
+  protocol = 'udp'
+  internal_port = 49163
+  [[services.ports]]
+    port = 49163
+
+[[services]]
+  protocol = 'udp'
+  internal_port = 49164
+  [[services.ports]]
+    port = 49164
+
+[[services]]
+  protocol = 'udp'
+  internal_port = 49165
+  [[services.ports]]
+    port = 49165
+
+[[services]]
+  protocol = 'udp'
+  internal_port = 49166
+  [[services.ports]]
+    port = 49166
+
+[[services]]
+  protocol = 'udp'
+  internal_port = 49167
+  [[services.ports]]
+    port = 49167
+
+[[services]]
+  protocol = 'udp'
+  internal_port = 49168
+  [[services.ports]]
+    port = 49168
+
+[[services]]
+  protocol = 'udp'
+  internal_port = 49169
+  [[services.ports]]
+    port = 49169

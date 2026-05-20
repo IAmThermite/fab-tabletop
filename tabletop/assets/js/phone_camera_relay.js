@@ -6,15 +6,17 @@
 
 import { Socket } from "phoenix"
 
-const ICE_SERVERS = [
+// Fallback used only if the server doesn't supply iceServers (STUN-only).
+const DEFAULT_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
 ]
 
 export default class PhoneCameraRelay {
-  constructor({ relayToken, relayUserId, onStatusChange }) {
+  constructor({ relayToken, relayUserId, iceServers, onStatusChange }) {
     this.relayToken = relayToken
     this.relayUserId = relayUserId
+    this.iceServers = iceServers || DEFAULT_ICE_SERVERS
     this.onStatusChange = onStatusChange || (() => {})
 
     this.socket = null
@@ -122,7 +124,7 @@ export default class PhoneCameraRelay {
       this.peerConnection.close()
     }
 
-    this.peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS })
+    this.peerConnection = new RTCPeerConnection({ iceServers: this.iceServers })
 
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => {

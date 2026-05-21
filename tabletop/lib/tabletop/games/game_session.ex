@@ -64,12 +64,17 @@ defmodule Tabletop.Games.GameSession do
 
   @impl true
   def init(%{game_id: game_id, user1_id: user1_id, user2_id: user2_id}) do
+    Process.flag(:trap_exit, true)
+
+    db_state = Tabletop.Games.get_game_state(game_id) |> atomize_keys()
+
     state = %{
       game_id: game_id,
       user1_id: user1_id,
       user2_id: user2_id,
-      user1: GameState.default_player(),
-      user2: GameState.default_player()
+      user1: Map.merge(GameState.default_player(), Map.get(db_state, :user1, %{})),
+      user2: Map.merge(GameState.default_player(), Map.get(db_state, :user2, %{})),
+      save_timer: nil
     }
 
     Phoenix.PubSub.broadcast(
@@ -81,6 +86,16 @@ defmodule Tabletop.Games.GameSession do
     {:ok, state}
   end
 
+  defp atomize_keys(map) when is_map(map) do
+    Map.new(map, fn {k, v} ->
+      key = if is_binary(k), do: String.to_atom(k), else: k
+      {key, atomize_keys(v)}
+    end)
+  end
+
+  defp atomize_keys(list) when is_list(list), do: Enum.map(list, &atomize_keys/1)
+  defp atomize_keys(other), do: other
+
   @impl true
   def handle_call(:get_state, _from, state) do
     {:reply, snapshot(state), state}
@@ -91,7 +106,8 @@ defmodule Tabletop.Games.GameSession do
          player = Map.fetch!(state, target_side),
          {:ok, new_player, delta} <- dispatch(action, player) do
       new_state = Map.put(state, target_side, new_player)
-      broadcast_update(state.game_id, target_side, delta, actor_user_id)
+      new_state = schedule_save(new_state)
+      broadcast_update(new_state.game_id, target_side, delta, actor_user_id)
       {:reply, :ok, new_state}
     else
       {:error, _} = error -> {:reply, error, state}
@@ -101,6 +117,30 @@ defmodule Tabletop.Games.GameSession do
   def handle_call({:set_user2, user2_id}, _from, state) do
     {:reply, :ok, %{state | user2_id: user2_id}}
   end
+
+  @impl true
+  def handle_info(:save_state, state) do
+    # Persist the current game state to the database
+    Tabletop.Games.update_game_state(state.game_id, snapshot(state))
+    # Clear the timer reference so a new save can be scheduled
+    {:noreply, %{state | save_timer: nil}}
+  end
+
+  @impl true
+  def terminate(_reason, state) do
+    Tabletop.Games.update_game_state(state.game_id, snapshot(state))
+  end
+
+  # Debounced save: only schedule if no timer is already pending
+  # This prevents multiple sequential writes by coalescing rapid changes
+  # into a single database write after 1 second of inactivity
+  defp schedule_save(%{save_timer: nil} = state) do
+    timer = Process.send_after(self(), :save_state, 1000)
+    %{state | save_timer: timer}
+  end
+
+  # If a save is already scheduled (existing `save_timer`), do nothing (debounce in action)
+  defp schedule_save(state), do: state
 
   defp snapshot(state), do: %{user1: state.user1, user2: state.user2}
 

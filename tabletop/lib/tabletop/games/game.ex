@@ -24,6 +24,7 @@ defmodule Tabletop.Games.Game do
     belongs_to :user, Tabletop.Accounts.User, type: Ecto.UUID
     belongs_to :user2, Tabletop.Accounts.User, type: Ecto.UUID
     belongs_to :joining_user, Tabletop.Accounts.User, type: Ecto.UUID
+    has_one :game_state, Tabletop.Games.GameState
 
     timestamps(type: :utc_datetime)
   end

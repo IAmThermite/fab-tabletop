@@ -473,4 +473,32 @@ defmodule Tabletop.Games do
       nil -> false
     end
   end
+
+  @doc """
+  Updates or creates the state for a given game using an upsert.
+  """
+  def update_game_state(game_id, state_map) do
+    %Tabletop.Games.GameState{
+      game_id: game_id,
+      state: state_map
+    }
+    |> Repo.insert!(
+      on_conflict: :replace_all,
+      conflict_target: :game_id
+    )
+  rescue
+    _ -> :error
+  end
+
+  @doc """
+  Gets the state for a given game, returning an empty map if not found.
+  """
+  def get_game_state(game_id) do
+    case Repo.get(Tabletop.Games.GameState, game_id) do
+      nil -> %{}
+      record -> record.state
+    end
+  rescue
+    _ -> %{}
+  end
 end

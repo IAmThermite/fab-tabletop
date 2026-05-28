@@ -181,6 +181,9 @@ defmodule Tabletop.Games.GameSession do
   defp dispatch({:remove_proxy_token, name}, player),
     do: GameState.remove_proxy_token(player, name)
 
+  defp dispatch({:toggle_proxy_token, name}, player),
+    do: GameState.toggle_proxy_token(player, name)
+
   defp dispatch({:change_life, delta}, player), do: GameState.change_life(player, delta)
   defp dispatch({:reset_chain}, player), do: GameState.reset_chain(player)
 

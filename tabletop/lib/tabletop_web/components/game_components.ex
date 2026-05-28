@@ -168,7 +168,7 @@ defmodule TabletopWeb.GameComponents do
         </button>
         <ul
           :if={@abilities_open}
-          class="absolute z-30 menu bg-base-100 rounded-box w-32 p-2 shadow-sm mt-1"
+          class="absolute z-30 menu bg-base-100 rounded-box w-36 p-2 shadow-sm mt-1"
         >
           <%= for {_key, effect} <- Tabletop.Fab.Effects.abilities() do %>
             <li>
@@ -365,7 +365,16 @@ defmodule TabletopWeb.GameComponents do
                 <span class="text-xs font-semibold leading-tight">{token[:name]}</span>
               </div>
               <div class="flex items-center gap-0.5 shrink-0">
+                <input
+                  :if={token[:singleton]}
+                  type="checkbox"
+                  class="checkbox checkbox-xs checkbox-success"
+                  checked={Map.get(@game_state.my.proxy_tokens || %{}, token[:name], 0) > 0}
+                  phx-click="toggle_proxy_token"
+                  phx-value-type={token[:name]}
+                />
                 <button
+                  :if={!token[:singleton]}
                   type="button"
                   class="btn btn-xs btn-circle btn-error"
                   phx-click="remove_proxy_token"
@@ -373,10 +382,11 @@ defmodule TabletopWeb.GameComponents do
                 >
                   -
                 </button>
-                <span class="text-xs font-bold w-3 text-center">
+                <span :if={!token[:singleton]} class="text-xs font-bold w-3 text-center">
                   {Map.get(@game_state.my.proxy_tokens || %{}, token[:name], 0)}
                 </span>
                 <button
+                  :if={!token[:singleton]}
                   type="button"
                   class="btn btn-xs btn-circle btn-success"
                   phx-click="add_proxy_token"
@@ -488,6 +498,17 @@ defmodule TabletopWeb.GameComponents do
           </div>
           <div class="flex items-center gap-1">
             <button
+              :if={token[:singleton]}
+              type="button"
+              class="btn btn-xs btn-circle btn-error"
+              phx-click="remove_proxy_token"
+              phx-value-type={name}
+              aria-label={"Remove #{name}"}
+            >
+              <.icon name="hero-x-mark" class="size-3" />
+            </button>
+            <button
+              :if={!token[:singleton]}
               type="button"
               class="btn btn-xs btn-circle btn-error"
               phx-click="remove_proxy_token"
@@ -495,8 +516,9 @@ defmodule TabletopWeb.GameComponents do
             >
               -
             </button>
-            <span class="text-sm font-bold w-6 text-center">{count}</span>
+            <span :if={!token[:singleton]} class="text-sm font-bold w-6 text-center">{count}</span>
             <button
+              :if={!token[:singleton]}
               type="button"
               class="btn btn-xs btn-circle btn-success"
               phx-click="add_proxy_token"

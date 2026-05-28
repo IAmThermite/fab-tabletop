@@ -633,6 +633,10 @@ defmodule TabletopWeb.CameraSetupLive do
     apply_action(socket, GameState.remove_proxy_token(my(socket), name))
   end
 
+  def handle_event("toggle_proxy_token", %{"type" => name}, socket) do
+    apply_action(socket, GameState.toggle_proxy_token(my(socket), name))
+  end
+
   defp my(socket), do: socket.assigns.game_state.my
 
   defp fetch_game_for_setup(_scope, nil), do: {:error, :not_found}

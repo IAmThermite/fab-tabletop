@@ -21,19 +21,19 @@ defmodule TabletopWeb.Plugs.SecurityHeaders do
   import Plug.Conn
 
   @csp [
-    "default-src 'self'",
-    "img-src 'self' https://*.s3.amazonaws.com https://cdn.jsdelivr.net data: blob:",
-    "media-src 'self' blob:",
-    "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
-    "style-src 'self' 'unsafe-inline'",
-    "connect-src 'self' wss: https:",
-    "worker-src 'self' blob:",
-    "font-src 'self' data:",
-    "frame-ancestors 'none'",
-    "base-uri 'self'",
-    "form-action 'self'"
-  ]
-  |> Enum.join("; ")
+         "default-src 'self'",
+         "img-src 'self' https://*.s3.amazonaws.com https://cdn.jsdelivr.net data: blob:",
+         "media-src 'self' blob:",
+         "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
+         "style-src 'self' 'unsafe-inline'",
+         "connect-src 'self' wss: https:",
+         "worker-src 'self' blob:",
+         "font-src 'self' data:",
+         "frame-ancestors 'none'",
+         "base-uri 'self'",
+         "form-action 'self'"
+       ]
+       |> Enum.join("; ")
 
   def init(opts), do: opts
 

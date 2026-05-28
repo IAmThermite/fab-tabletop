@@ -154,6 +154,10 @@ defmodule TabletopWeb.GameLive.Show do
     dispatch(socket, {:remove_proxy_token, name})
   end
 
+  def handle_event("toggle_proxy_token", %{"type" => name}, socket) do
+    dispatch(socket, {:toggle_proxy_token, name})
+  end
+
   def handle_event("toggle_preview", _params, socket) do
     {:noreply, assign(socket, :preview_open, !socket.assigns.preview_open)}
   end

@@ -123,7 +123,12 @@ defmodule Tabletop.Fab.GameState do
   def add_proxy_token(player, name) when is_binary(name) do
     if Effects.valid_token?(name) do
       counts = Map.get(player, :proxy_tokens, %{})
-      new_count = Map.get(counts, name, 0) + 1
+
+      new_count =
+        if Effects.singleton_token?(name),
+          do: 1,
+          else: Map.get(counts, name, 0) + 1
+
       new_counts = Map.put(counts, name, new_count)
       new_player = Map.put(player, :proxy_tokens, new_counts)
       {:ok, new_player, {:proxy_token_changed, name, new_count}}
@@ -133,6 +138,30 @@ defmodule Tabletop.Fab.GameState do
   end
 
   def add_proxy_token(_, _), do: {:error, :invalid_token}
+
+  @doc """
+  Toggles a singleton proxy token on/off — adds it (count 1) when absent,
+  removes it entirely when present. Used by the singleton token checkbox.
+  """
+  def toggle_proxy_token(player, name) when is_binary(name) do
+    if Effects.valid_token?(name) do
+      counts = Map.get(player, :proxy_tokens, %{})
+
+      if Map.has_key?(counts, name) do
+        new_counts = Map.delete(counts, name)
+        new_player = Map.put(player, :proxy_tokens, new_counts)
+        {:ok, new_player, {:proxy_token_changed, name, 0}}
+      else
+        new_counts = Map.put(counts, name, 1)
+        new_player = Map.put(player, :proxy_tokens, new_counts)
+        {:ok, new_player, {:proxy_token_changed, name, 1}}
+      end
+    else
+      {:error, :invalid_token}
+    end
+  end
+
+  def toggle_proxy_token(_, _), do: {:error, :invalid_token}
 
   def remove_proxy_token(player, name) when is_binary(name) do
     if Effects.valid_token?(name) do

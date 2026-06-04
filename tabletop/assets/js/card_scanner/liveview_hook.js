@@ -1,19 +1,24 @@
-// Card Scanner — click-to-capture OCR for identifying cards in video feed
+// Card Scanner — click-to-capture card identification from the video feed.
 //
-// Pipeline:
-// 1. Run OpenCV to detect the card, extract title for OCR and art for pHash
-// 2. If OpenCV fails, fall back to a small fixed-region OCR around the click
+// Pipeline: run OpenCV to detect + deskew the card, compute perceptual hashes
+// of the art, and send them to the LiveView for a pHash match. Title-bar OCR
+// was removed — recognition is pHash-only; users type a name to search instead.
 
-import { preprocessForOCR, cropMargins, imageDataToCanvas } from "./preprocessing"
-import { preloadOCR, runOCR } from "./ocr"
-import { showDebugPanel, showBoundingBox, showCardQuad, isDebugEnabled } from "./debug"
-import { computePhashesForLayout, rotated180ImageData } from "./recognition_pipeline"
+import { imageDataToCanvas } from "./preprocessing"
+import { showDebugPanel, showBoundingBox, drawCardBorder, isDebugEnabled } from "./debug"
+import { computePhashesForLayout } from "./recognition_pipeline"
 
 const LOG = "[CardScanner]"
 const BOX_LINGER_MS = 3000
 
 // Detect region: square so it captures cards in any orientation
 const DETECT_RATIO = 0.35
+
+// On a detected-but-unmatched card, retry the pHash match a few times, each
+// time growing the deskewed capture region by `REGION_EXPAND_STEP` (so a
+// sleeve/border that threw off the detected edges is less likely to matter).
+const REGION_EXPAND_STEP = 0.05
+const MAX_MATCH_RETRIES = 2
 
 let _worker = null
 let _requestCounter = 0
@@ -31,7 +36,10 @@ function getWorker() {
   return _worker
 }
 
-function detectCard(imageData) {
+// `regionScale` (default 1) scales the detected card quad outward before the
+// deskew, so a retry can pull in a slightly larger region when the first match
+// misses (e.g. a sleeve/border threw off the detected edges).
+function detectCard(imageData, { regionScale = 1 } = {}) {
   return new Promise((resolve) => {
     const worker = getWorker()
     const requestId = ++_requestCounter
@@ -49,23 +57,22 @@ function detectCard(imageData) {
       worker.removeEventListener("message", handler)
 
       if (event.data.type === "cardDetected") {
-        const { card, cardImageData, quad, layout, title, art, angle, orientation } = event.data
+        const { card, cardImageData, quad, layout, originalLayout, art, angle, orientation } = event.data
         if (!card.width || !card.height) { resolve(null); return }
         // Reconstruct ImageData from the transferred buffer
         const cardPixels = new Uint8ClampedArray(cardImageData)
         const deskewedImageData = new ImageData(cardPixels, card.width, card.height)
-        resolve({ card, deskewedImageData, quad, layout, title, art, angle, orientation })
+        resolve({ card, deskewedImageData, quad, layout, originalLayout, art, angle, orientation })
       } else {
         resolve(null)
       }
     }
     worker.addEventListener("message", handler)
-    worker.postMessage({ type: "processFrame", imageData, requestId })
+    worker.postMessage({ type: "processFrame", imageData, requestId, regionScale })
   })
 }
 
-export function preloadTesseract() {
-  preloadOCR()
+export function preloadScanner() {
   getWorker()
 }
 
@@ -73,7 +80,7 @@ export function preloadTesseract() {
  * Attach card-lookup click handling to a game area.
  *
  * @param {object} hook        - The LiveView hook instance (for pushEvent).
- * @param {HTMLCanvasElement} canvasEl  - Canvas to OCR from.
+ * @param {HTMLCanvasElement} canvasEl  - Canvas to capture from.
  * @param {HTMLElement} gameArea       - Container for loading/toast overlays.
  * @param {object} opts
  * @param {() => boolean} [opts.isFlipped]  - Returns true if video is flipped.
@@ -116,52 +123,81 @@ export function setupCardLookup(hook, canvasEl, gameArea, opts = {}) {
     showLoading(e.clientX, e.clientY)
 
     try {
-      const result = await captureAndOCR(
-        canvasEl, e.clientX, e.clientY, isFlipped(),
-        gameArea
-      )
-      hideLoading()
+      // Capture the clicked frame once; every retry re-processes these pixels.
+      const captured = captureDetectRegion(canvasEl, e.clientX, e.clientY, isFlipped())
+      const rect = gameArea.getBoundingClientRect()
 
-      if (result) {
-        const rect = gameArea.getBoundingClientRect()
+      let matched = false
+      let lastResult = null
+      let matchedScale = null
+      const attemptedScales = []
 
-        const ocrCandidates = [
-          { label: "gray", text: result.grayText, confidence: result.grayConfidence },
-          { label: "upGray", text: result.upGrayText, confidence: result.upGrayConfidence },
-          { label: "sharpThresh", text: result.sharpThreshText, confidence: result.sharpThreshConfidence },
-          { label: "thresh", text: result.threshText, confidence: result.threshConfidence },
-        ].filter(c => c.confidence > 40 && c.text && c.text.replace(/[^a-zA-Z]/g, "").length >= 3)
+      if (captured) {
+        // Retry on a detected-but-unmatched card, growing the deskew region
+        // each attempt so a sleeve/border is less likely to throw off the match.
+        for (let attempt = 0; attempt <= MAX_MATCH_RETRIES; attempt++) {
+          const regionScale = 1 + attempt * REGION_EXPAND_STEP
+          attemptedScales.push(regionScale)
+          const result = await detectAndHash(captured, regionScale, gameArea, isFlipped(), attempt === 0)
+          lastResult = result || lastResult
 
-        const payload = {
-          ocr_candidates: ocrCandidates,
-          x: e.clientX - rect.left + 10,
-          y: e.clientY - rect.top - 50,
+          const phashes = (result?.phashes || []).map(({ kind, value }) => ({
+            kind, value: value.toString(),
+          }))
+
+          // No card detected at all — expanding the region won't help.
+          if (phashes.length === 0) break
+
+          const payload = {
+            x: e.clientX - rect.left + 10,
+            y: e.clientY - rect.top - 50,
+            phashes,
+            region_scale: regionScale,
+          }
+          if (result.detectedPitch != null) {
+            payload.detected_pitch = result.detectedPitch
+          }
+
+          matched = await pushOpenCard(hook, payload)
+          if (matched) {
+            matchedScale = regionScale
+            if (attempt > 0) {
+              console.log(
+                `${LOG} ✓ Matched via expanded capture region: ` +
+                `${(regionScale * 100).toFixed(0)}% on retry #${attempt}`,
+              )
+            }
+            break
+          }
+
+          if (attempt < MAX_MATCH_RETRIES) {
+            console.log(`${LOG} No match at region ${(regionScale * 100).toFixed(0)}% — retrying larger`)
+          }
         }
-
-        const phashes = (result.phashes || []).map(({ kind, value }) => ({
-          kind, value: value.toString(),
-        }))
-
-        if (phashes.length > 0) {
-          payload.phashes = phashes
-        }
-
-        if (result.detectedPitch != null) {
-          payload.detected_pitch = result.detectedPitch
-        }
-
-        if (ocrCandidates.length > 0 || phashes.length > 0) {
-          hook.pushEvent("open_card", payload)
-        } else {
-          showToast("Could not detect card, try again.")
-        }
-      } else {
-        showToast("Could not detect card, try again.")
       }
-    } catch (err) {
-      console.error("[CardLookup] OCR error:", err)
+
       hideLoading()
-      showToast("OCR failed. Try again.")
+
+      if (!matched && attemptedScales.length > 1) {
+        const tried = attemptedScales.map((s) => `${(s * 100).toFixed(0)}%`).join(", ")
+        console.log(`${LOG} ✗ No match after trying capture regions: ${tried}`)
+      }
+
+      // Always-on confirmation outline around the card OpenCV recognised — uses
+      // the final attempted region (so it visibly grows when a retry succeeded
+      // via the expanded capture). Skipped only if nothing was ever detected.
+      if (captured && lastResult?.quad) {
+        fadeBox(drawCardBorder(captured.rect, lastResult.quad, captured, captured.scaleX, captured.scaleY, isFlipped()))
+      }
+
+      if (isDebugEnabled() && lastResult) {
+        showDebugPanel({ ...lastResult, matchedScale, attemptedScales })
+      }
+      if (!matched) showToast("Could not detect card, try again.")
+    } catch (err) {
+      console.error("[CardScanner] detection error:", err)
+      hideLoading()
+      showToast("Card detection failed. Try again.")
     }
   })
 }
@@ -175,42 +211,23 @@ function captureRegion(ctx, canvasEl, canvasX, canvasY, w, h) {
   return { imageData: ctx.getImageData(sx, sy, sw, sh), sx, sy, sw, sh }
 }
 
-async function processAndOCR(imageData) {
-  const { processedCanvas, rawCanvas, grayCanvas, upGrayCanvas, sharpThreshCanvas } = preprocessForOCR(imageData)
-
-  const [grayResult, upGrayResult, sharpThreshResult, threshResult] = await Promise.all([
-    runOCR(cropMargins(grayCanvas)),
-    runOCR(cropMargins(upGrayCanvas)),
-    runOCR(cropMargins(sharpThreshCanvas)),
-    runOCR(cropMargins(processedCanvas)),
-  ])
-
-  console.log(`${LOG} Grayscale OCR: "${grayResult.text}" (${grayResult.confidence})`)
-  console.log(`${LOG} Upscaled gray OCR: "${upGrayResult.text}" (${upGrayResult.confidence})`)
-  console.log(`${LOG} Sharp+thresh OCR: "${sharpThreshResult.text}" (${sharpThreshResult.confidence})`)
-  console.log(`${LOG} Threshold OCR: "${threshResult.text}" (${threshResult.confidence})`)
-
-  const candidates = [
-    { label: "gray", result: grayResult },
-    { label: "upGray", result: upGrayResult },
-    { label: "sharpThresh", result: sharpThreshResult },
-    { label: "thresh", result: threshResult },
-  ]
-  const best = candidates.reduce((a, b) => a.result.confidence > b.result.confidence ? a : b)
-  console.log(`${LOG} Best: ${best.label} (${best.result.confidence})`)
-
-  return {
-    ...best.result,
-    rawCanvas, grayCanvas, upGrayCanvas, sharpThreshCanvas, processedCanvas,
-    grayConfidence: grayResult.confidence,
-    grayText: grayResult.text,
-    upGrayConfidence: upGrayResult.confidence,
-    upGrayText: upGrayResult.text,
-    sharpThreshConfidence: sharpThreshResult.confidence,
-    sharpThreshText: sharpThreshResult.text,
-    threshConfidence: threshResult.confidence,
-    threshText: threshResult.text,
-  }
+// Push `open_card` and resolve with whether the server matched a card. The
+// server always replies `{matched: bool}`; a timeout guards against a missing
+// reply so the retry loop / spinner can't hang.
+function pushOpenCard(hook, payload) {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (v) => {
+      if (settled) return
+      settled = true
+      resolve(v)
+    }
+    const timer = setTimeout(() => finish(false), 4000)
+    hook.pushEvent("open_card", payload, (reply) => {
+      clearTimeout(timer)
+      finish(reply?.matched === true)
+    })
+  })
 }
 
 // Detect pitch color from the colored strip at the top of a deskewed card
@@ -274,7 +291,10 @@ function fadeBox(box) {
   }, BOX_LINGER_MS)
 }
 
-export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, container) {
+// Grab the square region around the click from the current frame. Captured
+// once per click so retries re-process the SAME pixels (the video is live and
+// would otherwise change between attempts).
+export function captureDetectRegion(canvasEl, clientX, clientY, isFlipped) {
   const rect = canvasEl.getBoundingClientRect()
   const scaleX = canvasEl.width / rect.width
   const scaleY = canvasEl.height / rect.height
@@ -288,123 +308,76 @@ export async function captureAndOCR(canvasEl, clientX, clientY, isFlipped, conta
   }
 
   const ctx = canvasEl.getContext("2d")
-  let result = null
-
-  // --- Step 1: OpenCV card detection ---
   const detectSize = Math.round(Math.min(canvasEl.width, canvasEl.height) * DETECT_RATIO)
-  // yBias 0.3: click assumed on card art
-  const detectCapture = captureRegion(ctx, canvasEl, canvasX, canvasY, detectSize, detectSize)
+  const capture = captureRegion(ctx, canvasEl, canvasX, canvasY, detectSize, detectSize)
+  if (!capture) return null
 
-  if (detectCapture) {
-    if (container && isDebugEnabled()) {
-      fadeBox(showBoundingBox(
-        container, rect,
-        detectCapture.sx / scaleX, detectCapture.sy / scaleY,
-        detectCapture.sw / scaleX, detectCapture.sh / scaleY,
-        isFlipped, "oklch(0.65 0.12 280)", "Detect",
-      ))
-    }
+  return { ...capture, rect, scaleX, scaleY }
+}
 
-    const detected = await detectCard(detectCapture.imageData)
-
-    if (detected) {
-      const { card, deskewedImageData, quad, layout, title, art, angle, orientation } = detected
-
-      if (container && isDebugEnabled() && quad) {
-        fadeBox(showCardQuad(rect, quad, detectCapture, scaleX, scaleY, isFlipped))
-      }
-
-      console.log(`${LOG} Card: ${card.width}x${card.height} (${layout}), angle: ${angle.toFixed(1)}°`)
-
-      // Title-bar OCR (vertical only). Operates on canvas-derived ImageData
-      // since processAndOCR consumes the duck-type fine.
-      const cardCanvas = imageDataToCanvas(deskewedImageData)
-      const cardCtx = cardCanvas.getContext("2d")
-
-      let titleImageData = null
-
-      if (layout === "vertical" && title) {
-        const tw = Math.min(title.width, card.width - title.x)
-        const th = Math.min(title.height, card.height - title.y)
-        if (tw > 10 && th > 5) {
-          titleImageData = cardCtx.getImageData(title.x, title.y, tw, th)
-          result = await processAndOCR(titleImageData)
-          result.detectMethod = "title_bar"
-          console.log(`${LOG} Title OCR: "${result.text}" (${result.confidence})`)
-
-          if (orientation === "uncertain" && result.confidence < 40) {
-            console.log(`${LOG} Low OCR confidence with uncertain orientation — trying flipped title`)
-            const flippedTitleY = card.height - title.y - th
-            if (flippedTitleY >= 0) {
-              const flippedTitleData = rotated180ImageData(
-                cardCtx.getImageData(title.x, flippedTitleY, tw, th),
-              )
-              const flippedResult = await processAndOCR(flippedTitleData)
-              console.log(`${LOG} Flipped title OCR: "${flippedResult.text}" (${flippedResult.confidence})`)
-              if (flippedResult.confidence > result.confidence) {
-                result = flippedResult
-                result.detectMethod = "title_bar (flipped)"
-                titleImageData = flippedTitleData
-              }
-            }
-          }
-        }
-      }
-
-      // Compute all pHashes via the shared pipeline (canvas-free; same module
-      // used by the JS recognition test).
-      const phashEntries = computePhashesForLayout(deskewedImageData, {
-        layout,
-        art,
-        orientation,
-      })
-
-      // Bridge back to canvases for the debug panel — the panel renders via
-      // toDataURL which only works on real canvases.
-      const phashes = phashEntries.map(({ kind, value, imageData }) => ({
-        kind,
-        value,
-        canvas: imageDataToCanvas(imageData),
-      }))
-
-      for (const { kind, value } of phashes) {
-        console.log(`${LOG} pHash[${kind}]: ${value}`)
-      }
-
-      // Pitch color detection only valid for vertical layouts.
-      let pitchResult = null
-      if (layout === "vertical") {
-        pitchResult = detectPitchColor(deskewedImageData, card.width, card.height)
-        if (pitchResult) {
-          console.log(`${LOG} Pitch: ${pitchResult.pitch} (confidence: ${(pitchResult.confidence * 100).toFixed(0)}%)`)
-        }
-      }
-
-      if (!result) {
-        result = { text: "", confidence: 0, detectMethod: phashes.length > 0 ? "card_art" : "none" }
-      } else if (phashes.length > 0 && result.detectMethod === "title_bar") {
-        result.detectMethod = "title_bar + card_art"
-      }
-
-      result.cardCanvas = cardCanvas
-      result.angle = angle
-      result.orientation = orientation
-      result.layout = layout
-      result.phashes = phashes
-      if (titleImageData) {
-        result.titleCanvas = imageDataToCanvas(titleImageData)
-      }
-      if (pitchResult) {
-        result.detectedPitch = pitchResult.pitch
-      }
-    } else {
-      console.log(`${LOG} OpenCV found no card`)
-    }
+// Detect + deskew the card from an already-captured region and compute its
+// pHashes. `regionScale` (default 1) grows the detected quad before deskew so a
+// retry can pull in a slightly larger region. `drawBoxes` overlays the detect
+// box + card quad (debug); pass true only on the first attempt.
+export async function detectAndHash(captured, regionScale, container, isFlipped, drawBoxes) {
+  if (drawBoxes && container && isDebugEnabled()) {
+    fadeBox(showBoundingBox(
+      container, captured.rect,
+      captured.sx / captured.scaleX, captured.sy / captured.scaleY,
+      captured.sw / captured.scaleX, captured.sh / captured.scaleY,
+      isFlipped, "oklch(0.65 0.12 280)", "Detect",
+    ))
   }
 
-  if (!result) return null
+  const detected = await detectCard(captured.imageData, { regionScale })
+  if (!detected) {
+    console.log(`${LOG} OpenCV found no card`)
+    return null
+  }
 
-  if (isDebugEnabled()) showDebugPanel(result)
+  const { card, deskewedImageData, quad, layout, originalLayout, art, angle, orientation } = detected
+
+  console.log(`${LOG} Card: ${card.width}x${card.height} (${layout}), angle: ${angle.toFixed(1)}°, region: ${(regionScale * 100).toFixed(0)}%`)
+
+  // Compute all pHashes via the shared pipeline (canvas-free; same module
+  // used by the JS recognition test).
+  const phashEntries = computePhashesForLayout(deskewedImageData, {
+    layout,
+    art,
+    orientation,
+  })
+
+  // Bridge back to canvases for the debug panel — the panel renders via
+  // toDataURL which only works on real canvases.
+  const phashes = phashEntries.map(({ kind, value, imageData }) => ({
+    kind,
+    value,
+    canvas: imageDataToCanvas(imageData),
+  }))
+
+  for (const { kind, value } of phashes) {
+    console.log(`${LOG} pHash[${kind}]: ${value}`)
+  }
+
+  // Pitch color from the colored strip at the top of the deskewed card.
+  const pitchResult = detectPitchColor(deskewedImageData, card.width, card.height)
+  if (pitchResult) {
+    console.log(`${LOG} Pitch: ${pitchResult.pitch} (confidence: ${(pitchResult.confidence * 100).toFixed(0)}%)`)
+  }
+
+  const result = {
+    cardCanvas: imageDataToCanvas(deskewedImageData),
+    angle,
+    orientation,
+    layout,
+    originalLayout,
+    quad,
+    phashes,
+    detectMethod: phashes.length > 0 ? "card_art" : "none",
+  }
+  if (pitchResult) {
+    result.detectedPitch = pitchResult.pitch
+  }
 
   return result
 }

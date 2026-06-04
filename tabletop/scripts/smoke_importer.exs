@@ -89,7 +89,7 @@ Enum.each(cards, fn card ->
 
   Enum.each(card.card_prints, fn cp ->
     hashes =
-      [{:art, cp.image_phash}, {:left, cp.image_phash_left}, {:right, cp.image_phash_right}, {:full, cp.image_phash_full}]
+      [{:art, cp.image_phash}, {:full, cp.image_phash_full}]
       |> Enum.map(fn {k, v} -> "#{k}=#{if v, do: "✓", else: "·"}" end)
       |> Enum.join(" ")
 

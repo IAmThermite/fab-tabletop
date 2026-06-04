@@ -26,8 +26,6 @@ defmodule Tabletop.Cards.Importer do
               "image_url": "...",
               "art_bbox": {"x": 0.1, "y": 0.16, "w": 0.8, "h": 0.42},
               "image_phash": 1234,
-              "image_phash_left": null,
-              "image_phash_right": null,
               "image_phash_full": 5678
             }
           ]
@@ -259,8 +257,6 @@ defmodule Tabletop.Cards.Importer do
           image_url: image_url,
           art_bbox: bbox,
           image_phash: hashes[:image_phash],
-          image_phash_left: hashes[:image_phash_left],
-          image_phash_right: hashes[:image_phash_right],
           image_phash_full: hashes[:image_phash_full]
         }
 
@@ -269,19 +265,17 @@ defmodule Tabletop.Cards.Importer do
     end
   end
 
-  defp compute_hashes(image_binary, %{halves: [left_bbox, right_bbox | _]}, _orientation) do
-    %{
-      image_phash_left: PHash.compute_from_binary(image_binary, bbox: bbox_tuple(left_bbox)),
-      image_phash_right: PHash.compute_from_binary(image_binary, bbox: bbox_tuple(right_bbox)),
-      image_phash_full: PHash.compute_from_binary(image_binary, bbox: {0.0, 0.0, 1.0, 1.0})
-    }
-  end
-
   defp compute_hashes(image_binary, %{x: _} = bbox, _orientation) do
     %{
       image_phash: PHash.compute_from_binary(image_binary, bbox: bbox_tuple(bbox)),
       image_phash_full: PHash.compute_from_binary(image_binary, bbox: {0.0, 0.0, 1.0, 1.0})
     }
+  end
+
+  # Horizontal cards have no meaningful art crop (see ArtBboxDetector) — store
+  # only the whole-card hash.
+  defp compute_hashes(image_binary, nil, _orientation) do
+    %{image_phash_full: PHash.compute_from_binary(image_binary, bbox: {0.0, 0.0, 1.0, 1.0})}
   end
 
   defp compute_hashes(_image_binary, _bbox, _orientation), do: %{}

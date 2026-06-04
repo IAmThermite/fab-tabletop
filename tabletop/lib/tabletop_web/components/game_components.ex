@@ -923,9 +923,7 @@ defmodule TabletopWeb.GameComponents do
   defp pitch_color_class(_), do: "bg-base-300"
 
   # Hamming distance between a captured client phash (of `kind`) and the
-  # corresponding stored hash on `card_print`. For horizontal `art_left` /
-  # `art_right` we take the min over both stored halves to reflect how the
-  # server-side query absorbs the player's 180° flip.
+  # corresponding stored hash on `card_print`.
   defp phash_debug_distance(_kind, _value, nil), do: nil
 
   defp phash_debug_distance(:art, value, %{image_phash: stored}) when is_integer(stored),
@@ -937,19 +935,6 @@ defmodule TabletopWeb.GameComponents do
 
   defp phash_debug_distance(:full, value, %{image_phash_full: stored}) when is_integer(stored),
     do: Tabletop.Cards.PHash.hamming_distance(value, stored)
-
-  defp phash_debug_distance(kind, value, %{image_phash_left: l, image_phash_right: r})
-       when kind in [:art_left, :art_right] do
-    candidates =
-      [l, r]
-      |> Enum.filter(&is_integer/1)
-      |> Enum.map(&Tabletop.Cards.PHash.hamming_distance(value, &1))
-
-    case candidates do
-      [] -> nil
-      ds -> Enum.min(ds)
-    end
-  end
 
   defp phash_debug_distance(_kind, _value, _card_print), do: nil
 
@@ -1223,14 +1208,6 @@ defmodule TabletopWeb.GameComponents do
             <%= if card.card_print && card.card_print.image_phash do %>
               <div><span class="opacity-50">phash (art):</span> {card.card_print.image_phash}</div>
             <% end %>
-            <%= if card.card_print && card.card_print.image_phash_left do %>
-              <div>
-                <span class="opacity-50">phash (left):</span> {card.card_print.image_phash_left}
-              </div>
-              <div>
-                <span class="opacity-50">phash (right):</span> {card.card_print.image_phash_right}
-              </div>
-            <% end %>
             <%= if card.card_print && card.card_print.image_phash_full do %>
               <div>
                 <span class="opacity-50">phash (full):</span> {card.card_print.image_phash_full}
@@ -1240,6 +1217,14 @@ defmodule TabletopWeb.GameComponents do
               <% winning_kind = winning_phash_kind(Map.get(debug, :phashes, %{}), card.card_print) %>
               <div class="font-semibold text-[11px] opacity-60 pt-1">Client (scan)</div>
               <div><span class="opacity-50">match method:</span> {debug.match_method}</div>
+              <%= if (rs = Map.get(debug, :region_scale)) && rs > 1.0 do %>
+                <div>
+                  <span class="opacity-50">capture region:</span>
+                  <span class="ml-1 px-1.5 py-0.5 rounded bg-warning text-warning-content font-semibold">
+                    expanded to {round(rs * 100)}%
+                  </span>
+                </div>
+              <% end %>
               <%= if winning_kind do %>
                 <div>
                   <span class="opacity-50">resolved by:</span>

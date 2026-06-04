@@ -31,11 +31,7 @@ defmodule TabletopWeb.CardLookup do
       alias Tabletop.Cards
       alias Tabletop.Cards.{Card, CardPrint}
 
-      def handle_event(
-            "open_card",
-            %{"ocr_candidates" => candidates, "x" => x, "y" => y} = params,
-            socket
-          ) do
+      def handle_event("open_card", %{"x" => x, "y" => y} = params, socket) do
         phashes = parse_phashes(params)
 
         detected_pitch =
@@ -44,15 +40,22 @@ defmodule TabletopWeb.CardLookup do
             _ -> nil
           end
 
-        # pHash lookup first, fall back to OCR.
-        phash_matches =
-          if has_phash?(phashes), do: Cards.find_by_p_hash_similarity(phashes), else: []
+        # 1.0 means the scanner matched on its first try; > 1.0 means it
+        # resolved via the expanded-region retry (see liveview_hook.js).
+        region_scale =
+          case Map.get(params, "region_scale") do
+            n when is_number(n) and n >= 1.0 -> n / 1
+            _ -> 1.0
+          end
 
+        # Recognition is pHash-only — no OCR. (Manual name search uses `search_card`.)
         possible_pairs =
-          if phash_matches != [] do
-            phash_matches |> Enum.map(&pair_from_print/1) |> dedupe_by_card()
+          if has_phash?(phashes) do
+            Cards.find_by_p_hash_similarity(phashes)
+            |> Enum.map(&pair_from_print/1)
+            |> dedupe_by_card()
           else
-            ocr_match_pairs(candidates)
+            []
           end
 
         # Sort pitch-matched cards to front
@@ -66,29 +69,26 @@ defmodule TabletopWeb.CardLookup do
             possible_pairs
           end
 
-        match_method =
-          cond do
-            has_phash?(phashes) and phash_matches != [] -> "phash"
-            candidates != [] and possible_pairs != [] -> "ocr"
-            true -> "none"
-          end
+        match_method = if possible_pairs != [], do: "phash", else: "none"
 
-        max_results = if match_method in ["phash", "ocr"], do: 3, else: 5
-        possible_pairs = Enum.take(possible_pairs, max_results)
+        possible_pairs = Enum.take(possible_pairs, 3)
 
         debug_info = %{
-          ocr_candidates: candidates,
           phashes: phashes,
           detected_pitch: detected_pitch,
-          match_method: match_method
+          match_method: match_method,
+          region_scale: region_scale
         }
 
+        # Always reply with whether a card matched — the client retry loop
+        # (which grows the capture region on a miss) waits on this.
         case build_open_card(possible_pairs, x, y, detected_pitch, debug_info) do
           nil ->
-            {:noreply, socket}
+            {:reply, %{matched: false}, socket}
 
           new_card ->
-            {:noreply, assign(socket, :open_cards, socket.assigns.open_cards ++ [new_card])}
+            {:reply, %{matched: true},
+             assign(socket, :open_cards, socket.assigns.open_cards ++ [new_card])}
         end
       end
 
@@ -104,12 +104,17 @@ defmodule TabletopWeb.CardLookup do
             y = if existing, do: existing.y, else: 20
 
             search_debug = %{
-              ocr_candidates: [%{"text" => trimmed, "confidence" => nil}],
               phashes: %{},
               match_method: "search"
             }
 
-            case build_open_card(ocr_match_pairs([%{"text" => trimmed}]), x, y, nil, search_debug) do
+            case build_open_card(
+                   text_match_pairs([%{"text" => trimmed}]),
+                   x,
+                   y,
+                   nil,
+                   search_debug
+                 ) do
               nil ->
                 {:noreply, socket}
 
@@ -227,7 +232,7 @@ defmodule TabletopWeb.CardLookup do
               with kind when is_binary(kind) <- entry["kind"],
                    raw when is_binary(raw) <- entry["value"],
                    {int, ""} <- Integer.parse(raw),
-                   atom_kind when atom_kind in [:art, :art_flipped, :art_left, :art_right, :full] <-
+                   atom_kind when atom_kind in [:art, :art_flipped, :full] <-
                      safe_kind_atom(kind) do
                 Map.put(acc, atom_kind, int)
               else
@@ -242,8 +247,6 @@ defmodule TabletopWeb.CardLookup do
 
       defp safe_kind_atom("art"), do: :art
       defp safe_kind_atom("art_flipped"), do: :art_flipped
-      defp safe_kind_atom("art_left"), do: :art_left
-      defp safe_kind_atom("art_right"), do: :art_right
       defp safe_kind_atom("full"), do: :full
       defp safe_kind_atom(_), do: nil
 
@@ -252,14 +255,16 @@ defmodule TabletopWeb.CardLookup do
       # CardPrint match → {card, card_print} pair
       defp pair_from_print(%CardPrint{} = cp), do: %{card: cp.card, card_print: cp}
 
-      # Card match (from fuzzy) → pair with canonical print
+      # Card match (from name search) → pair with canonical print
       defp pair_from_card(%Card{} = card),
         do: %{card: card, card_print: Card.canonical_print(card)}
 
       # Multiple prints of the same logical card → keep the first.
       defp dedupe_by_card(pairs), do: Enum.uniq_by(pairs, & &1.card.id)
 
-      defp ocr_match_pairs(candidates) when is_list(candidates) do
+      # Manual name-search matcher (the `search_card` box). Fuzzy-matches the
+      # typed text against card names via Postgres similarity + dmetaphone.
+      defp text_match_pairs(candidates) when is_list(candidates) do
         sorted = Enum.sort_by(candidates, &Map.get(&1, "confidence", 0), :desc)
 
         Enum.reduce_while(sorted, [], fn %{"text" => text}, _acc ->
@@ -273,7 +278,7 @@ defmodule TabletopWeb.CardLookup do
         end)
       end
 
-      defp ocr_match_pairs(_), do: []
+      defp text_match_pairs(_), do: []
 
       defp build_open_card([], _x, _y, _detected_pitch, _debug_info), do: nil
 

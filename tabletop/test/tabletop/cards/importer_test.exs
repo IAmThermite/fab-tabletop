@@ -158,8 +158,6 @@ defmodule Tabletop.Cards.ImporterTest do
         assert print.orientation == "vertical"
         assert is_integer(print.image_phash)
         assert is_integer(print.image_phash_full)
-        assert is_nil(print.image_phash_left)
-        assert is_nil(print.image_phash_right)
       end)
     end
 

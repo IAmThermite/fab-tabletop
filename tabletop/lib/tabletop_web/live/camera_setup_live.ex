@@ -173,7 +173,7 @@ defmodule TabletopWeb.CameraSetupLive do
     </Layouts.game>
 
     <script :type={ColocatedHook} name=".CameraSetup">
-      import { setupCardLookup, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
+      import { setupCardLookup, preloadScanner } from "@/js/card_scanner/liveview_hook.js"
       import { isDebugEnabled, setDebugEnabled } from "@/js/card_scanner/debug.js"
       import CameraRelayReceiver from "@/js/camera_relay_receiver.js"
 
@@ -396,9 +396,9 @@ defmodule TabletopWeb.CameraSetupLive do
 
           start()
 
-          // Card lookup — click on canvas to OCR card name
+          // Card lookup — click on canvas to identify the card via pHash
           const gameArea = document.getElementById("game-area")
-          preloadTesseract()
+          preloadScanner()
           setupCardLookup(this, canvasEl, gameArea)
 
           // --- Phone Camera Relay ---

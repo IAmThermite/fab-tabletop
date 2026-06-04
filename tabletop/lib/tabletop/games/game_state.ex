@@ -6,7 +6,9 @@ defmodule Tabletop.Games.GameState do
 
   schema "game_states" do
     field :state, :map, default: %{}
-    belongs_to :game, Tabletop.Games.Game, type: Ecto.UUID
+    # `game_id` is already declared as the primary key above, so the
+    # association must reuse that field rather than redefine it.
+    belongs_to :game, Tabletop.Games.Game, type: Ecto.UUID, define_field: false
 
     timestamps(type: :utc_datetime)
   end

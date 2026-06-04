@@ -168,7 +168,7 @@
   <script :type={ColocatedHook} name=".GameVideo">
     import WebRTCManager from "@/js/webrtc.js"
     import CameraRelayReceiver from "@/js/camera_relay_receiver.js"
-    import { setupCardLookup, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
+    import { setupCardLookup, preloadScanner } from "@/js/card_scanner/liveview_hook.js"
     import { isDebugEnabled, setDebugEnabled } from "@/js/card_scanner/debug.js"
 
     export default {
@@ -280,7 +280,7 @@
 
             if (status === "connected") {
               this.pushEvent("peer_connected", {})
-              preloadTesseract()
+              preloadScanner()
             } else if (status === "waiting" || status === "disconnected") {
               this.pushEvent("peer_disconnected", {})
             }
@@ -309,7 +309,7 @@
           }
         })
 
-        // Card lookup — click on remote canvas to OCR card name
+        // Card lookup — click on remote canvas to identify the card via pHash
         const gameArea = document.getElementById("game-area")
         setupCardLookup(this, canvasEl, gameArea, {
           isFlipped: () => flipToggle.checked,

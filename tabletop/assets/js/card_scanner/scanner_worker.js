@@ -1,4 +1,4 @@
-// OpenCV Web Worker — detects card-shaped rectangles, title, and art regions
+// OpenCV Web Worker — detects card-shaped rectangles and the art region
 
 const LOG = "[ScannerWorker]"
 
@@ -56,11 +56,6 @@ const MAX_ASPECT = 2.0
 // Rectangularity: reject trapezoids from card art features
 const MIN_SIDE_RATIO = 0.75       // opposite sides must be within 75% of each other
 const MAX_CORNER_DEVIATION = 25   // max degrees any corner can deviate from 90°
-
-// Title region: narrow banner near top of card
-const TITLE_Y_RATIO = 0.1
-const TITLE_H_RATIO = 0.04
-const TITLE_X_INSET = 0.19
 
 // Art region: main illustration area
 const ART_Y_RATIO = 0.16
@@ -137,6 +132,32 @@ function rotateBuffer180(data, width, height) {
 }
 
 /**
+ * Rotate an RGBA pixel buffer 90° counter-clockwise into a fresh buffer.
+ * Returns `{data, width, height}` with width/height swapped. Matches how the
+ * cardvault API stores horizontal cards (rotated CCW into a portrait file), so
+ * a landscape capture lands in the same portrait frame as the stored image.
+ */
+function rotate90CCW(data, width, height) {
+  const dw = height
+  const dh = width
+  const out = new Uint8ClampedArray(dw * dh * 4)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      // 90° CCW: src(x, y) → dst(y, width - 1 - x)
+      const dx = y
+      const dy = width - 1 - x
+      const sIdx = (y * width + x) * 4
+      const dIdx = (dy * dw + dx) * 4
+      out[dIdx] = data[sIdx]
+      out[dIdx + 1] = data[sIdx + 1]
+      out[dIdx + 2] = data[sIdx + 2]
+      out[dIdx + 3] = data[sIdx + 3]
+    }
+  }
+  return { data: out, width: dw, height: dh }
+}
+
+/**
  * Use approxPolyDP to find the best 4-point polygon approximation of a contour.
  * Returns null if no good quad is found, or an array of 4 {x,y} points.
  */
@@ -177,6 +198,21 @@ function orderCorners(pts) {
   const bl = pts[diffs.indexOf(Math.min(...diffs))]
 
   return [tl, tr, br, bl]
+}
+
+/**
+ * Scale a quad's corners outward (scale > 1) or inward about its centroid.
+ * Used by recognition retries to pull in a slightly larger capture region when
+ * the first match misses. Corners are clamped to the image bounds.
+ */
+function scaleQuad(quad, scale, width, height) {
+  const cx = (quad[0].x + quad[1].x + quad[2].x + quad[3].x) / 4
+  const cy = (quad[0].y + quad[1].y + quad[2].y + quad[3].y) / 4
+  const clamp = (v, max) => Math.max(0, Math.min(max - 1, v))
+  return quad.map((p) => ({
+    x: clamp(cx + (p.x - cx) * scale, width),
+    y: clamp(cy + (p.y - cy) * scale, height),
+  }))
 }
 
 function dist(a, b) {
@@ -357,7 +393,7 @@ function findBestContour(cv, contours, imgArea, centerX, centerY) {
 }
 
 self.onmessage = function (event) {
-  const { imageData, requestId } = event.data
+  const { imageData, requestId, regionScale = 1 } = event.data
 
   if (!cvReady || !cvModule) {
     self.postMessage({ type: "noCard", requestId, reason: "not ready" })
@@ -436,7 +472,13 @@ self.onmessage = function (event) {
 
       const cardW = Math.round(widthTop)
       const cardH = Math.round(heightLeft)
-      const srcCorners = bestQuad // TL, TR, BR, BL — preserved as detected
+
+      // TL, TR, BR, BL — as detected, optionally grown about the centroid so a
+      // retry pulls in a little more around the card (sleeve/border tolerance).
+      const srcCorners =
+        regionScale === 1
+          ? bestQuad
+          : scaleQuad(bestQuad, regionScale, imageData.width, imageData.height)
 
       // Compute approximate angle for logging
       const dx = bestQuad[1].x - bestQuad[0].x
@@ -474,52 +516,54 @@ self.onmessage = function (event) {
         cv.cvtColor(warped, warpedRGBA, cv.COLOR_GRAY2RGBA)
       }
 
-      const cardData = new Uint8ClampedArray(warpedRGBA.data)
+      let cardData = new Uint8ClampedArray(warpedRGBA.data)
+      let cw = cardW
+      let ch = cardH
+      const originalLayout = layout
+      let effectiveLayout = layout
 
-      // For vertical cards, use the pitch-strip saturation check to detect
-      // upside-down captures. Horizontal cards (Everbloom split, Great
-      // Library landmark) don't have a top-edge pitch strip, so skip the
-      // check and let the backend's 4-way LEAST query absorb the flip.
-      let orientation
-      if (layout === "vertical") {
-        orientation = detectOrientation(cardData, cardW, cardH)
-        if (orientation === "flipped") {
-          console.log(`${LOG} Card is upside-down — rotating 180°`)
-          rotateBuffer180(cardData, cardW, cardH)
-        }
-      } else {
-        orientation = "uncertain"
+      // A horizontal capture is always rotated 90° CCW into portrait so the
+      // rest of the pipeline treats it exactly like a vertical card. This
+      // serves both true landscape cards (Everbloom split, Great Library) and
+      // vertical cards laid sideways on the table — orientation detection,
+      // art region, orientation, pitch, and pHashes all follow one path.
+      if (effectiveLayout === "horizontal") {
+        const rotated = rotate90CCW(cardData, cw, ch)
+        cardData = rotated.data
+        cw = rotated.width
+        ch = rotated.height
+        effectiveLayout = "vertical"
       }
 
-      // Title + art regions only meaningful for vertical layouts. Horizontal
-      // captures are split into halves by the hook.
-      const title = layout === "vertical" ? {
-        x: Math.round(cardW * TITLE_X_INSET),
-        y: Math.round(cardH * TITLE_Y_RATIO),
-        width: Math.round(cardW * (1 - 2 * TITLE_X_INSET)),
-        height: Math.round(cardH * TITLE_H_RATIO),
-      } : null
+      // Pitch-strip saturation check detects upside-down captures and corrects
+      // them in place. For true landscape cards (no top-edge pitch strip) this
+      // returns "uncertain" and the art/art_flipped pHash pair absorbs the flip.
+      let orientation = detectOrientation(cardData, cw, ch)
+      if (orientation === "flipped") {
+        console.log(`${LOG} Card is upside-down — rotating 180°`)
+        rotateBuffer180(cardData, cw, ch)
+      }
 
-      const art = layout === "vertical" ? {
-        x: Math.round(cardW * ART_X_INSET),
-        y: Math.round(cardH * ART_Y_RATIO),
-        width: Math.round(cardW * (1 - 2 * ART_X_INSET)),
-        height: Math.round(cardH * ART_H_RATIO),
-      } : null
+      const art = {
+        x: Math.round(cw * ART_X_INSET),
+        y: Math.round(ch * ART_Y_RATIO),
+        width: Math.round(cw * (1 - 2 * ART_X_INSET)),
+        height: Math.round(ch * ART_H_RATIO),
+      }
 
-      const cardArea = cardW * cardH
-      console.log(`${LOG} Card: ${cardW}x${cardH} (${layout}), angle: ${angle.toFixed(1)}°, area: ${(cardArea / imgArea * 100).toFixed(1)}%, score: ${bestScore.toFixed(2)}`)
-      if (title) console.log(`${LOG} Title: ${title.width}x${title.height} at (${title.x},${title.y})`)
-      if (art) console.log(`${LOG} Art: ${art.width}x${art.height} at (${art.x},${art.y})`)
+      const cardArea = cw * ch
+      const layoutLabel = originalLayout === effectiveLayout ? effectiveLayout : `${effectiveLayout} (rotated from ${originalLayout})`
+      console.log(`${LOG} Card: ${cw}x${ch} (${layoutLabel}), angle: ${angle.toFixed(1)}°, area: ${(cardArea / imgArea * 100).toFixed(1)}%, score: ${bestScore.toFixed(2)}`)
+      console.log(`${LOG} Art: ${art.width}x${art.height} at (${art.x},${art.y})`)
 
       self.postMessage({
         type: "cardDetected",
         requestId,
-        card: { width: cardW, height: cardH },
+        card: { width: cw, height: ch },
         cardImageData: cardData.buffer,
-        quad: bestQuad,
-        layout,
-        title,
+        quad: srcCorners,
+        layout: effectiveLayout,
+        originalLayout,
         art,
         angle,
         orientation,

@@ -58,24 +58,13 @@ Enum.each(cards, fn %{label: label, url: url, orientation: orient, art_type: art
     raw_path = Path.join(out_dir, "#{label}_raw.webp")
     File.write!(raw_path, body)
 
-    bbox = ArtBboxDetector.detect(body, %{orientation: orient, art_type: art_type})
+    %{x: _, y: _, w: _, h: _} = single =
+      ArtBboxDetector.detect(body, %{orientation: orient, art_type: art_type})
 
-    case bbox do
-      %{x: _, y: _, w: _, h: _} = single ->
-        IO.inspect(single, label: "  bbox")
-        out = Path.join(out_dir, "#{label}_crop.png")
-        crop_with_imagemagick.(raw_path, single, out)
-        IO.puts("  saved → #{out}")
-
-      %{halves: [left, right]} ->
-        IO.inspect(left, label: "  bbox[left]")
-        IO.inspect(right, label: "  bbox[right]")
-        l_out = Path.join(out_dir, "#{label}_left.png")
-        r_out = Path.join(out_dir, "#{label}_right.png")
-        crop_with_imagemagick.(raw_path, left, l_out)
-        crop_with_imagemagick.(raw_path, right, r_out)
-        IO.puts("  saved → #{l_out}, #{r_out}")
-    end
+    IO.inspect(single, label: "  bbox")
+    out = Path.join(out_dir, "#{label}_crop.png")
+    crop_with_imagemagick.(raw_path, single, out)
+    IO.puts("  saved → #{out}")
   else
     err -> IO.puts("  fetch failed: #{inspect(err)}")
   end

@@ -1,137 +1,767 @@
-{
-  "results": [
-    {
-      "card_id": "scar-for-a-scar-1",
-      "print_id": "I-WTR191",
-      "face_id": "I-WTR191",
-      "is_published": true,
-      "published_at": null,
-      "printed_name": "Scar for a Scar",
-      "printed_name_html": [
-        "<p>Scar for a Scar</p>\n"
-      ],
-      "printed_typebox": "Ninja Action - Attack",
-      "printed_typebox_html": [
-        "<p>Ninja Action - Attack</p>\n"
-      ],
-      "printed_pitch": 1,
-      "printed_cost": "0",
-      "printed_power": "4",
-      "printed_defense": "2",
-      "printed_intellect": "",
-      "printed_life": "",
-      "printed_rules_text": "When you play Scar for a Scar, if you have less {h} than an opposing hero, it gains **go again**.",
-      "printed_flavor_text": "",
-      "printed_artist": "Arif Wijaya",
-      "printed_traitbox": "",
-      "orientation": "vertical",
-      "core_talent": null,
-      "languages": {
-        "it": "IT_1HP396",
-        "es": "ES_1HP396",
-        "de": "DE_1HP396",
-        "fr": "FR_AGB012",
-        "en": "1HP396",
-        "ja": "JA_AGB012"
+[
+  {
+    "unique_id": "DbpqBt8Gp8HWg6QMFBBgh",
+    "name": "Scar for a Scar",
+    "color": "Red",
+    "pitch": "1",
+    "cost": "0",
+    "power": "4",
+    "defense": "2",
+    "health": "",
+    "intelligence": "",
+    "arcane": "",
+    "types": [
+      "Generic",
+      "Action",
+      "Attack"
+    ],
+    "traits": [],
+    "card_keywords": [
+      "Go again"
+    ],
+    "abilities_and_effects": [],
+    "ability_and_effect_keywords": [],
+    "granted_keywords": [],
+    "removed_keywords": [],
+    "interacts_with_keywords": [],
+    "functional_text": "When this is played, if you have less {h} than an opposing hero, it gets **go again**.",
+    "functional_text_plain": "When this is played, if you have less {h} than an opposing hero, it gets go again.",
+    "type_text": "Generic Action - Attack",
+    "played_horizontally": false,
+    "blitz_legal": true,
+    "cc_legal": true,
+    "commoner_legal": true,
+    "ll_legal": true,
+    "silver_age_legal": true,
+    "blitz_living_legend": false,
+    "cc_living_legend": false,
+    "blitz_banned": false,
+    "cc_banned": false,
+    "commoner_banned": false,
+    "ll_banned": false,
+    "silver_age_banned": false,
+    "upf_banned": false,
+    "blitz_suspended": false,
+    "cc_suspended": false,
+    "commoner_suspended": false,
+    "ll_restricted": false,
+    "printings": [
+      {
+        "unique_id": "Q67Cn6pHff8PjFWqBzFJk",
+        "set_printing_unique_id": "rW8hnzQk9DFq89t6Gm9cH",
+        "id": "1HP396",
+        "set_id": "1HP",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/media/images/1HP396.width-450.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "3332330302445770857",
+        "phash_art": "2807679961353249638",
+        "tcgplayer_product_id": "271120",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/271120?Language=English&Printing=Normal"
       },
-      "faces": [
-        {
-          "layout_position": 10,
-          "image": {
-            "small": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/small/I-WTR191.webp",
-            "normal": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/normal/I-WTR191.webp",
-            "large": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/I-WTR191.webp"
-          }
-        }
-      ]
-    },
-    {
-      "card_id": "scar-for-a-scar-2",
-      "print_id": "UPR210",
-      "face_id": "UPR210",
-      "is_published": true,
-      "published_at": null,
-      "printed_name": "Scar for a Scar",
-      "printed_name_html": [
-        "<p>Scar for a Scar</p>\n"
-      ],
-      "printed_typebox": "Generic Action - Attack",
-      "printed_typebox_html": [
-        "<p>Generic Action - Attack</p>\n"
-      ],
-      "printed_pitch": 2,
-      "printed_cost": "0",
-      "printed_power": "3",
-      "printed_defense": "2",
-      "printed_intellect": "",
-      "printed_life": "",
-      "printed_rules_text": "When you play Scar for a Scar, if you have less {g} than an opposing hero, it gains **go again**.",
-      "printed_flavor_text": "",
-      "printed_artist": "Arif Wijaya",
-      "printed_traitbox": "",
-      "orientation": "vertical",
-      "core_talent": null,
-      "languages": {
-        "it": "IT_1HP397",
-        "es": "ES_1HP397",
-        "de": "DE_1HP397",
-        "fr": "FR_1HP397",
-        "en": "1HP397"
+      {
+        "unique_id": "JFgnDp9F6NLkj8cbfQTQB",
+        "set_printing_unique_id": "ggrNmGdbz8LcBRQKdFHnp",
+        "id": "AGB012",
+        "set_id": "AGB",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://d2wlb52bya4y8z.cloudfront.net/media/cards/large/AGB012.webp",
+        "image_rotation_degrees": 0,
+        "phash_full": "305914651392891489",
+        "phash_art": "2807679961353249638",
+        "tcgplayer_product_id": "633702",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/633702?Language=English&Printing=Normal"
       },
-      "faces": [
-        {
-          "layout_position": 10,
-          "image": {
-            "small": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/small/UPR210.webp",
-            "normal": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/normal/UPR210.webp",
-            "large": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/UPR210.webp"
-          }
-        }
-      ]
-    },
-    {
-      "card_id": "scar-for-a-scar-3",
-      "print_id": "UPR211",
-      "face_id": "UPR211",
-      "is_published": true,
-      "published_at": null,
-      "printed_name": "Scar for a Scar",
-      "printed_name_html": [
-        "<p>Scar for a Scar</p>\n"
-      ],
-      "printed_typebox": "Generic Action - Attack",
-      "printed_typebox_html": [
-        "<p>Generic Action - Attack</p>\n"
-      ],
-      "printed_pitch": 3,
-      "printed_cost": "0",
-      "printed_power": "2",
-      "printed_defense": "2",
-      "printed_intellect": "",
-      "printed_life": "",
-      "printed_rules_text": "When you play Scar for a Scar, if you have less {g} than an opposing hero, it gains **go again**.",
-      "printed_flavor_text": "",
-      "printed_artist": "Arif Wijaya",
-      "printed_traitbox": "",
-      "orientation": "vertical",
-      "core_talent": null,
-      "languages": {
-        "it": "IT_1HP398",
-        "es": "ES_1HP398",
-        "de": "DE_1HP398",
-        "fr": "FR_1HP398",
-        "en": "1HP398"
+      {
+        "unique_id": "GnQmQtbTmrjP8tPcpGKCP",
+        "set_printing_unique_id": "nLHMCLWr6cnfBgpFjKLWW",
+        "id": "ANQ030",
+        "set_id": "ANQ",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Agri Karuniawan"
+        ],
+        "art_variations": [
+          "AB"
+        ],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/ANQ030.webp",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877200609",
+        "phash_art": "2807679961353249638",
+        "tcgplayer_product_id": "678583",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/678583?Language=English&Printing=Normal"
       },
-      "faces": [
-        {
-          "layout_position": 10,
-          "image": {
-            "small": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/small/UPR211.webp",
-            "normal": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/normal/UPR211.webp",
-            "large": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/UPR211.webp"
-          }
-        }
-      ]
-    }
-  ]
-}
+      {
+        "unique_id": "7PcMB9fwFhWgpw6kMb9pM",
+        "set_printing_unique_id": "rB9MWz686BFgFq8nwtq9j",
+        "id": "ASR011",
+        "set_id": "ASR",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Agri Karuniawan"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://d2wlb52bya4y8z.cloudfront.net/media/cards/large/ASR011.webp",
+        "image_rotation_degrees": 0,
+        "phash_full": "305914651392891489",
+        "phash_art": "2807679961353249638"
+      },
+      {
+        "unique_id": "QKpFbgkgDNPtKQP6gwTqq",
+        "set_printing_unique_id": "j76qTFctqc8krqh9GKGmT",
+        "id": "FAB015",
+        "set_id": "FAB",
+        "edition": "N",
+        "foiling": "R",
+        "rarity": "P",
+        "expansion_slot": false,
+        "artists": [
+          "Agri Karuniawan"
+        ],
+        "art_variations": [
+          "EA"
+        ],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/promos/FAB015.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "4711643292331372084",
+        "phash_art": "7173157318342089641",
+        "tcgplayer_product_id": "225514",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225514?Language=English&Printing=Rainbow+Foil"
+      },
+      {
+        "unique_id": "RfgdDdW9p6TnCBT8JtNGc",
+        "set_printing_unique_id": "TntFbKJjRFwMWQpLGnQR8",
+        "id": "IRA009",
+        "set_id": "IRA",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "P",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/media/images/IRA009-P_lmnCh8s.width-450.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551880346465",
+        "phash_art": "2806484792415183714",
+        "tcgplayer_product_id": "224955",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/224955?Language=English&Printing=Normal"
+      },
+      {
+        "unique_id": "fP6TPHWJchqrtRWjRGFg9",
+        "set_printing_unique_id": "Kw8MWFJtGCLg6hRRjbw9w",
+        "id": "KAT015",
+        "set_id": "KAT",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2023-OUT-KAT/EN/KAT015.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "489218",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/489218?Language=English&Printing=Normal"
+      },
+      {
+        "unique_id": "dKH9NNn6cWM7rDCmD7TzT",
+        "set_printing_unique_id": "JGhkz7dKNtQd9czpFhhhr",
+        "id": "KSU017",
+        "set_id": "KSU",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/media/images/KSU17.width-450.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913278073043553",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225777",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225777?Language=English&Printing=Normal"
+      },
+      {
+        "unique_id": "P7cr8QgMwNjHLcWqpDNpW",
+        "set_printing_unique_id": "RMFGGLpCHGfDkFCfCPDTF",
+        "id": "SDO011",
+        "set_id": "SDO",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/SDO011.webp",
+        "image_rotation_degrees": 0,
+        "phash_full": "305914651392891489",
+        "phash_art": "2807679961353249638",
+        "tcgplayer_product_id": "676583",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/676583?Language=English&Printing=Normal"
+      },
+      {
+        "unique_id": "Fk9CJRWnbp6pqrFkLnqzd",
+        "set_printing_unique_id": "7BqWG8Lr8FRNHwWtP8GN6",
+        "id": "SEA218",
+        "set_id": "SEA",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2025-SEA/EN/SEA218.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305922347974285921",
+        "phash_art": "2807679961353249638",
+        "tcgplayer_product_id": "633346",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/633346?Language=English&Printing=Normal"
+      },
+      {
+        "unique_id": "zbgMtbnGN86ghzbwDC7tf",
+        "set_printing_unique_id": "6FgCqjRwr7TJg6jmJgdbj",
+        "id": "SFA024",
+        "set_id": "SFA",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/SFA024.webp",
+        "image_rotation_degrees": 0,
+        "phash_full": "305914651392891489",
+        "phash_art": "2807679961353249638",
+        "tcgplayer_product_id": "676665",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/676665?Language=English&Printing=Normal"
+      },
+      {
+        "unique_id": "z86wtCNGfpJQCpRBpmwfT",
+        "set_printing_unique_id": "RFJzQMnLBzFNqjL7BdJgj",
+        "id": "UPR209",
+        "set_id": "UPR",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2022-UPR/UPR209.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "1529764551595023201",
+        "phash_art": "2806484800938009442",
+        "tcgplayer_product_id": "275635",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/275635?Language=English&Printing=Normal"
+      },
+      {
+        "unique_id": "zckTRHzHC9FWRdBmWMJJR",
+        "set_printing_unique_id": "C9dGnhCMDWQdD7rC7QbHj",
+        "id": "WTR191",
+        "set_id": "WTR",
+        "edition": "A",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2019-WTR/WTR191.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225274",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225274?Language=English&Printing=1st+Edition+Normal"
+      },
+      {
+        "unique_id": "PRmMHr8wBghkW9bGKbGnQ",
+        "set_printing_unique_id": "C9dGnhCMDWQdD7rC7QbHj",
+        "id": "WTR191",
+        "set_id": "WTR",
+        "edition": "A",
+        "foiling": "R",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2019-WTR/WTR191.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225274",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225274?Language=English&Printing=1st+Edition+Rainbow+Foil"
+      },
+      {
+        "unique_id": "M9f8JjzR7CDC86DRh9jFT",
+        "set_printing_unique_id": "6CntKbGMhcBqqnHmgGM99",
+        "id": "WTR191",
+        "set_id": "WTR",
+        "edition": "U",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2020-U-WTR/U-WTR191.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225274",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225274?Language=English&Printing=Unlimited+Edition+Normal"
+      },
+      {
+        "unique_id": "kkrRMfPkmKtBKt8MMpwpc",
+        "set_printing_unique_id": "6CntKbGMhcBqqnHmgGM99",
+        "id": "WTR191",
+        "set_id": "WTR",
+        "edition": "U",
+        "foiling": "R",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2020-U-WTR/U-WTR191.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225274",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225274?Language=English&Printing=Unlimited+Edition+Rainbow+Foil"
+      }
+    ]
+  },
+  {
+    "unique_id": "LwdKpBTcMk6rLjDwG8r6G",
+    "name": "Scar for a Scar",
+    "color": "Yellow",
+    "pitch": "2",
+    "cost": "0",
+    "power": "3",
+    "defense": "2",
+    "health": "",
+    "intelligence": "",
+    "arcane": "",
+    "types": [
+      "Generic",
+      "Action",
+      "Attack"
+    ],
+    "traits": [],
+    "card_keywords": [
+      "Go again"
+    ],
+    "abilities_and_effects": [],
+    "ability_and_effect_keywords": [],
+    "granted_keywords": [],
+    "removed_keywords": [],
+    "interacts_with_keywords": [],
+    "functional_text": "When this is played, if you have less {h} than an opposing hero, it gets **go again**.",
+    "functional_text_plain": "When this is played, if you have less {h} than an opposing hero, it gets go again.",
+    "type_text": "Generic Action - Attack",
+    "played_horizontally": false,
+    "blitz_legal": true,
+    "cc_legal": true,
+    "commoner_legal": true,
+    "ll_legal": true,
+    "silver_age_legal": true,
+    "blitz_living_legend": false,
+    "cc_living_legend": false,
+    "blitz_banned": false,
+    "cc_banned": false,
+    "commoner_banned": false,
+    "ll_banned": false,
+    "silver_age_banned": false,
+    "upf_banned": false,
+    "blitz_suspended": false,
+    "cc_suspended": false,
+    "commoner_suspended": false,
+    "ll_restricted": false,
+    "printings": [
+      {
+        "unique_id": "d87QcRDq6rLqD86pG6H8C",
+        "set_printing_unique_id": "rW8hnzQk9DFq89t6Gm9cH",
+        "id": "1HP397",
+        "set_id": "1HP",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/media/images/1HP397.width-450.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "3332330302445770857",
+        "phash_art": "2806554611202220902",
+        "tcgplayer_product_id": "271123",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/271123?Language=English&Printing=Normal"
+      },
+      {
+        "unique_id": "RLM9MbnpqjJCwQtLBnKRg",
+        "set_printing_unique_id": "RFJzQMnLBzFNqjL7BdJgj",
+        "id": "UPR210",
+        "set_id": "UPR",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2022-UPR/UPR210.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "1529764552668764769",
+        "phash_art": "2806484800938009442",
+        "tcgplayer_product_id": "275636",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/275636?Language=English&Printing=Normal"
+      },
+      {
+        "unique_id": "LHFWfJHzHMJkLnMBmbJQp",
+        "set_printing_unique_id": "C9dGnhCMDWQdD7rC7QbHj",
+        "id": "WTR192",
+        "set_id": "WTR",
+        "edition": "A",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2019-WTR/WTR192.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225275",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225275?Language=English&Printing=1st+Edition+Normal"
+      },
+      {
+        "unique_id": "P8tMtrbLkHjqfFJbKzJTt",
+        "set_printing_unique_id": "C9dGnhCMDWQdD7rC7QbHj",
+        "id": "WTR192",
+        "set_id": "WTR",
+        "edition": "A",
+        "foiling": "R",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2019-WTR/WTR192.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225275",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225275?Language=English&Printing=1st+Edition+Rainbow+Foil"
+      },
+      {
+        "unique_id": "HbtNt6M8NkMWLTLfJFWRW",
+        "set_printing_unique_id": "6CntKbGMhcBqqnHmgGM99",
+        "id": "WTR192",
+        "set_id": "WTR",
+        "edition": "U",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2020-U-WTR/U-WTR192.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225275",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225275?Language=English&Printing=Unlimited+Edition+Normal"
+      },
+      {
+        "unique_id": "TCQrQcjKJMhpd76PRhzwh",
+        "set_printing_unique_id": "6CntKbGMhcBqqnHmgGM99",
+        "id": "WTR192",
+        "set_id": "WTR",
+        "edition": "U",
+        "foiling": "R",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2020-U-WTR/U-WTR192.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225275",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225275?Language=English&Printing=Unlimited+Edition+Rainbow+Foil"
+      }
+    ]
+  },
+  {
+    "unique_id": "fBjC6dqfrGN9TG7Whh9TR",
+    "name": "Scar for a Scar",
+    "color": "Blue",
+    "pitch": "3",
+    "cost": "0",
+    "power": "2",
+    "defense": "2",
+    "health": "",
+    "intelligence": "",
+    "arcane": "",
+    "types": [
+      "Generic",
+      "Action",
+      "Attack"
+    ],
+    "traits": [],
+    "card_keywords": [
+      "Go again"
+    ],
+    "abilities_and_effects": [],
+    "ability_and_effect_keywords": [],
+    "granted_keywords": [],
+    "removed_keywords": [],
+    "interacts_with_keywords": [],
+    "functional_text": "When this is played, if you have less {h} than an opposing hero, it gets **go again**.",
+    "functional_text_plain": "When this is played, if you have less {h} than an opposing hero, it gets go again.",
+    "type_text": "Generic Action - Attack",
+    "played_horizontally": false,
+    "blitz_legal": true,
+    "cc_legal": true,
+    "commoner_legal": true,
+    "ll_legal": true,
+    "silver_age_legal": true,
+    "blitz_living_legend": false,
+    "cc_living_legend": false,
+    "blitz_banned": false,
+    "cc_banned": false,
+    "commoner_banned": false,
+    "ll_banned": false,
+    "silver_age_banned": false,
+    "upf_banned": false,
+    "blitz_suspended": false,
+    "cc_suspended": false,
+    "commoner_suspended": false,
+    "ll_restricted": false,
+    "printings": [
+      {
+        "unique_id": "w7JN7LfHJ8PFHNBnr6JNK",
+        "set_printing_unique_id": "rW8hnzQk9DFq89t6Gm9cH",
+        "id": "1HP398",
+        "set_id": "1HP",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/media/images/1HP398.width-450.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "3332330302445770857",
+        "phash_art": "2806554611202220902",
+        "tcgplayer_product_id": "271125",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/271125?Language=English&Printing=Normal"
+      },
+      {
+        "unique_id": "CCkBJNRkdjFTgT8rDWpWT",
+        "set_printing_unique_id": "RFJzQMnLBzFNqjL7BdJgj",
+        "id": "UPR211",
+        "set_id": "UPR",
+        "edition": "N",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2022-UPR/UPR211.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "1529764551595023201",
+        "phash_art": "2806484800938009442",
+        "tcgplayer_product_id": "275639",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/275639?Language=English&Printing=Normal"
+      },
+      {
+        "unique_id": "nR9kpGRwPzKTrDwLLBmgg",
+        "set_printing_unique_id": "C9dGnhCMDWQdD7rC7QbHj",
+        "id": "WTR193",
+        "set_id": "WTR",
+        "edition": "A",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2019-WTR/WTR193.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225276",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225276?Language=English&Printing=1st+Edition+Normal"
+      },
+      {
+        "unique_id": "T9QMpjkmtFTf6QKGGGGH8",
+        "set_printing_unique_id": "C9dGnhCMDWQdD7rC7QbHj",
+        "id": "WTR193",
+        "set_id": "WTR",
+        "edition": "A",
+        "foiling": "R",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2019-WTR/WTR193.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225276",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225276?Language=English&Printing=1st+Edition+Rainbow+Foil"
+      },
+      {
+        "unique_id": "tzjcb9zGQBLBDDk9tGmnf",
+        "set_printing_unique_id": "6CntKbGMhcBqqnHmgGM99",
+        "id": "WTR193",
+        "set_id": "WTR",
+        "edition": "U",
+        "foiling": "S",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2020-U-WTR/U-WTR193.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225276",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225276?Language=English&Printing=Unlimited+Edition+Normal"
+      },
+      {
+        "unique_id": "fMnhkhCNqdp8QbgL6FcTN",
+        "set_printing_unique_id": "6CntKbGMhcBqqnHmgGM99",
+        "id": "WTR193",
+        "set_id": "WTR",
+        "edition": "U",
+        "foiling": "R",
+        "rarity": "C",
+        "expansion_slot": false,
+        "artists": [
+          "Arif Wijaya"
+        ],
+        "art_variations": [],
+        "flavor_text": "",
+        "flavor_text_plain": "",
+        "image_url": "https://storage.googleapis.com/fabmaster/cardfaces/2020-U-WTR/U-WTR193.png",
+        "image_rotation_degrees": 0,
+        "phash_full": "305913551877208673",
+        "phash_art": "2806554061580624742",
+        "tcgplayer_product_id": "225276",
+        "tcgplayer_url": "https://www.tcgplayer.com/product/225276?Language=English&Printing=Unlimited+Edition+Rainbow+Foil"
+      }
+    ]
+  }
+]

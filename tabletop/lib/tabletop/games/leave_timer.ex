@@ -14,7 +14,11 @@ defmodule Tabletop.Games.LeaveTimer do
   is only scheduled/executed when no live connection for that user remains.
   """
 
-  use GenServer
+  # `:transient` so the DynamicSupervisor does NOT restart the timer when it stops
+  # normally — both `cancel_leave/2` and a fired `:execute_leave` exit `:normal`,
+  # and a permanent child would be resurrected (re-arming a fresh 5-minute timer
+  # and re-registering in the Registry), meaning a cancel never truly cancels.
+  use GenServer, restart: :transient
 
   alias Tabletop.Games
 

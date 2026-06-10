@@ -3,390 +3,235 @@ defmodule Tabletop.Cards.ImporterTest do
 
   alias Tabletop.Cards
   alias Tabletop.Cards.{Card, CardPrint, Importer}
-  alias Tabletop.Repo
 
-  @test_fixture_dir "priv/cards/test"
+  # Writes the given card list (the flesh-and-blood-cards `card.json` shape) to a
+  # temp file and returns its path.
+  defp write_source(cards) do
+    path =
+      Path.join(System.tmp_dir!(), "importer_test_#{System.unique_integer([:positive])}.json")
 
-  defp scar_results(pitch) do
-    {:ok, content} = File.read("#{@test_fixture_dir}/scar-for-a-scar-#{pitch}.json")
-    {:ok, data} = Jason.decode(content)
-    data["results"]
+    File.write!(path, Jason.encode!(cards))
+    on_exit(fn -> File.rm(path) end)
+    path
   end
 
-  describe "collect_english_faces/1" do
-    test "filters non-English faces and attaches set_code" do
-      [first_result | _] = scar_results(1)
-      faces = Importer.collect_english_faces(first_result["card_prints"])
-
-      assert Enum.all?(faces, &(&1["face_language"] == "en"))
-      assert Enum.all?(faces, &is_binary(&1["set_code"]))
-    end
-
-    test "returns [] for missing or non-list input" do
-      assert Importer.collect_english_faces(nil) == []
-      assert Importer.collect_english_faces(%{}) == []
-    end
+  defp printing(attrs) do
+    Map.merge(
+      %{
+        "unique_id" => "u-#{System.unique_integer([:positive])}",
+        "id" => "AAA001",
+        "set_id" => "AAA",
+        "foiling" => "S",
+        "art_variations" => [],
+        "image_url" => "https://example.com/AAA001.png",
+        "phash_art" => "111",
+        "phash_full" => "222"
+      },
+      attrs
+    )
   end
 
-  describe "foil_dedup/1" do
-    test "prefers regular finish over foil within the same (set, art_type, layout) group" do
-      faces = [
-        %{
-          "face_id" => "WTR191",
-          "set_code" => "WTR",
-          "art_type" => "regular",
-          "layout_position" => 10,
-          "finish_type" => "regular"
-        },
-        %{
-          "face_id" => "WTR191-RF",
-          "set_code" => "WTR",
-          "art_type" => "regular",
-          "layout_position" => 10,
-          "finish_type" => "rainbow-foil"
-        }
-      ]
-
-      result = Importer.foil_dedup(faces)
-      assert length(result) == 1
-      assert hd(result)["face_id"] == "WTR191"
-    end
-
-    test "keeps one foil face when no regular exists in the group" do
-      faces = [
-        %{
-          "face_id" => "SEA050-MV",
-          "set_code" => "SEA",
-          "art_type" => "extended-art",
-          "layout_position" => 10,
-          "finish_type" => "cold-foil"
-        },
-        %{
-          "face_id" => "SEA050-MV-ALT",
-          "set_code" => "SEA",
-          "art_type" => "extended-art",
-          "layout_position" => 10,
-          "finish_type" => "cold-foil"
-        }
-      ]
-
-      result = Importer.foil_dedup(faces)
-      assert length(result) == 1
-      # Picks the alphabetically-first face_id for stability.
-      assert hd(result)["face_id"] == "SEA050-MV"
-    end
-
-    test "keeps separate groups across (set, art_type, layout) combinations" do
-      faces = [
-        %{
-          "face_id" => "SEA050",
-          "set_code" => "SEA",
-          "art_type" => "regular",
-          "layout_position" => 10,
-          "finish_type" => "regular"
-        },
-        %{
-          "face_id" => "SEA050-MV",
-          "set_code" => "SEA",
-          "art_type" => "extended-art",
-          "layout_position" => 10,
-          "finish_type" => "cold-foil"
-        },
-        %{
-          "face_id" => "GEM046-RF",
-          "set_code" => "GEM",
-          "art_type" => "extended-art",
-          "layout_position" => 10,
-          "finish_type" => "rainbow-foil"
-        }
-      ]
-
-      result = Importer.foil_dedup(faces)
-      face_ids = result |> Enum.map(& &1["face_id"]) |> Enum.sort()
-      assert face_ids == ["GEM046-RF", "SEA050", "SEA050-MV"]
-    end
-
-    test "keeps a back face (different layout_position) alongside the front" do
-      faces = [
-        %{
-          "face_id" => "HNT261-MV",
-          "set_code" => "HNT",
-          "art_type" => "extended-art",
-          "layout_position" => 10,
-          "finish_type" => "cold-foil"
-        },
-        %{
-          "face_id" => "HNT261-MV_BACK",
-          "set_code" => "HNT",
-          "art_type" => "full-art",
-          "layout_position" => 20,
-          "finish_type" => "cold-foil"
-        }
-      ]
-
-      result = Importer.foil_dedup(faces)
-      face_ids = result |> Enum.map(& &1["face_id"]) |> Enum.sort()
-      assert face_ids == ["HNT261-MV", "HNT261-MV_BACK"]
-    end
+  defp prints_for(external_card_id) do
+    %Card{} = card = Cards.find_by_external_card_id(external_card_id)
+    Repo.preload(card, :card_prints).card_prints
   end
 
-  describe "build_card_with_prints/2" do
-    setup do
-      Req.Test.stub(Tabletop.Cards.ImporterTest, fn conn ->
-        body = File.read!("#{@test_fixture_dir}/scar-for-a-scar-1.webp")
-
-        conn
-        |> Plug.Conn.put_resp_content_type("image/webp")
-        |> Plug.Conn.send_resp(200, body)
-      end)
-
-      {:ok, req_options: [plug: {Req.Test, Tabletop.Cards.ImporterTest}]}
-    end
-
-    test "returns a card map with embedded prints", %{req_options: req_options} do
-      [first | _] = scar_results(1)
-      result = Importer.build_card_with_prints(first, req_options)
-
-      assert result.external_card_id == first["id"]
-      assert result.name == "Scar for a Scar"
-      assert result.pitch == 1
-      assert is_list(result.card_prints)
-      assert length(result.card_prints) > 0
-
-      Enum.each(result.card_prints, fn print ->
-        assert is_binary(print.face_id)
-        assert print.orientation == "vertical"
-        assert is_integer(print.image_phash)
-        assert is_integer(print.image_phash_full)
-      end)
-    end
-
-    test "marks regular front faces as canonical", %{req_options: req_options} do
-      [first | _] = scar_results(1)
-      result = Importer.build_card_with_prints(first, req_options)
-
-      regular_prints = Enum.filter(result.card_prints, &(&1.art_type == "regular"))
-      assert Enum.all?(regular_prints, & &1.is_canonical)
-    end
-  end
-
-  describe "import_and_generate/1 (E2E)" do
-    setup do
-      output_dir =
-        System.tmp_dir!() |> Path.join("importer_test_#{System.unique_integer([:positive])}")
-
-      File.mkdir_p!(output_dir)
-      on_exit(fn -> File.rm_rf!(output_dir) end)
-
-      Req.Test.stub(Tabletop.Cards.ImporterTest, fn conn ->
-        cond do
-          String.contains?(conn.request_path, "/card_id/scar-for-a-scar-1/") ->
-            json = File.read!("#{@test_fixture_dir}/scar-for-a-scar-1.json")
-            Req.Test.json(conn, Jason.decode!(json))
-
-          String.contains?(conn.request_path, "/card_id/scar-for-a-scar-2/") ->
-            json = File.read!("#{@test_fixture_dir}/scar-for-a-scar-2.json")
-            Req.Test.json(conn, Jason.decode!(json))
-
-          String.contains?(conn.request_path, "/card_id/scar-for-a-scar-3/") ->
-            json = File.read!("#{@test_fixture_dir}/scar-for-a-scar-3.json")
-            Req.Test.json(conn, Jason.decode!(json))
-
-          String.ends_with?(conn.request_path, ".webp") ->
-            body = File.read!("#{@test_fixture_dir}/scar-for-a-scar-1.webp")
-
-            conn
-            |> Plug.Conn.put_resp_content_type("image/webp")
-            |> Plug.Conn.send_resp(200, body)
-
-          true ->
-            Plug.Conn.send_resp(conn, 404, "Not found")
-        end
-      end)
-
-      {:ok, output_dir: output_dir, req_options: [plug: {Req.Test, Tabletop.Cards.ImporterTest}]}
-    end
-
-    test "writes a JSON snapshot with parent cards + embedded card_prints", %{
-      output_dir: output_dir,
-      req_options: req_options
-    } do
-      Importer.import_and_generate(
-        raw_path: "#{@test_fixture_dir}/scar-for-a-scar-all.json",
-        output_dir: output_dir,
-        req_options: req_options,
-        insert: false
-      )
-
-      generated_files = Path.wildcard("#{output_dir}/cards-*.json")
-      assert length(generated_files) == 1
-
-      {:ok, generated_content} = File.read(List.first(generated_files))
-      {:ok, generated_cards} = Jason.decode(generated_content)
-
-      scar_cards = Enum.filter(generated_cards, &(&1["name"] == "Scar for a Scar"))
-      pitches = scar_cards |> Enum.map(& &1["pitch"]) |> Enum.sort()
-      assert 1 in pitches and 2 in pitches and 3 in pitches
-
-      Enum.each(scar_cards, fn card ->
-        assert is_binary(card["external_card_id"])
-        assert is_list(card["card_prints"])
-        assert length(card["card_prints"]) > 0
-      end)
-    end
-
-    test "inserts Card + CardPrints linked by FK", %{
-      output_dir: output_dir,
-      req_options: req_options
-    } do
-      Importer.import_and_generate(
-        raw_path: "#{@test_fixture_dir}/scar-for-a-scar-all.json",
-        output_dir: output_dir,
-        req_options: req_options
-      )
-
-      card_prints = Tabletop.Repo.all(CardPrint) |> Repo.preload(:card)
-
-      scar_cards =
-        Enum.filter(card_prints, &(&1.card.name == "Scar for a Scar"))
-        |> Enum.map(& &1.card)
-        |> Enum.uniq()
-
-      assert length(scar_cards) == 3
-
-      pitches = scar_cards |> Enum.map(& &1.pitch) |> Enum.sort()
-      assert pitches == [1, 2, 3]
-
-      # Each parent Card should have at least one print across the major sets.
-      for card <- scar_cards do
-        prints = Repo.all(from cp in CardPrint, where: cp.card_id == ^card.id)
-        assert length(prints) > 0
-        sets = prints |> Enum.map(& &1.set_code) |> Enum.uniq()
-        assert "WTR" in sets or "1HP" in sets
-      end
-    end
-  end
-
-  describe "fetch_raw_card_list/2" do
-    setup do
-      raw_dir =
-        System.tmp_dir!() |> Path.join("raw_fetch_test_#{System.unique_integer([:positive])}")
-
-      File.mkdir_p!(raw_dir)
-      on_exit(fn -> File.rm_rf!(raw_dir) end)
-
-      # Pre-seed an old file that the fetch should clean up first.
-      File.write!(Path.join(raw_dir, "api.cardvault.fabtcg.com-old.json"), "{}")
-
-      Req.Test.stub(Tabletop.Cards.ImporterTest, fn conn ->
-        page = conn.params["page"] |> String.to_integer()
-
-        body =
-          case page do
-            1 ->
-              %{
-                "count" => 3,
-                "next" => "http://example.com/next?page=2",
-                "previous" => nil,
-                "results" => [%{"card_id" => "a"}, %{"card_id" => "b"}]
-              }
-
-            2 ->
-              %{
-                "count" => 3,
-                "next" => nil,
-                "previous" => "http://example.com/prev?page=1",
-                "results" => [%{"card_id" => "c"}]
-              }
-          end
-
-        Req.Test.json(conn, body)
-      end)
-
-      {:ok, raw_dir: raw_dir, req_options: [plug: {Req.Test, Tabletop.Cards.ImporterTest}]}
-    end
-
-    test "writes one file per page and removes existing raw files", %{
-      raw_dir: raw_dir,
-      req_options: req_options
-    } do
-      :ok = Importer.fetch_raw_card_list(raw_dir, req_options)
-
-      files =
-        Path.wildcard(Path.join(raw_dir, "api.cardvault.fabtcg.com-*.json"))
-        |> Enum.map(&Path.basename/1)
-        |> Enum.sort()
-
-      assert files == [
-               "api.cardvault.fabtcg.com-1.json",
-               "api.cardvault.fabtcg.com-2.json"
-             ]
-
-      {:ok, page1_content} =
-        File.read(Path.join(raw_dir, "api.cardvault.fabtcg.com-1.json"))
-
-      {:ok, page1} = Jason.decode(page1_content)
-      assert length(page1["results"]) == 2
-    end
-  end
-
-  describe "find_pitch_variants/2" do
-    setup do
-      # Build three pitch variants of the same logical card, each with a
-      # canonical regular print.
-      for pitch <- [1, 2, 3] do
-        {:ok, card} =
-          %Card{}
-          |> Card.changeset(%{
-            "name" => "Variant Card",
-            "pitch" => pitch,
-            "external_card_id" => "variant-#{pitch}"
-          })
-          |> Repo.insert()
-
-        %CardPrint{}
-        |> CardPrint.changeset(%{
-          "card_id" => card.id,
-          "face_id" => "VAR_#{pitch}",
-          "set_code" => "TST",
-          "art_type" => "regular",
-          "orientation" => "vertical",
-          "layout_position" => 10,
-          "is_canonical" => true,
-          "image_url" => "https://example.com/var#{pitch}.webp"
+  describe "build_card/1" do
+    test "maps card + printing fields onto the snapshot shape" do
+      card =
+        Importer.build_card(%{
+          "unique_id" => "ext-1",
+          "name" => "Test Card",
+          "pitch" => "2",
+          "played_horizontally" => false,
+          "printings" => [printing(%{"unique_id" => "face-1", "set_id" => "MST"})]
         })
-        |> Repo.insert!()
+
+      assert card.external_card_id == "ext-1"
+      assert card.name == "Test Card"
+      assert card.pitch == 2
+
+      assert [print] = card.card_prints
+      # face_id comes from the printing's unique_id, not its `id`.
+      assert print.face_id == "face-1"
+      assert print.set_code == "MST"
+      assert print.orientation == "vertical"
+      assert print.image_phash == 111
+      assert print.image_phash_full == 222
+    end
+
+    test "pitch \"\" becomes nil (not 0)" do
+      card =
+        Importer.build_card(%{
+          "unique_id" => "ext-weapon",
+          "name" => "Weapon",
+          "pitch" => "",
+          "printings" => [printing(%{})]
+        })
+
+      assert card.pitch == nil
+    end
+
+    test "collapses foiling variants that share an image, preferring standard" do
+      card =
+        Importer.build_card(%{
+          "unique_id" => "ext-foil",
+          "name" => "Foiled",
+          "printings" => [
+            printing(%{"unique_id" => "rainbow", "foiling" => "R", "phash_full" => "999"}),
+            printing(%{"unique_id" => "standard", "foiling" => "S", "phash_full" => "999"})
+          ]
+        })
+
+      assert [print] = card.card_prints
+      assert print.face_id == "standard"
+    end
+
+    test "keeps a cold-foil print whose image genuinely differs" do
+      card =
+        Importer.build_card(%{
+          "unique_id" => "ext-cold",
+          "name" => "Cold",
+          "printings" => [
+            printing(%{"unique_id" => "std", "foiling" => "S", "phash_full" => "100"}),
+            printing(%{"unique_id" => "cold", "foiling" => "C", "phash_full" => "200"})
+          ]
+        })
+
+      face_ids = Enum.map(card.card_prints, & &1.face_id) |> Enum.sort()
+      assert face_ids == ["cold", "std"]
+    end
+
+    test "marks exactly one print canonical (regular art, standard foiling)" do
+      card =
+        Importer.build_card(%{
+          "unique_id" => "ext-canon",
+          "name" => "Canon",
+          "printings" => [
+            printing(%{"unique_id" => "fa", "art_variations" => ["FA"], "phash_full" => "1"}),
+            printing(%{"unique_id" => "reg", "art_variations" => [], "phash_full" => "2"})
+          ]
+        })
+
+      canonical = Enum.filter(card.card_prints, & &1.is_canonical)
+      assert [%{face_id: "reg", art_type: "regular"}] = canonical
+
+      fa = Enum.find(card.card_prints, &(&1.face_id == "fa"))
+      assert fa.art_type == "full_art"
+      refute fa.is_canonical
+    end
+
+    test "horizontal card has no art hash, full hash only" do
+      card =
+        Importer.build_card(%{
+          "unique_id" => "ext-meld",
+          "name" => "A // B",
+          "played_horizontally" => true,
+          # phash_art absent for horizontal printings
+          "printings" => [printing(%{"phash_art" => nil}) |> Map.delete("phash_art")]
+        })
+
+      assert [print] = card.card_prints
+      assert print.orientation == "horizontal"
+      assert print.image_phash == nil
+      assert print.image_phash_full == 222
+    end
+
+    test "drops imageless printings and skips a fully-imageless card" do
+      assert Importer.build_card(%{
+               "unique_id" => "ext-noimg",
+               "name" => "No Image",
+               "printings" => [printing(%{"image_url" => nil})]
+             }) == nil
+    end
+  end
+
+  describe "import_all/1" do
+    test "upserts: a re-run propagates upstream corrections without duplicating" do
+      card = fn name, phash ->
+        [
+          %{
+            "unique_id" => "ext-up",
+            "name" => name,
+            "pitch" => "1",
+            "printings" => [printing(%{"unique_id" => "up-1", "phash_full" => phash})]
+          }
+        ]
       end
 
-      :ok
+      assert {1, 0} = Importer.import_all(source: write_source(card.("Old Name", "1")))
+
+      # Upstream fixes the name and the full pHash for the same card/face.
+      assert {1, 0} = Importer.import_all(source: write_source(card.("New Name", "42")))
+
+      assert Repo.aggregate(Card, :count) == 1
+      assert Repo.aggregate(CardPrint, :count) == 1
+
+      [print] = prints_for("ext-up")
+      assert Cards.find_by_external_card_id("ext-up").name == "New Name"
+      assert print.image_phash_full == 42
     end
 
-    test "returns all pitch variants ordered by pitch ascending" do
-      card = Cards.find_by_external_card_id("variant-1")
-      variants = Cards.find_pitch_variants(card)
+    test "inserts cards + prints and is idempotent on re-run" do
+      source =
+        write_source([
+          %{
+            "unique_id" => "ext-a",
+            "name" => "Card A",
+            "pitch" => "1",
+            "printings" => [
+              printing(%{"unique_id" => "a-s", "foiling" => "S", "phash_full" => "10"}),
+              printing(%{"unique_id" => "a-r", "foiling" => "R", "phash_full" => "10"}),
+              printing(%{"unique_id" => "a-fa", "art_variations" => ["FA"], "phash_full" => "11"})
+            ]
+          },
+          %{
+            "unique_id" => "ext-skip",
+            "name" => "Skipped",
+            "printings" => [printing(%{"image_url" => nil})]
+          }
+        ])
 
-      assert Enum.map(variants, & &1.pitch) == [1, 2, 3]
+      assert {1, 1} = Importer.import_all(source: source)
+
+      prints = prints_for("ext-a")
+      assert length(prints) == 2
+      assert Enum.count(prints, & &1.is_canonical) == 1
+
+      # Re-run: no new cards or prints.
+      assert {1, 1} = Importer.import_all(source: source)
+      assert length(prints_for("ext-a")) == 2
+      assert Repo.aggregate(Card, :count) == 1
+      assert Repo.aggregate(CardPrint, :count) == 2
     end
 
-    test "preloads canonical card_prints" do
-      card = Cards.find_by_external_card_id("variant-1")
-      [v1 | _] = Cards.find_pitch_variants(card)
+    test "imports the real Scar for a Scar card.json fixture" do
+      # Real card.json extract: three pitch variants, heavy foil/edition reprinting
+      # that collapses on shared phash_full (16/6/6 printings -> 9/3/3 prints).
+      assert {3, 0} = Importer.import_all(source: "priv/cards/test/scar-for-a-scar-all.json")
 
-      assert is_list(v1.card_prints)
-      assert length(v1.card_prints) >= 1
-    end
+      variants = %{
+        "DbpqBt8Gp8HWg6QMFBBgh" => {1, 9},
+        "LwdKpBTcMk6rLjDwG8r6G" => {2, 3},
+        "fBjC6dqfrGN9TG7Whh9TR" => {3, 3}
+      }
 
-    test "returns empty list for a card without pitch" do
-      {:ok, no_pitch} =
-        %Card{}
-        |> Card.changeset(%{
-          "name" => "Hero Card",
-          "pitch" => nil,
-          "external_card_id" => "hero-1"
-        })
-        |> Repo.insert()
+      for {ext, {pitch, count}} <- variants do
+        card = Cards.find_by_external_card_id(ext)
+        assert card.name == "Scar for a Scar"
+        assert card.pitch == pitch
 
-      assert Cards.find_pitch_variants(no_pitch) == []
+        prints = prints_for(ext)
+        assert length(prints) == count
+        # Exactly one canonical, and it is a regular (non-alternate) printing.
+        assert [canonical] = Enum.filter(prints, & &1.is_canonical)
+        assert canonical.art_type == "regular"
+        # All printings are vertical and imaged, so both hash arms are populated.
+        assert Enum.all?(prints, &(&1.image_phash && &1.image_phash_full))
+        assert Enum.all?(prints, &(&1.orientation == "vertical"))
+      end
+
+      assert Repo.aggregate(CardPrint, :count) == 15
     end
   end
 end

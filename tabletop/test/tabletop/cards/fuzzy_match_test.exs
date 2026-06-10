@@ -23,7 +23,6 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
       set_code: attrs[:set_code] || "TST",
       art_type: "regular",
       orientation: attrs[:orientation] || "vertical",
-      layout_position: 10,
       is_canonical: true,
       image_url: attrs[:image_url] || "https://example.com/#{attrs[:face_id]}.webp",
       image_phash: attrs[:image_phash],

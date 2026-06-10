@@ -14,10 +14,8 @@ defmodule Tabletop.Cards.CardPrint do
     field :set_code, :string
     field :art_type, :string
     field :orientation, :string
-    field :layout_position, :integer
     field :is_canonical, :boolean, default: true
     field :image_url, :string
-    field :art_bbox, :map
     field :image_phash, :integer
     field :image_phash_full, :integer
 
@@ -32,10 +30,8 @@ defmodule Tabletop.Cards.CardPrint do
       :set_code,
       :art_type,
       :orientation,
-      :layout_position,
       :is_canonical,
       :image_url,
-      :art_bbox,
       :image_phash,
       :image_phash_full
     ])

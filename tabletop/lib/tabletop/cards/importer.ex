@@ -1,412 +1,233 @@
 defmodule Tabletop.Cards.Importer do
   @moduledoc """
-  Imports card data from cardvault into the database.
+  Imports Flesh and Blood card data from the `flesh-and-blood-cards` data set,
+  vendored as a git submodule under `vendor/flesh-and-blood-cards`.
 
-  Two-step pipeline:
-    1. `import_and_generate/1` — fetch each card_id from the API, compute
-       hashes and bboxes, write a JSON snapshot under `priv/cards/generated/`.
-    2. `import_from_generated_data/0` — read those snapshots and insert into
-       the database. Idempotent on `(external_card_id, face_id)`.
+  That data set ships precomputed perceptual hashes (`phash_art`, `phash_full`)
+  generated with the same DCT / art-bbox / threshold algorithm as
+  `Tabletop.Cards.PHash` and `assets/js/card_scanner/p_hash.js`. So this importer
+  does no image downloading or hashing: it reads `json/english/card.json`,
+  transforms each card + its printings, and inserts directly into Postgres.
 
-  Output JSON shape (one entry per logical card; embedded `card_prints`):
+  `import_all/1` upserts on `cards.external_card_id` and `card_prints.face_id`:
+  re-running adds new cards/prints and updates existing ones in place (so upstream
+  corrections — a fixed pHash, a renamed card, a changed image — propagate). It
+  does not delete rows that vanish upstream.
 
-      [
-        {
-          "external_card_id": "...",
-          "name": "...",
-          "pitch": 1,
-          "card_prints": [
-            {
-              "face_id": "...",
-              "set_code": "...",
-              "art_type": "regular",
-              "orientation": "vertical",
-              "layout_position": 10,
-              "is_canonical": true,
-              "image_url": "...",
-              "art_bbox": {"x": 0.1, "y": 0.16, "w": 0.8, "h": 0.42},
-              "image_phash": 1234,
-              "image_phash_full": 5678
-            }
-          ]
-        }
-      ]
+  Mapping highlights:
+    * `face_id` comes from a printing's `unique_id` (globally unique). The shorter
+      `id` (e.g. `"MST131"`) is NOT image-unique across editions/foilings.
+    * Foiling variants that share an image (same `phash_full`) collapse to one
+      print, preferring the standard (`"S"`) finish. A cold-foil print whose image
+      genuinely differs survives as its own print with its own hashes.
+    * Exactly one print per card is marked `is_canonical` (regular art, standard
+      foiling, earliest in source order).
   """
 
   require Logger
 
   alias Tabletop.Cards
-  alias Tabletop.Cards.{ArtBboxDetector, Card, CardPrint, PHash}
+  alias Tabletop.Cards.{Card, CardPrint}
+  alias Tabletop.Repo
 
-  @fetch_concurrency 10
-  @phash_concurrency 15
-  @task_timeout :timer.seconds(60)
-
-  @raw_page_size 1000
-  @raw_search_url "https://api.cardvault.fabtcg.com/carddb/api/v1/advanced-search/"
-  @raw_filename_prefix "api.cardvault.fabtcg.com"
-
-  defp priv_path(relative), do: Application.app_dir(:tabletop, relative)
-  defp default_raw_dir, do: priv_path("priv/cards/raw")
-  defp default_output_dir, do: priv_path("priv/cards/generated")
+  # Preference order when collapsing foiling variants and picking the canonical
+  # print. Lower is better; anything not listed (cold "C", gold "G") sorts last.
+  @foil_rank %{"S" => 0, "R" => 1}
 
   @doc """
-  Builds card snapshots from raw card-list pages.
+  Reads the card data set and inserts cards + prints. Returns `{inserted, skipped}`.
 
   Options:
-    * `:raw_path` – glob for raw card-list files (default: `priv/cards/raw/*.json`).
-    * `:output_dir` – where snapshots go (default: `priv/cards/generated/`).
-    * `:fetch_new` – when `true`, re-pulls the raw card list from cardvault
-      before processing, overwriting `priv/cards/raw/api.cardvault.fabtcg.com-*.json`.
-    * `:req_options` – passed through to `Req.get/2`.
+    * `:source` — path to `card.json`. Defaults to the configured/vendored path
+      (see `source_path/0`).
   """
-  def import_and_generate(opts \\ []) do
-    raw_dir = Keyword.get(opts, :raw_dir, default_raw_dir())
-    raw_path = Keyword.get(opts, :raw_path, Path.join(raw_dir, "*.json"))
-    output_dir = Keyword.get(opts, :output_dir, default_output_dir())
-    req_options = Keyword.get(opts, :req_options, [])
+  def import_all(opts \\ []) do
+    path = Keyword.get(opts, :source) || source_path()
+    Logger.info("Importing cards from #{path}")
 
-    if Keyword.get(opts, :fetch_new, false) do
-      fetch_raw_card_list(raw_dir, req_options)
-    end
+    {:ok, content} = File.read(path)
+    {:ok, cards} = Jason.decode(content)
 
-    File.mkdir_p!(output_dir)
+    {inserted, skipped} =
+      Enum.reduce(cards, {0, 0}, fn card_json, {ins, skip} ->
+        case build_card(card_json) do
+          nil ->
+            {ins, skip + 1}
 
-    Path.wildcard(raw_path)
-    |> Enum.with_index(fn file, file_index ->
-      {:ok, content} = File.read(file)
-      {:ok, all_card_data} = Jason.decode(content)
+          card_attrs ->
+            case upsert_card_with_prints(card_attrs) do
+              {:ok, _} ->
+                {ins + 1, skip}
 
-      card_ids =
-        all_card_data["results"]
-        |> Enum.map(& &1["card_id"])
-        |> Enum.uniq()
+              {:error, reason} ->
+                Logger.error(
+                  "Failed to insert #{card_attrs.external_card_id}: #{inspect(reason)}"
+                )
 
-      Logger.info("Processing file #{file} with #{length(card_ids)} unique card IDs")
+                {ins, skip + 1}
+            end
+        end
+      end)
 
-      api_results =
-        card_ids
-        |> Task.async_stream(fn card_id -> fetch_card(card_id, req_options) end,
-          max_concurrency: @fetch_concurrency,
-          timeout: @task_timeout,
-          on_timeout: :kill_task
-        )
-        |> Enum.flat_map(fn
-          {:ok, results} when is_list(results) -> results
-          _ -> []
-        end)
-        |> Enum.uniq_by(& &1["id"])
-
-      Logger.info("Fetched #{length(api_results)} api results from #{file}")
-
-      cards =
-        api_results
-        |> Task.async_stream(fn result -> build_card_with_prints(result, req_options) end,
-          max_concurrency: @phash_concurrency,
-          timeout: @task_timeout,
-          on_timeout: :kill_task
-        )
-        |> Enum.flat_map(fn
-          {:ok, %{} = card_with_prints} -> [card_with_prints]
-          {:ok, nil} -> []
-          _ -> []
-        end)
-
-      out_file = Path.join(output_dir, "cards-#{file_index + 1}.json")
-
-      Logger.info(
-        "Writing #{length(cards)} cards (#{Enum.sum_by(cards, &length(&1.card_prints))} prints) -> #{out_file}"
-      )
-
-      File.write!(out_file, Jason.encode!(cards))
-
-      if Keyword.get(opts, :insert, true) do
-        insert_count = insert_cards(cards)
-        Logger.info("Inserted #{insert_count} cards into the database from #{out_file}")
-      end
-    end)
-  end
-
-  defp insert_cards(cards) do
-    Enum.reduce(cards, 0, fn card_data, acc ->
-      case insert_card_with_prints(card_data) do
-        {:ok, _} ->
-          acc + 1
-
-        {:error, reason} ->
-          Logger.error("Failed to insert #{card_data.external_card_id}: #{inspect(reason)}")
-          acc
-      end
-    end)
+    Logger.info("Imported #{inserted} cards (#{skipped} skipped)")
+    {inserted, skipped}
   end
 
   @doc """
-  Reads generated JSON snapshots and inserts cards + card_prints.
-  Skips a card if its `external_card_id` is already present.
-  """
-  def import_from_generated_data do
-    Path.wildcard(priv_path("priv/cards/generated/*.json"))
-    |> Enum.each(fn file ->
-      Logger.info("Importing cards from file #{file}")
-      {:ok, content} = File.read(file)
-      # `keys: :atoms!` only converts to existing atoms — safe because every
-      # key we use is referenced in the schema modules (Card / CardPrint /
-      # ArtBboxDetector), so they're already loaded.
-      {:ok, all_card_data} = Jason.decode(content, keys: :atoms!)
+  Resolves the path to `card.json`.
 
-      Enum.each(all_card_data, fn card_data ->
-        case insert_card_with_prints(card_data) do
-          {:ok, _} -> :ok
-          {:error, reason} -> Logger.error("Failed to insert card: #{inspect(reason)}")
-        end
-      end)
-    end)
+  In a release the file is bundled into `priv/cards/card.json` (copied from the
+  submodule at build time); otherwise it falls back to the submodule's working
+  tree at the repo root. Override with the `:card_source_path` app env or the
+  `:source` option to `import_all/1`.
+  """
+  def source_path do
+    Application.get_env(:tabletop, :card_source_path) || default_source_path()
   end
 
-  # --- Build a card+prints record from a single API result ---
+  defp default_source_path do
+    bundled = Application.app_dir(:tabletop, "priv/cards/card.json")
+
+    if File.exists?(bundled) do
+      bundled
+    else
+      Path.expand("../vendor/flesh-and-blood-cards/json/english/card.json", File.cwd!())
+    end
+  end
+
+  # --- Transform: card.json entry -> card attrs with embedded prints ---
 
   @doc false
-  def build_card_with_prints(result, req_options \\ []) do
-    faces = collect_english_faces(result["card_prints"])
-    deduped = foil_dedup(faces)
+  def build_card(%{"unique_id" => external_id, "name" => name, "printings" => printings} = card)
+      when is_list(printings) do
+    orientation = if card["played_horizontally"], do: "horizontal", else: "vertical"
 
-    case canonical_face(deduped) do
-      nil ->
+    prints =
+      printings
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {printing, index} -> build_print(printing, orientation, index) end)
+      |> dedup_by_image()
+      |> mark_canonical()
+
+    case prints do
+      # Every printing was imageless — nothing to scan or display, skip the card.
+      [] ->
         nil
 
-      canonical ->
-        prints =
-          deduped
-          |> Task.async_stream(fn face -> build_print(face, req_options) end,
-            max_concurrency: 4,
-            timeout: @task_timeout,
-            on_timeout: :kill_task
-          )
-          |> Enum.flat_map(fn
-            {:ok, %{} = print} -> [print]
-            _ -> []
-          end)
-
+      _ ->
         %{
-          external_card_id: result["id"],
-          name: canonical["printed_name"],
-          pitch: canonical["printed_pitch"],
+          external_card_id: external_id,
+          name: name,
+          pitch: parse_pitch(card["pitch"]),
           card_prints: prints
         }
     end
   end
 
-  # --- Face collection & dedup ---
+  def build_card(_), do: nil
 
-  def collect_english_faces(card_prints) when is_list(card_prints) do
-    card_prints
-    |> Enum.flat_map(fn card_print ->
-      set_code = get_in(card_print, ["print_set", "set_code"])
-
-      card_print["faces"]
-      |> Enum.filter(&(&1["face_language"] == "en"))
-      |> Enum.map(&Map.put(&1, "set_code", set_code))
-    end)
+  # Imageless printings can't be inserted (the changeset requires `:image_url`)
+  # and carry no hashes to match against — drop them.
+  defp build_print(%{"image_url" => url} = printing, orientation, index) when is_binary(url) do
+    [
+      %{
+        face_id: printing["unique_id"],
+        set_code: printing["set_id"],
+        art_type: art_type(printing["art_variations"]),
+        orientation: orientation,
+        image_url: url,
+        # `phash_art` is absent for horizontal prints -> nil (full arm still matches).
+        image_phash: parse_phash(printing["phash_art"]),
+        image_phash_full: parse_phash(printing["phash_full"]),
+        # Transient ranking fields, stripped before insert.
+        foiling: printing["foiling"],
+        source_index: index
+      }
+    ]
   end
 
-  def collect_english_faces(_), do: []
+  defp build_print(_printing, _orientation, _index), do: []
 
-  @doc """
-  Foil dedup rule. Group by `(set_code, art_type, layout_position)`. Within
-  each group: prefer `finish_type == "regular"`. Otherwise keep one foil
-  face (earliest by `face_id` for stability).
-  """
-  def foil_dedup(faces) do
-    faces
-    |> Enum.group_by(fn f -> {f["set_code"], f["art_type"], f["layout_position"]} end)
-    |> Enum.map(fn {_key, group} ->
-      case Enum.find(group, &(&1["finish_type"] == "regular")) do
-        nil -> Enum.min_by(group, & &1["face_id"])
-        regular -> regular
-      end
-    end)
+  # Collapse printings that share an image (identical `phash_full`) to one print,
+  # preferring the standard finish. Prints with genuinely different images (e.g. a
+  # distinct cold-foil art) stay separate. Result is ordered by source index.
+  defp dedup_by_image(prints) do
+    prints
+    |> Enum.group_by(& &1.image_phash_full)
+    |> Enum.map(fn {_phash, group} -> Enum.min_by(group, &foil_key/1) end)
+    |> Enum.sort_by(& &1.source_index)
   end
 
-  defp canonical_face(faces) do
-    Enum.find(faces, fn f ->
-      f["art_type"] == "regular" and f["layout_position"] in [nil, 10]
-    end) || List.first(faces)
+  # Mark exactly one print canonical: regular art, then standard foiling, then
+  # earliest in source order.
+  defp mark_canonical([]), do: []
+
+  defp mark_canonical(prints) do
+    canonical = Enum.min_by(prints, &canonical_key/1)
+    Enum.map(prints, &Map.put(&1, :is_canonical, &1.face_id == canonical.face_id))
   end
 
-  # --- Per-face: download image, detect bbox, compute hashes ---
+  defp foil_key(print), do: {Map.get(@foil_rank, print.foiling, 2), print.source_index}
 
-  defp build_print(face, req_options) do
-    image_url = get_in(face, ["image", "large"])
-    orientation = face["orientation"]
-    art_type = face["art_type"]
+  defp canonical_key(print) do
+    {if(print.art_type == "regular", do: 0, else: 1), Map.get(@foil_rank, print.foiling, 2),
+     print.source_index}
+  end
 
-    case download(image_url, req_options) do
-      {:ok, image_binary} ->
-        bbox =
-          ArtBboxDetector.detect(image_binary, %{orientation: orientation, art_type: art_type})
+  defp art_type([]), do: "regular"
 
-        hashes = compute_hashes(image_binary, bbox, orientation)
+  defp art_type(variations) when is_list(variations),
+    do: if("FA" in variations, do: "full_art", else: "alternate")
 
-        %{
-          face_id: face["face_id"],
-          set_code: face["set_code"],
-          art_type: art_type,
-          orientation: orientation,
-          layout_position: face["layout_position"],
-          is_canonical: art_type == "regular" and face["layout_position"] in [nil, 10],
-          image_url: image_url,
-          art_bbox: bbox,
-          image_phash: hashes[:image_phash],
-          image_phash_full: hashes[:image_phash_full]
-        }
+  defp art_type(_), do: "regular"
 
-      :error ->
-        nil
+  defp parse_pitch(p) when is_integer(p), do: p
+  defp parse_pitch(p) when is_binary(p), do: parse_int(p)
+  defp parse_pitch(_), do: nil
+
+  defp parse_phash(p) when is_integer(p), do: p
+  defp parse_phash(p) when is_binary(p), do: parse_int(p)
+  defp parse_phash(_), do: nil
+
+  defp parse_int(s) do
+    case Integer.parse(s) do
+      {n, _} -> n
+      :error -> nil
     end
   end
 
-  defp compute_hashes(image_binary, %{x: _} = bbox, _orientation) do
-    %{
-      image_phash: PHash.compute_from_binary(image_binary, bbox: bbox_tuple(bbox)),
-      image_phash_full: PHash.compute_from_binary(image_binary, bbox: {0.0, 0.0, 1.0, 1.0})
-    }
-  end
+  # --- DB upsert (keyed on external_card_id + face_id) ---
 
-  # Horizontal cards have no meaningful art crop (see ArtBboxDetector) — store
-  # only the whole-card hash.
-  defp compute_hashes(image_binary, nil, _orientation) do
-    %{image_phash_full: PHash.compute_from_binary(image_binary, bbox: {0.0, 0.0, 1.0, 1.0})}
-  end
+  # We already look up each row by its unique key, so insert-or-update on the
+  # existing struct is the simplest upsert: it preserves ids/timestamps, re-runs
+  # the changeset (recomputing `normalized_name`/`tokens` on a card, refreshing
+  # hashes/canonical on a print), and avoids `on_conflict` RETURNING subtleties.
+  defp upsert_card_with_prints(%{card_prints: prints} = card_data) do
+    Repo.transaction(fn ->
+      card = upsert_card(card_data)
 
-  defp compute_hashes(_image_binary, _bbox, _orientation), do: %{}
+      Enum.each(prints, fn print ->
+        attrs =
+          print
+          |> Map.drop([:foiling, :source_index])
+          |> Map.put(:card_id, card.id)
 
-  defp bbox_tuple(%{"x" => x, "y" => y, "w" => w, "h" => h}), do: {x, y, w, h}
-  defp bbox_tuple(%{x: x, y: y, w: w, h: h}), do: {x, y, w, h}
-
-  defp download(nil, _opts), do: :error
-
-  defp download(url, req_options) do
-    case Req.get(url, [receive_timeout: 30_000, retry: :transient, max_retries: 2] ++ req_options) do
-      {:ok, %{status: 200, body: body}} when is_binary(body) ->
-        {:ok, body}
-
-      {:ok, %{status: status}} ->
-        Logger.warning("Importer: HTTP #{status} fetching #{url}")
-        :error
-
-      {:error, reason} ->
-        Logger.warning("Importer: failed to fetch #{url}: #{inspect(reason)}")
-        :error
-    end
-  end
-
-  # --- DB insertion ---
-
-  defp insert_card_with_prints(%{card_prints: prints} = card_data) when is_list(prints) do
-    Tabletop.Repo.transaction(fn ->
-      card =
-        case Cards.find_by_external_card_id(card_data.external_card_id) do
-          nil ->
-            {:ok, c} =
-              %Card{}
-              |> Card.changeset(%{
-                name: card_data.name,
-                pitch: card_data.pitch,
-                external_card_id: card_data.external_card_id
-              })
-              |> Tabletop.Repo.insert()
-
-            c
-
-          existing ->
-            existing
-        end
-
-      Enum.each(prints, fn print_data ->
-        attrs = Map.put(print_data, :card_id, card.id)
-
-        case Cards.find_card_print_by_face_id(attrs.face_id) do
-          nil ->
-            %CardPrint{}
-            |> CardPrint.changeset(attrs)
-            |> Tabletop.Repo.insert!()
-
-          _existing ->
-            :ok
-        end
+        (Cards.find_card_print_by_face_id(attrs.face_id) || %CardPrint{})
+        |> CardPrint.changeset(attrs)
+        |> Repo.insert_or_update!()
       end)
 
       card
     end)
   end
 
-  defp insert_card_with_prints(_), do: {:error, :invalid_shape}
-
-  # --- API fetch ---
-
-  @doc """
-  Pages through the cardvault advanced-search endpoint and writes each page
-  to `<raw_dir>/api.cardvault.fabtcg.com-<n>.json`. Existing files in
-  `raw_dir` are removed first.
-
-  Pulls all published cards (`is_published=true`).
-  """
-  def fetch_raw_card_list(raw_dir \\ nil, req_options \\ []) do
-    raw_dir = raw_dir || default_raw_dir()
-    File.mkdir_p!(raw_dir)
-
-    Path.wildcard(Path.join(raw_dir, "#{@raw_filename_prefix}-*.json"))
-    |> Enum.each(&File.rm!/1)
-
-    Logger.info("Fetching raw card list from #{@raw_search_url}")
-    fetch_raw_pages(raw_dir, 1, req_options)
-  end
-
-  defp fetch_raw_pages(raw_dir, page, req_options) do
-    url =
-      @raw_search_url <>
-        "?format=json&is_published=true&orderby=name" <>
-        "&page=#{page}&page_size=#{@raw_page_size}"
-
-    case Req.get(url, [receive_timeout: 60_000, retry: :transient, max_retries: 3] ++ req_options) do
-      {:ok, %{status: 200, body: body}} when is_map(body) ->
-        out_file = Path.join(raw_dir, "#{@raw_filename_prefix}-#{page}.json")
-        File.write!(out_file, Jason.encode!(body))
-
-        Logger.info(
-          "Wrote page #{page}: #{length(body["results"] || [])} results -> #{Path.basename(out_file)}"
-        )
-
-        if body["next"] do
-          fetch_raw_pages(raw_dir, page + 1, req_options)
-        else
-          :ok
-        end
-
-      {:ok, %{status: status}} ->
-        Logger.error("fetch_raw_pages: HTTP #{status} on page #{page}, stopping")
-        {:error, status}
-
-      {:error, reason} ->
-        Logger.error("fetch_raw_pages: failed page #{page}: #{inspect(reason)}")
-        {:error, reason}
-    end
-  end
-
-  defp fetch_card(card_id, req_options) do
-    url = "https://api.cardvault.fabtcg.com/carddb/api/v1/card_id/#{card_id}/"
-
-    case Req.get(url, [receive_timeout: 15_000, retry: :transient, max_retries: 2] ++ req_options) do
-      {:ok, %{status: 200, body: body}} ->
-        body["results"] || []
-
-      {:ok, %{status: status}} ->
-        Logger.warning("Importer: HTTP #{status} fetching #{url}")
-        []
-
-      {:error, reason} ->
-        Logger.warning("Importer: failed to fetch #{url}: #{inspect(reason)}")
-        []
-    end
+  defp upsert_card(card_data) do
+    (Cards.find_by_external_card_id(card_data.external_card_id) || %Card{})
+    |> Card.changeset(%{
+      name: card_data.name,
+      pitch: card_data.pitch,
+      external_card_id: card_data.external_card_id
+    })
+    |> Repo.insert_or_update!()
   end
 end

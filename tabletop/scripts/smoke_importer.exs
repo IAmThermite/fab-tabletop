@@ -1,90 +1,80 @@
 # Run with: mix run scripts/smoke_importer.exs
 #
-# Builds a minimal raw card-list JSON containing the 4 example cards, runs
-# import_and_generate to fetch + hash, then import_from_generated_data to
-# insert into the DB. Verifies the rows look right.
+# Writes a minimal `card.json`-shaped fixture (a handful of cards covering
+# foil dedup, full art, and a horizontal/meld card), runs `import_all/1` against
+# it, then prints the resulting DB rows to eyeball.
 
 require Logger
 
-alias Tabletop.Cards
+import Ecto.Query
+
 alias Tabletop.Cards.Importer
+alias Tabletop.Repo
+alias Tabletop.Cards.{Card, CardPrint}
 
-raw_dir = "/tmp/smoke_importer_raw"
-out_dir = "/tmp/smoke_importer_out"
-File.rm_rf!(raw_dir)
-File.rm_rf!(out_dir)
-File.mkdir_p!(raw_dir)
-File.mkdir_p!(out_dir)
+source = "/tmp/smoke_importer_card.json"
 
-minimal_raw = %{
-  "results" => [
-    %{"card_id" => "arakni-5lp3d-7hru-7h3-cr4x"},
-    %{"card_id" => "everbloom--life-3"},
-    %{"card_id" => "great-library-of-solana"},
-    %{"card_id" => "chum-friendly-first-mate-2"},
-    %{"card_id" => "sink-below-1"}
-  ]
-}
+fixture = [
+  %{
+    "unique_id" => "smoke-reunion",
+    "name" => "10,000 Year Reunion",
+    "pitch" => "1",
+    "played_horizontally" => false,
+    "printings" => [
+      # Standard + rainbow foil share an image -> collapse to one (standard) print.
+      %{"unique_id" => "smoke-mst131-s", "id" => "MST131", "set_id" => "MST", "foiling" => "S",
+        "art_variations" => [], "image_url" => "https://example.com/MST131.png",
+        "phash_art" => "414447273410687721", "phash_full" => "1535517334068017902"},
+      %{"unique_id" => "smoke-mst131-r", "id" => "MST131", "set_id" => "MST", "foiling" => "R",
+        "art_variations" => [], "image_url" => "https://example.com/MST131.png",
+        "phash_art" => "414447273410687721", "phash_full" => "1535517334068017902"},
+      # Full-art extended print, different image -> kept, non-canonical.
+      %{"unique_id" => "smoke-lgs-fa", "id" => "LGS282", "set_id" => "LGS", "foiling" => "R",
+        "art_variations" => ["FA"], "image_url" => "https://example.com/LGS282.webp",
+        "phash_art" => "1113222196439007402", "phash_full" => "6082765317465521772"}
+    ]
+  },
+  %{
+    "unique_id" => "smoke-meld",
+    "name" => "Arcane Seeds // Life",
+    "pitch" => "1",
+    "played_horizontally" => true,
+    "printings" => [
+      # Horizontal: no phash_art -> image_phash nil, full only.
+      %{"unique_id" => "smoke-flr013", "id" => "FLR013", "set_id" => "FLR", "foiling" => "S",
+        "art_variations" => [], "image_url" => "https://example.com/FLR013.webp",
+        "phash_full" => "416679960560757700"}
+    ]
+  },
+  %{
+    "unique_id" => "smoke-noimage",
+    "name" => "Imageless Card",
+    "pitch" => "",
+    "played_horizontally" => false,
+    # All prints imageless -> card skipped entirely.
+    "printings" => [
+      %{"unique_id" => "smoke-noimg-1", "id" => "XXX001", "set_id" => "XXX", "foiling" => "S",
+        "art_variations" => [], "image_url" => nil, "phash_full" => nil}
+    ]
+  }
+]
 
-File.write!(Path.join(raw_dir, "subset.json"), Jason.encode!(minimal_raw))
+File.write!(source, Jason.encode!(fixture))
 
-# Generate (fetch + hash)
-Importer.import_and_generate(
-  raw_path: Path.join(raw_dir, "*.json"),
-  output_dir: out_dir
-)
+# Clear, import, then re-import to demonstrate idempotency.
+Repo.delete_all(CardPrint)
+Repo.delete_all(Card)
 
-# Wipe DB then import from generated
-Tabletop.Repo.delete_all(Tabletop.Cards.CardPrint)
-Tabletop.Repo.delete_all(Tabletop.Cards.Card)
+{inserted, skipped} = Importer.import_all(source: source)
+IO.puts("\nimport_all: inserted=#{inserted} skipped=#{skipped}")
 
-generated_files = Path.wildcard(Path.join(out_dir, "*.json"))
-IO.puts("\nGenerated files: #{inspect(generated_files)}")
-
-Enum.each(generated_files, fn file ->
-  {:ok, content} = File.read(file)
-  {:ok, data} = Jason.decode(content)
-  IO.puts("\n#{file}: #{length(data)} cards")
-
-  Enum.each(data, fn card_data ->
-    n_prints = length(card_data["card_prints"] || [])
-    IO.puts("  - #{card_data["external_card_id"]} #{inspect(card_data["name"])} (#{n_prints} prints)")
-  end)
-end)
-
-# Insert
-Enum.each(generated_files, fn file ->
-  {:ok, content} = File.read(file)
-  {:ok, data} = Jason.decode(content)
-
-  Enum.each(data, fn card_data ->
-    {:ok, card} =
-      Tabletop.Repo.insert(
-        Tabletop.Cards.Card.changeset(%Tabletop.Cards.Card{}, %{
-          "name" => card_data["name"],
-          "pitch" => card_data["pitch"],
-          "external_card_id" => card_data["external_card_id"]
-        })
-      )
-
-    Enum.each(card_data["card_prints"], fn print_data ->
-      Tabletop.Repo.insert!(
-        Tabletop.Cards.CardPrint.changeset(
-          %Tabletop.Cards.CardPrint{},
-          Map.put(print_data, "card_id", card.id)
-        )
-      )
-    end)
-  end)
-end)
+{again, _} = Importer.import_all(source: source)
+IO.puts("import_all (re-run): inserted=#{again} (idempotent — no new prints)")
 
 IO.puts("\n--- DB state ---")
 
-import Ecto.Query
-
-cards = Tabletop.Repo.all(from c in Tabletop.Cards.Card, preload: [:card_prints])
-
-Enum.each(cards, fn card ->
+Repo.all(from c in Card, preload: [:card_prints])
+|> Enum.each(fn card ->
   IO.puts("#{card.name} (pitch: #{card.pitch || "-"}, ext: #{card.external_card_id})")
 
   Enum.each(card.card_prints, fn cp ->
@@ -93,6 +83,6 @@ Enum.each(cards, fn card ->
       |> Enum.map(fn {k, v} -> "#{k}=#{if v, do: "✓", else: "·"}" end)
       |> Enum.join(" ")
 
-    IO.puts("  - #{cp.face_id} | #{cp.orientation} | #{cp.art_type} | canon:#{cp.is_canonical} | #{hashes}")
+    IO.puts("  - #{cp.face_id} | #{cp.set_code} | #{cp.orientation} | #{cp.art_type} | canon:#{cp.is_canonical} | #{hashes}")
   end)
 end)

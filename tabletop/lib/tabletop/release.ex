@@ -19,7 +19,7 @@ defmodule Tabletop.Release do
     for repo <- repos() do
       {:ok, _, _} =
         Ecto.Migrator.with_repo(repo, fn _repo ->
-          Tabletop.Cards.Importer.import_from_generated_data()
+          Tabletop.Cards.Importer.import_all()
         end)
     end
   end

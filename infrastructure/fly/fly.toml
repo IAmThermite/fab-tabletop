@@ -6,6 +6,9 @@
 app = 'fabtabletop'
 primary_region = 'iad'
 
+[deploy]
+  release_command = '/app/bin/migrate'
+
 [build]
   dockerfile = '../Dockerfile'
 
@@ -32,3 +35,10 @@ primary_region = 'iad'
   memory = '512mb'
   cpus = 1
   memory_mb = 512
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/health"

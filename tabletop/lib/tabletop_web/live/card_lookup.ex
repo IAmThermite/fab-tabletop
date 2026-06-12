@@ -3,9 +3,23 @@ defmodule TabletopWeb.CardLookup do
   Shared card lookup behaviour for LiveViews that support click-to-identify cards.
 
   Injects `handle_event` clauses for `open_card`, `close_card`, `switch_pitch`,
-  and `search_card`, plus private helpers.
+  `switch_match`, and `search_card`, plus private helpers.
 
   The host LiveView must initialise `open_cards: []` in its mount.
+
+  ## `open_card` shape
+
+  Each entry in `socket.assigns.open_cards` looks like:
+
+      %{
+        id: "<unique>",
+        x: integer, y: integer,
+        card: %Tabletop.Cards.Card{},        # gameplay identity (name, pitch, normalized_name, tokens)
+        card_print: %Tabletop.Cards.CardPrint{},  # printing (image_url, set_code, hashes)
+        pitch_variants: [%Card{} preloaded with canonical print],
+        alternate_matches: [%{card: %Card{}, card_print: %CardPrint{}}, ...],
+        debug: %{...}
+      }
 
   Usage:
 
@@ -14,22 +28,11 @@ defmodule TabletopWeb.CardLookup do
 
   defmacro __using__(_opts) do
     quote do
-      def handle_event(
-            "open_card",
-            %{"ocr_candidates" => candidates, "x" => x, "y" => y} = params,
-            socket
-          ) do
-        phash =
-          case Map.get(params, "phash") do
-            s when is_binary(s) -> String.to_integer(s)
-            _ -> nil
-          end
+      alias Tabletop.Cards
+      alias Tabletop.Cards.{Card, CardPrint}
 
-        phash_flipped =
-          case Map.get(params, "phash_flipped") do
-            s when is_binary(s) -> String.to_integer(s)
-            _ -> nil
-          end
+      def handle_event("open_card", %{"x" => x, "y" => y} = params, socket) do
+        phashes = parse_phashes(params)
 
         detected_pitch =
           case Map.get(params, "detected_pitch") do
@@ -37,63 +40,55 @@ defmodule TabletopWeb.CardLookup do
             _ -> nil
           end
 
-        possible_cards =
-          cond do
-            phash && phash_flipped ->
-              Tabletop.Cards.find_by_p_hash_similarity_dual(phash, phash_flipped)
-
-            phash ->
-              Tabletop.Cards.find_by_p_hash_similarity(phash)
-
-            true ->
-              []
+        # 1.0 means the scanner matched on its first try; > 1.0 means it
+        # resolved via the expanded-region retry (see liveview_hook.js).
+        region_scale =
+          case Map.get(params, "region_scale") do
+            n when is_number(n) and n >= 1.0 -> n / 1
+            _ -> 1.0
           end
 
-        possible_cards =
-          if possible_cards == [] && candidates != [] do
-            sorted = Enum.sort_by(candidates, & &1["confidence"], :desc)
-
-            Enum.reduce_while(sorted, [], fn %{"text" => text}, _acc ->
-              results = Tabletop.Cards.fuzzy_match_name(text)
-              if results != [], do: {:halt, results}, else: {:cont, []}
-            end)
+        # Recognition is pHash-only — no OCR. (Manual name search uses `search_card`.)
+        possible_pairs =
+          if has_phash?(phashes) do
+            Cards.find_by_p_hash_similarity(phashes)
+            |> Enum.map(&pair_from_print/1)
+            |> dedupe_by_card()
           else
-            possible_cards
+            []
           end
 
         # Sort pitch-matched cards to front
-        possible_cards =
+        possible_pairs =
           if detected_pitch do
-            {matching, rest} = Enum.split_with(possible_cards, &(&1.pitch == detected_pitch))
+            {matching, rest} =
+              Enum.split_with(possible_pairs, &(&1.card.pitch == detected_pitch))
+
             matching ++ rest
           else
-            possible_cards
+            possible_pairs
           end
 
-        match_method =
-          cond do
-            phash && possible_cards != [] -> "phash"
-            candidates != [] && possible_cards != [] -> "ocr"
-            true -> "none"
-          end
+        match_method = if possible_pairs != [], do: "phash", else: "none"
 
-        max_results = if match_method in ["phash", "ocr"], do: 3, else: 5
-        possible_cards = Enum.take(possible_cards, max_results)
+        possible_pairs = Enum.take(possible_pairs, 3)
 
         debug_info = %{
-          ocr_candidates: candidates,
-          phash: phash,
-          phash_flipped: phash_flipped,
+          phashes: phashes,
           detected_pitch: detected_pitch,
-          match_method: match_method
+          match_method: match_method,
+          region_scale: region_scale
         }
 
-        case build_open_card(possible_cards, x, y, detected_pitch, debug_info) do
+        # Always reply with whether a card matched — the client retry loop
+        # (which grows the capture region on a miss) waits on this.
+        case build_open_card(possible_pairs, x, y, detected_pitch, debug_info) do
           nil ->
-            {:noreply, socket}
+            {:reply, %{matched: false}, socket}
 
           new_card ->
-            {:noreply, assign(socket, :open_cards, socket.assigns.open_cards ++ [new_card])}
+            {:reply, %{matched: true},
+             assign(socket, :open_cards, socket.assigns.open_cards ++ [new_card])}
         end
       end
 
@@ -109,13 +104,12 @@ defmodule TabletopWeb.CardLookup do
             y = if existing, do: existing.y, else: 20
 
             search_debug = %{
-              ocr_candidates: [%{"text" => trimmed, "confidence" => nil}],
-              phash: nil,
+              phashes: %{},
               match_method: "search"
             }
 
             case build_open_card(
-                   Tabletop.Cards.fuzzy_match_name(trimmed),
+                   text_match_pairs([%{"text" => trimmed}]),
                    x,
                    y,
                    nil,
@@ -156,8 +150,15 @@ defmodule TabletopWeb.CardLookup do
           Enum.map(socket.assigns.open_cards, fn open_card ->
             if open_card.id == id do
               case Enum.find(open_card.pitch_variants, &(&1.pitch == pitch)) do
-                nil -> open_card
-                variant -> %{open_card | card: variant}
+                nil ->
+                  open_card
+
+                variant ->
+                  %{
+                    open_card
+                    | card: variant,
+                      card_print: Card.canonical_print(variant, open_card.card_print.set_code)
+                  }
               end
             else
               open_card
@@ -175,33 +176,40 @@ defmodule TabletopWeb.CardLookup do
         cards =
           Enum.map(socket.assigns.open_cards, fn open_card ->
             if open_card.id == id do
-              case Enum.find(open_card.alternate_matches, &(&1.normalized_name == name)) do
+              case Enum.find(open_card.alternate_matches, &(&1.card.normalized_name == name)) do
                 nil ->
                   open_card
 
-                new_card ->
-                  # Rotate old card back into alternates
-                  old_base =
-                    Enum.find(open_card.pitch_variants, open_card.card, &(&1.pitch == 1))
+                new_pair ->
+                  # Rotate old card+print back into alternates
+                  old_alt = %{card: open_card.card, card_print: open_card.card_print}
 
                   new_alternates =
                     [
-                      old_base
-                      | Enum.reject(open_card.alternate_matches, &(&1.normalized_name == name))
+                      old_alt
+                      | Enum.reject(
+                          open_card.alternate_matches,
+                          &(&1.card.normalized_name == name)
+                        )
                     ]
-                    |> Enum.uniq_by(& &1.normalized_name)
+                    |> Enum.uniq_by(& &1.card.normalized_name)
 
                   new_pitch_variants =
-                    Tabletop.Cards.find_pitch_variants(new_card, new_card.set_code)
+                    Cards.find_pitch_variants(new_pair.card, new_pair.card_print.set_code)
 
-                  new_selected =
+                  selected_card =
                     if new_pitch_variants != [],
-                      do: Enum.find(new_pitch_variants, new_card, &(&1.pitch == 1)),
-                      else: new_card
+                      do: Enum.find(new_pitch_variants, new_pair.card, &(&1.pitch == 1)),
+                      else: new_pair.card
+
+                  selected_print =
+                    Card.canonical_print(selected_card, new_pair.card_print.set_code) ||
+                      new_pair.card_print
 
                   %{
                     open_card
-                    | card: new_selected,
+                    | card: selected_card,
+                      card_print: selected_print,
                       pitch_variants: new_pitch_variants,
                       alternate_matches: new_alternates
                   }
@@ -214,34 +222,99 @@ defmodule TabletopWeb.CardLookup do
         {:noreply, assign(socket, :open_cards, cards)}
       end
 
+      # --- helpers ---
+
+      defp parse_phashes(params) do
+        case Map.get(params, "phashes") do
+          list when is_list(list) ->
+            list
+            |> Enum.reduce(%{}, fn entry, acc ->
+              with kind when is_binary(kind) <- entry["kind"],
+                   raw when is_binary(raw) <- entry["value"],
+                   {int, ""} <- Integer.parse(raw),
+                   atom_kind when atom_kind in [:art, :art_flipped, :full] <-
+                     safe_kind_atom(kind) do
+                Map.put(acc, atom_kind, int)
+              else
+                _ -> acc
+              end
+            end)
+
+          _ ->
+            %{}
+        end
+      end
+
+      defp safe_kind_atom("art"), do: :art
+      defp safe_kind_atom("art_flipped"), do: :art_flipped
+      defp safe_kind_atom("full"), do: :full
+      defp safe_kind_atom(_), do: nil
+
+      defp has_phash?(phashes), do: phashes != %{} and Enum.any?(phashes, fn {_k, v} -> v end)
+
+      # CardPrint match → {card, card_print} pair
+      defp pair_from_print(%CardPrint{} = cp), do: %{card: cp.card, card_print: cp}
+
+      # Card match (from name search) → pair with canonical print
+      defp pair_from_card(%Card{} = card),
+        do: %{card: card, card_print: Card.canonical_print(card)}
+
+      # Multiple prints of the same logical card → keep the first.
+      defp dedupe_by_card(pairs), do: Enum.uniq_by(pairs, & &1.card.id)
+
+      # Manual name-search matcher (the `search_card` box). Fuzzy-matches the
+      # typed text against card names via Postgres similarity + dmetaphone.
+      defp text_match_pairs(candidates) when is_list(candidates) do
+        sorted = Enum.sort_by(candidates, &Map.get(&1, "confidence", 0), :desc)
+
+        Enum.reduce_while(sorted, [], fn %{"text" => text}, _acc ->
+          results = Cards.fuzzy_match_name(text)
+
+          if results != [] do
+            {:halt, Enum.map(results, &pair_from_card/1)}
+          else
+            {:cont, []}
+          end
+        end)
+      end
+
+      defp text_match_pairs(_), do: []
+
       defp build_open_card([], _x, _y, _detected_pitch, _debug_info), do: nil
 
-      defp build_open_card(possible_cards, x, y, detected_pitch, debug_info) do
-        card = List.first(possible_cards)
-        pitch_variants = Tabletop.Cards.find_pitch_variants(card, card.set_code)
+      defp build_open_card(possible_pairs, x, y, detected_pitch, debug_info) do
+        first = List.first(possible_pairs)
+
+        pitch_variants =
+          Cards.find_pitch_variants(first.card, first.card_print && first.card_print.set_code)
 
         selected_card =
           cond do
             pitch_variants == [] ->
-              card
+              first.card
 
             detected_pitch ->
-              Enum.find(pitch_variants, card, &(&1.pitch == detected_pitch))
+              Enum.find(pitch_variants, first.card, &(&1.pitch == detected_pitch))
 
             true ->
-              Enum.find(pitch_variants, card, &(&1.pitch == 1))
+              Enum.find(pitch_variants, first.card, &(&1.pitch == 1))
           end
 
+        selected_print =
+          Card.canonical_print(selected_card, first.card_print && first.card_print.set_code) ||
+            first.card_print
+
         alternates =
-          possible_cards
-          |> Enum.reject(&(&1.normalized_name == card.normalized_name))
-          |> Enum.uniq_by(& &1.normalized_name)
+          possible_pairs
+          |> Enum.reject(&(&1.card.normalized_name == first.card.normalized_name))
+          |> Enum.uniq_by(& &1.card.normalized_name)
 
         %{
           id: System.unique_integer([:positive]) |> Integer.to_string(),
           x: x,
           y: y,
           card: selected_card,
+          card_print: selected_print,
           pitch_variants: pitch_variants,
           alternate_matches: alternates,
           debug: debug_info

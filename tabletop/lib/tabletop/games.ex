@@ -64,6 +64,7 @@ defmodule Tabletop.Games do
     query =
       from g in Game,
         where: g.status == :waiting,
+        where: g.private == false,
         where: is_nil(g.user2_id),
         where: g.user_id != ^scope.user.id,
         where: is_nil(g.joining_user_id) or g.joining_expires_at < ^now,
@@ -86,6 +87,7 @@ defmodule Tabletop.Games do
     query =
       from g in Game,
         where: g.status == :waiting,
+        where: g.private == false,
         where: is_nil(g.user2_id),
         where: is_nil(g.joining_user_id) or g.joining_expires_at < ^now,
         order_by: [desc: g.inserted_at],
@@ -102,9 +104,12 @@ defmodule Tabletop.Games do
   end
 
   @doc """
-  Gets a single game.
+  Gets a single game the scoped user is a participant in (creator or opponent).
 
-  Raises `Ecto.NoResultsError` if the Game does not exist.
+  Raises `Ecto.NoResultsError` if the game does not exist OR if the scoped user
+  is not a participant. Authorization is intentionally folded into the lookup so
+  callers cannot accidentally leak metadata about games the user doesn't belong
+  to (see `fetch_game/1` for the unscoped variant used by the pre-join flow).
 
   ## Examples
 
@@ -115,8 +120,67 @@ defmodule Tabletop.Games do
       ** (Ecto.NoResultsError)
 
   """
-  def get_game!(%Scope{} = _scope, id) do
-    Repo.get_by!(Game, id: id) |> Repo.preload([:user, :user2])
+  def get_game!(%Scope{} = scope, id) do
+    case get_game(scope, id) do
+      {:ok, game} -> game
+      {:error, :not_found} -> raise Ecto.NoResultsError, queryable: Game
+    end
+  end
+
+  @doc """
+  Gets a single game the scoped user is a participant in.
+
+  Returns `{:ok, %Game{}}` or `{:error, :not_found}`. Same authorization rules
+  as `get_game!/2`.
+  """
+  def get_game(%Scope{} = scope, id) do
+    case Repo.get(Game, id) do
+      nil ->
+        {:error, :not_found}
+
+      %Game{} = game ->
+        game = Repo.preload(game, [:user, :user2])
+
+        if user_part_of_game?(scope, game) do
+          {:ok, game}
+        else
+          {:error, :not_found}
+        end
+    end
+  end
+
+  @doc """
+  Fetches a game by id without any participant scoping. Used by the pre-join
+  flow where the requesting user is not yet a participant but has been given
+  the game's UUID as the invitation token.
+
+  Returns `{:ok, %Game{}}` or `{:error, :not_found}`.
+  """
+  def fetch_game(id) do
+    case Repo.get(Game, id) do
+      nil -> {:error, :not_found}
+      %Game{} = game -> {:ok, Repo.preload(game, [:user, :user2])}
+    end
+  end
+
+  @doc """
+  Looks up a game by its UUID for the "join by code" flow.
+
+  Returns `{:ok, game}` if the id is a valid UUID and the game is in :waiting
+  status, otherwise `{:error, :not_found}`. Does not enforce the public/private
+  filter — possession of the UUID is the access token.
+  """
+  def get_joinable_game_by_code(code) when is_binary(code) do
+    case Ecto.UUID.cast(String.trim(code)) do
+      {:ok, id} ->
+        case Repo.get_by(Game, id: id, status: :waiting) do
+          nil -> {:error, :not_found}
+          %Game{} = game -> {:ok, Repo.preload(game, [:user, :user2])}
+        end
+
+      :error ->
+        {:error, :invalid_code}
+    end
   end
 
   @doc """
@@ -132,12 +196,18 @@ defmodule Tabletop.Games do
 
   """
   def create_game(%Scope{} = scope, attrs) do
-    with {:ok, game = %Game{}} <-
-           %Game{}
-           |> Game.changeset(attrs, scope)
-           |> Repo.insert() do
-      broadcast_game(scope, {:created, game})
-      {:ok, game}
+    case get_current_game_for_user(scope) do
+      nil ->
+        with {:ok, game = %Game{}} <-
+               %Game{}
+               |> Game.changeset(attrs, scope)
+               |> Repo.insert() do
+          broadcast_game(scope, {:created, game})
+          {:ok, game}
+        end
+
+      %Game{} ->
+        {:error, :already_in_game}
     end
   end
 
@@ -207,6 +277,14 @@ defmodule Tabletop.Games do
   Uses an atomic conditional UPDATE to prevent race conditions.
   """
   def reserve_join(%Scope{} = scope, %Game{} = game) do
+    if user_in_other_game?(scope, game) do
+      {:error, :already_in_game}
+    else
+      do_reserve_join(scope, game)
+    end
+  end
+
+  defp do_reserve_join(%Scope{} = scope, %Game{} = game) do
     now = DateTime.utc_now()
     expires = DateTime.add(now, 120, :second)
     user_id = scope.user.id
@@ -216,7 +294,9 @@ defmodule Tabletop.Games do
       where: g.status == :waiting,
       where: is_nil(g.user2_id),
       where: g.user_id != ^user_id,
-      where: is_nil(g.joining_user_id) or g.joining_expires_at < ^now
+      where:
+        is_nil(g.joining_user_id) or g.joining_expires_at < ^now or
+          g.joining_user_id == ^user_id
     )
     |> Repo.update_all(set: [joining_user_id: user_id, joining_expires_at: expires])
     |> case do
@@ -265,6 +345,9 @@ defmodule Tabletop.Games do
 
       game.user2_id != nil ->
         {:error, :game_full}
+
+      user_in_other_game?(scope, game) ->
+        {:error, :already_in_game}
 
       true ->
         {count, _} =
@@ -382,5 +465,40 @@ defmodule Tabletop.Games do
 
   def user_part_of_game?(%Scope{} = scope, %Game{} = game) do
     game.user_id == scope.user.id || game.user2_id == scope.user.id
+  end
+
+  defp user_in_other_game?(%Scope{} = scope, %Game{} = game) do
+    case get_current_game_for_user(scope) do
+      %Game{id: id} -> id != game.id
+      nil -> false
+    end
+  end
+
+  @doc """
+  Updates or creates the state for a given game using an upsert.
+  """
+  def update_game_state(game_id, state_map) do
+    %Tabletop.Games.GameState{
+      game_id: game_id,
+      state: state_map
+    }
+    |> Repo.insert!(
+      on_conflict: :replace_all,
+      conflict_target: :game_id
+    )
+  rescue
+    _ -> :error
+  end
+
+  @doc """
+  Gets the state for a given game, returning an empty map if not found.
+  """
+  def get_game_state(game_id) do
+    case Repo.get(Tabletop.Games.GameState, game_id) do
+      nil -> %{}
+      record -> record.state
+    end
+  rescue
+    _ -> %{}
   end
 end

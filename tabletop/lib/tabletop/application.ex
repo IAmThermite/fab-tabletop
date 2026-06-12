@@ -14,9 +14,12 @@ defmodule Tabletop.Application do
       {Phoenix.PubSub, name: Tabletop.PubSub},
       %{id: :game_channels_pg, start: {:pg, :start_link, [:game_channels]}},
       {Registry, keys: :unique, name: Tabletop.Games.LeaveTimerRegistry},
-      {DynamicSupervisor, name: Tabletop.Games.LeaveTimerSupervisor, strategy: :one_for_one},
+      {Registry, keys: :duplicate, name: Tabletop.Games.GameConnectionRegistry},
+      {DynamicSupervisor,
+       name: Tabletop.Games.LeaveTimerSupervisor, strategy: :one_for_one, max_children: 1_000},
       {Registry, keys: :unique, name: Tabletop.Games.GameSessionRegistry},
-      {DynamicSupervisor, name: Tabletop.Games.GameSessionSupervisor, strategy: :one_for_one},
+      {DynamicSupervisor,
+       name: Tabletop.Games.GameSessionSupervisor, strategy: :one_for_one, max_children: 1_000},
       # Start to serve requests, typically the last entry
       TabletopWeb.Endpoint
     ]

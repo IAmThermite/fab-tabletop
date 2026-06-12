@@ -20,6 +20,34 @@ defmodule TabletopWeb.GameLive.PreJoin do
         data-camera-relay-token={@camera_relay_token}
         class="flex flex-col h-full"
       >
+        <%!-- Share-code prompt (one-time, after creating a private game) --%>
+        <div
+          :if={@share_code_prompt}
+          class="px-3 py-2 bg-success/10 border-b border-success/30 flex items-center gap-3"
+        >
+          <.icon name="hero-check-circle" class="size-5 text-success shrink-0" />
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-sm">Private game created</p>
+            <p class="text-xs opacity-75 truncate">
+              Send this code to your opponent:
+              <span class="font-mono ml-1 select-all">{@share_code_prompt}</span>
+            </p>
+          </div>
+          <.share_code_button
+            id="pre-join-prompt-share-btn"
+            code={@share_code_prompt}
+            label="Share code"
+          />
+          <button
+            type="button"
+            phx-click="dismiss_share_prompt"
+            class="btn btn-xs btn-ghost btn-circle"
+            aria-label="Dismiss"
+          >
+            <.icon name="hero-x-mark" class="size-4" />
+          </button>
+        </div>
+
         <%!-- Top bar --%>
         <div class="flex items-center gap-3 px-3 py-2 bg-base-200 border-b border-base-300">
           <video id="pre-join-video" autoplay muted playsinline class="hidden"></video>
@@ -37,10 +65,28 @@ defmodule TabletopWeb.GameLive.PreJoin do
           </div>
         </div>
 
+        <%!-- Waiting-for-opponent banner (creator only, no active joiner) --%>
+        <div
+          :if={@mode == :creator and @game.status == :waiting and not joiner_reserved?(@game)}
+          class="px-3 py-2 bg-primary/10 border-b border-primary/30 flex items-center gap-3"
+        >
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-sm">Waiting for opponent</p>
+            <p class="text-xs opacity-75 truncate">
+              Share this code so they can join:
+              <span class="font-mono ml-1 select-all">{@game.id}</span>
+            </p>
+          </div>
+          <.share_code_button id="pre-join-banner-share-btn" code={@game.id} label="Share code" />
+        </div>
+
         <%!-- Main area --%>
         <div class="flex flex-1 min-h-0">
           <%!-- Central area — camera preview --%>
-          <div class="flex-1 relative bg-base-300 flex items-center justify-center overflow-hidden" style="container-type: size;">
+          <div
+            class="flex-1 relative bg-base-300 flex items-center justify-center overflow-hidden"
+            style="container-type: size;"
+          >
             <div class="aspect-video" style="width: min(100cqw, 100cqh * 16 / 9);">
               <canvas id="pre-join-canvas" class="w-full h-full block"></canvas>
             </div>
@@ -96,6 +142,17 @@ defmodule TabletopWeb.GameLive.PreJoin do
               </div>
 
               <div class="divider divider-horizontal mx-0"></div>
+
+              <%!-- Share (creator only) --%>
+              <%= if @mode == :creator do %>
+                <.share_code_button
+                  id="pre-join-bottom-share-btn"
+                  code={@game.id}
+                  label="Share"
+                  class="btn btn-xs btn-outline"
+                />
+                <div class="divider divider-horizontal mx-0"></div>
+              <% end %>
 
               <%!-- Actions --%>
               <.link navigate={~p"/"} class="btn btn-sm btn-outline">
@@ -380,20 +437,37 @@ defmodule TabletopWeb.GameLive.PreJoin do
        |> put_flash(:error, "Please confirm your email address before joining a game.")
        |> redirect(to: ~p"/")}
     else
-      game = Games.get_game!(scope, id)
+      # Unscoped lookup: the user reaching pre-join may not yet be a participant
+      # (they're considering joining); possession of the UUID is the invitation.
+      case Games.fetch_game(id) do
+        {:ok, game} ->
+          mode = if Games.user_part_of_game?(scope, game), do: :creator, else: :joiner
 
-      # If the user already belongs to the game (creator or already-joined opponent),
-      # treat as :creator mode (no reservation needed, just camera confirm).
-      # Only use :joiner mode for users who haven't joined yet.
-      mode =
-        if Games.user_part_of_game?(scope, game) do
-          :creator
-        else
-          :joiner
-        end
+          socket =
+            socket
+            |> mount_pre_join(game, mode, scope)
+            |> assign_share_code_prompt()
 
-      socket = mount_pre_join(socket, game, mode, scope)
-      {:ok, socket}
+          {:ok, socket}
+
+        {:error, :not_found} ->
+          {:ok,
+           socket
+           |> put_flash(:error, "Game not found.")
+           |> redirect(to: ~p"/")}
+      end
+    end
+  end
+
+  defp assign_share_code_prompt(socket) do
+    case Phoenix.Flash.get(socket.assigns.flash, :share_code) do
+      nil ->
+        assign(socket, :share_code_prompt, nil)
+
+      code ->
+        socket
+        |> clear_flash(:share_code)
+        |> assign(:share_code_prompt, code)
     end
   end
 
@@ -440,9 +514,18 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:camera_relay_token, camera_relay_token)
         |> assign(:qr_svg, qr_svg)
 
-      {:error, :unavailable} ->
+      {:error, reason} ->
+        message =
+          case reason do
+            :already_in_game ->
+              "You're already in a game. Finish or leave it before joining another."
+
+            _ ->
+              "Game is no longer available"
+          end
+
         socket
-        |> put_flash(:error, "Game is no longer available")
+        |> put_flash(:error, message)
         |> push_navigate(to: ~p"/")
         |> assign(:game, game)
         |> assign(:mode, :joiner)
@@ -466,6 +549,15 @@ defmodule TabletopWeb.GameLive.PreJoin do
              |> put_flash(:info, "Joined game successfully")
              |> push_navigate(to: ~p"/games/#{game}")}
 
+          {:error, :already_in_game} ->
+            {:noreply,
+             socket
+             |> put_flash(
+               :error,
+               "You're already in a game. Finish or leave it before joining another."
+             )
+             |> push_navigate(to: ~p"/")}
+
           {:error, _reason} ->
             {:noreply,
              socket
@@ -473,6 +565,10 @@ defmodule TabletopWeb.GameLive.PreJoin do
              |> push_navigate(to: ~p"/")}
         end
     end
+  end
+
+  def handle_event("dismiss_share_prompt", _params, socket) do
+    {:noreply, assign(socket, :share_code_prompt, nil)}
   end
 
   @impl true
@@ -494,9 +590,19 @@ defmodule TabletopWeb.GameLive.PreJoin do
      |> push_navigate(to: ~p"/")}
   end
 
+  def handle_info({:updated, %Game{id: id} = game}, %{assigns: %{game: %Game{id: id}}} = socket) do
+    {:noreply, assign(socket, :game, game)}
+  end
+
   def handle_info({_type, %Game{}}, socket) do
     {:noreply, socket}
   end
+
+  defp joiner_reserved?(%Game{joining_user_id: nil}), do: false
+  defp joiner_reserved?(%Game{joining_expires_at: nil}), do: false
+
+  defp joiner_reserved?(%Game{joining_expires_at: expires}),
+    do: DateTime.compare(expires, DateTime.utc_now()) == :gt
 
   @impl true
   def terminate(_reason, socket) do

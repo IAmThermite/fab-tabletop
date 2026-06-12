@@ -12,6 +12,12 @@ defmodule Tabletop.Tournaments.Pairing.Bracket do
   the next round's pairings, or `{:done, champion}` when a single player
   remains.
   """
+
+  # Supported top-cut bracket sizes (the non-zero `@cut_sizes` in
+  # `Tabletop.Tournaments.Tournament`). Each is a power of two so the
+  # recursive crossover seeding produces a balanced bracket.
+  @valid_sizes [4, 8, 16]
+
   def seed(ids) when is_list(ids) do
     size = length(ids)
 
@@ -23,7 +29,9 @@ defmodule Tabletop.Tournaments.Pairing.Bracket do
     ids
     |> List.to_tuple()
     |> seed_positions(size)
-    |> Enum.map(fn {a, b} -> {elem(List.to_tuple(ids), a - 1), elem(List.to_tuple(ids), b - 1)} end)
+    |> Enum.map(fn {a, b} ->
+      {elem(List.to_tuple(ids), a - 1), elem(List.to_tuple(ids), b - 1)}
+    end)
   end
 
   # Produces the standard bracket seed-index pairings for a power-of-two size.

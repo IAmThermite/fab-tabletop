@@ -73,7 +73,17 @@ defmodule TabletopWeb.GameLive.Index do
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
           <%!-- Games to join --%>
           <div>
-            <h2 class="text-2xl font-bold mb-4">Games to join</h2>
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-2xl font-bold">Games to join</h2>
+              <button
+                :if={@current_scope}
+                type="button"
+                phx-click="open_join_private"
+                class="btn btn-sm btn-outline"
+              >
+                Join private
+              </button>
+            </div>
 
             <div class="space-y-3">
               <details
@@ -139,6 +149,12 @@ defmodule TabletopWeb.GameLive.Index do
                   label="Decklist"
                   placeholder="https://fabrary.com/..."
                 />
+                <.input
+                  field={@form[:private]}
+                  type="checkbox"
+                  class="toggle"
+                  label="Private game (won't appear in the public list)"
+                />
                 <div class="flex justify-center pt-4">
                   <.button variant="primary" phx-disable-with="Starting...">
                     Start
@@ -157,7 +173,7 @@ defmodule TabletopWeb.GameLive.Index do
             <h2 class="text-2xl font-bold mb-4">News</h2>
 
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
-              <h3 class="font-bold text-lg">Welcome to Fab Tabletop</h3>
+              <h3 class="font-bold text-lg">Welcome to FaB Tabletop</h3>
               <p class="mt-2 text-zinc-600 dark:text-zinc-400">
                 Create or join a game of Flesh and Blood to get started.
                 Set up your hero, share your decklist, and battle your opponent with live video chat.
@@ -166,6 +182,34 @@ defmodule TabletopWeb.GameLive.Index do
           </div>
         </div>
       </div>
+
+      <dialog :if={@show_join_private} id="join-private-dialog" class="modal modal-open">
+        <div class="modal-box">
+          <h3 class="text-lg font-bold mb-4">Join private game</h3>
+          <.form
+            for={%{}}
+            as={:join_private}
+            phx-submit="join_private"
+            class="space-y-3"
+          >
+            <.input
+              name="code"
+              value=""
+              type="text"
+              label="Game code"
+              placeholder="e.g. 3f8a4b2c-1e7d-4f9a-9c5b-7e8d1f2a3c4d"
+              autocomplete="off"
+            />
+            <div class="modal-action">
+              <button type="button" phx-click="close_join_private" class="btn">
+                Cancel
+              </button>
+              <.button variant="primary" type="submit">Join</.button>
+            </div>
+          </.form>
+        </div>
+        <div class="modal-backdrop" phx-click="close_join_private"></div>
+      </dialog>
     </Layouts.app>
 
     <script :type={ColocatedHook} name=".GameIndex">
@@ -194,6 +238,7 @@ defmodule TabletopWeb.GameLive.Index do
     socket =
       socket
       |> assign(:page_title, "Games")
+      |> assign(:show_join_private, false)
       |> assign_form(scope)
       |> assign_current_game(scope)
       |> assign_games()
@@ -229,11 +274,25 @@ defmodule TabletopWeb.GameLive.Index do
        put_flash(socket, :error, "Please confirm your email address before creating a game.")}
     else
       case Games.create_game(socket.assigns.current_scope, game_params) do
+        {:ok, %Game{private: true} = game} ->
+          {:noreply,
+           socket
+           |> put_flash(:share_code, game.id)
+           |> push_navigate(to: ~p"/games/#{game}/pre-join")}
+
         {:ok, game} ->
           {:noreply,
            socket
            |> put_flash(:info, "Game created successfully")
            |> push_navigate(to: ~p"/games/#{game}/pre-join")}
+
+        {:error, :already_in_game} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "You're already in a game. Finish or leave it before creating another."
+           )}
 
         {:error, %Ecto.Changeset{} = changeset} ->
           {:noreply, assign(socket, form: to_form(changeset))}
@@ -269,6 +328,35 @@ defmodule TabletopWeb.GameLive.Index do
        put_flash(socket, :error, "Please confirm your email address before joining a game.")}
     else
       {:noreply, push_navigate(socket, to: ~p"/games/#{id}/pre-join")}
+    end
+  end
+
+  def handle_event("open_join_private", _params, socket) do
+    {:noreply, assign(socket, :show_join_private, true)}
+  end
+
+  def handle_event("close_join_private", _params, socket) do
+    {:noreply, assign(socket, :show_join_private, false)}
+  end
+
+  def handle_event("join_private", %{"code" => code}, socket) do
+    if is_nil(socket.assigns.current_scope.user.confirmed_at) do
+      {:noreply,
+       put_flash(socket, :error, "Please confirm your email address before joining a game.")}
+    else
+      case Games.get_joinable_game_by_code(code) do
+        {:ok, game} ->
+          {:noreply,
+           socket
+           |> assign(:show_join_private, false)
+           |> push_navigate(to: ~p"/games/#{game}/pre-join")}
+
+        {:error, :invalid_code} ->
+          {:noreply, put_flash(socket, :error, "Invalid game code.")}
+
+        {:error, :not_found} ->
+          {:noreply, put_flash(socket, :error, "Game not found or no longer available.")}
+      end
     end
   end
 

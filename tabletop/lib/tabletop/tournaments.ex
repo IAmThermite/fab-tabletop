@@ -526,7 +526,7 @@ defmodule Tabletop.Tournaments do
     title = "#{t.name} — #{round_short_label(round)} · Table #{table_number}"
 
     %Tabletop.Games.Game{}
-    |> Ecto.Changeset.change(%{
+    |> Tabletop.Games.Game.match_changeset(%{
       title: title,
       format: t.format,
       status: :active,
@@ -646,12 +646,38 @@ defmodule Tabletop.Tournaments do
     |> Repo.update()
     |> case do
       {:ok, m} ->
+        finish_match_game(match)
         maybe_complete_round(match.round_id)
         broadcast_one(match.tournament_id)
         {:ok, m}
 
       error ->
         error
+    end
+  end
+
+  # A confirmed result ends the match's game. Marking it finished frees both
+  # players from the one-active-game-per-user constraint so the next round can
+  # create their next game. Byes have no linked game.
+  defp finish_match_game(%TournamentMatch{game_id: nil}), do: :ok
+
+  defp finish_match_game(%TournamentMatch{game_id: game_id}) do
+    case Repo.get(Tabletop.Games.Game, game_id) do
+      nil ->
+        :ok
+
+      game ->
+        now = DateTime.utc_now()
+
+        game
+        |> Ecto.Changeset.change(%{
+          status: :finished,
+          user1_left_at: game.user1_left_at || now,
+          user2_left_at: game.user2_left_at || now
+        })
+        |> Repo.update!()
+
+        :ok
     end
   end
 

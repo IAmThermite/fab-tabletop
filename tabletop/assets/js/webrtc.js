@@ -8,22 +8,21 @@ const ICE_SERVERS = [
 ]
 
 export default class WebRTCManager {
-  constructor({ token, gameId, localVideoEl, remoteVideoEl, canvasEl, onStatusChange, onRemoteMediaStatus }) {
+  constructor({ token, gameId, localVideoEl, remoteVideoEl, canvasEl, onStatusChange, micEnabled = true, cameraEnabled = true }) {
     this.token = token
     this.gameId = gameId
     this.localVideoEl = localVideoEl
     this.remoteVideoEl = remoteVideoEl
     this.canvasEl = canvasEl
     this.onStatusChange = onStatusChange || (() => { })
-    this.onRemoteMediaStatus = onRemoteMediaStatus || (() => { })
 
     this.socket = null
     this.channel = null
     this.peerConnection = null
     this.localStream = null
     this.animFrameId = null
-    this.cameraEnabled = true
-    this.micEnabled = true
+    this.cameraEnabled = cameraEnabled
+    this.micEnabled = micEnabled
     this._status = null
 
     // Transformed stream for sending zoom/rotation to peer
@@ -59,6 +58,9 @@ export default class WebRTCManager {
       this.localVideoEl.srcObject = this.localStream
       await this.localVideoEl.play().catch(() => { })
       this._streamForPeer = this._createTransformedStream()
+      // Apply the persisted mic/camera state (recovered from GameSession on
+      // mount) to the freshly acquired tracks.
+      this._applyTrackEnabled()
     } catch (err) {
       console.error("[WebRTC] Failed to get user media:", err)
       this._setStatus("no_camera")
@@ -77,7 +79,6 @@ export default class WebRTCManager {
     this.channel.on("answer", (msg) => this._handleAnswer(msg))
     this.channel.on("ice_candidate", (msg) => this._handleIceCandidate(msg))
     this.channel.on("peer_left", () => this._handlePeerLeft())
-    this.channel.on("media_status", (msg) => this.onRemoteMediaStatus(msg))
 
     this.channel.join()
       .receive("ok", () => {
@@ -94,29 +95,27 @@ export default class WebRTCManager {
       })
   }
 
-  toggleCamera() {
-    if (!this.localStream) return false
-    const videoTrack = this.localStream.getVideoTracks()[0]
-    if (videoTrack) {
-      this.cameraEnabled = !this.cameraEnabled
-      videoTrack.enabled = this.cameraEnabled
-      if (this._canvasStream) {
-        this._canvasStream.getVideoTracks().forEach(t => t.enabled = this.cameraEnabled)
-      }
-    }
-    this._broadcastMediaStatus()
-    return this.cameraEnabled
+  setCameraEnabled(enabled) {
+    this.cameraEnabled = enabled
+    this._applyTrackEnabled()
   }
 
-  toggleMic() {
-    if (!this.localStream) return false
-    const audioTrack = this.localStream.getAudioTracks()[0]
-    if (audioTrack) {
-      this.micEnabled = !this.micEnabled
-      audioTrack.enabled = this.micEnabled
+  setMicEnabled(enabled) {
+    this.micEnabled = enabled
+    this._applyTrackEnabled()
+  }
+
+  // Pushes the current cameraEnabled / micEnabled state down to whatever
+  // tracks currently exist. Safe to call before media is acquired (no-op).
+  _applyTrackEnabled() {
+    if (!this.localStream) return
+    const videoTrack = this.localStream.getVideoTracks()[0]
+    if (videoTrack) videoTrack.enabled = this.cameraEnabled
+    if (this._canvasStream) {
+      this._canvasStream.getVideoTracks().forEach(t => t.enabled = this.cameraEnabled)
     }
-    this._broadcastMediaStatus()
-    return this.micEnabled
+    const audioTrack = this.localStream.getAudioTracks()[0]
+    if (audioTrack) audioTrack.enabled = this.micEnabled
   }
 
   async setExternalVideoSource(stream) {
@@ -176,15 +175,6 @@ export default class WebRTCManager {
       this._canvasStream = null
     }
     this._localCanvasEl = null
-  }
-
-  _broadcastMediaStatus() {
-    if (this.channel) {
-      this.channel.push("media_status", {
-        camera: this.cameraEnabled,
-        mic: this.micEnabled,
-      })
-    }
   }
 
   disconnect() {
@@ -278,31 +268,46 @@ export default class WebRTCManager {
   }
 
   async _createOffer() {
-    console.log("[WebRTC] Creating offer (peer joined)")
-    this._createPeerConnection()
+    try {
+      console.log("[WebRTC] Creating offer (peer joined)")
+      this._createPeerConnection()
 
-    const offer = await this.peerConnection.createOffer()
-    await this.peerConnection.setLocalDescription(offer)
+      const offer = await this.peerConnection.createOffer()
+      await this.peerConnection.setLocalDescription(offer)
 
-    this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+      this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+    } catch (err) {
+      console.error("[WebRTC] Error creating offer:", err)
+      this._setStatus("error")
+    }
   }
 
   async _handleOffer({ sdp }) {
-    console.log("[WebRTC] Received offer, creating answer")
-    this._createPeerConnection()
+    try {
+      console.log("[WebRTC] Received offer, creating answer")
+      this._createPeerConnection()
 
-    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
+      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
 
-    const answer = await this.peerConnection.createAnswer()
-    await this.peerConnection.setLocalDescription(answer)
+      const answer = await this.peerConnection.createAnswer()
+      await this.peerConnection.setLocalDescription(answer)
 
-    this.channel.push("answer", { sdp: this.peerConnection.localDescription })
+      this.channel.push("answer", { sdp: this.peerConnection.localDescription })
+    } catch (err) {
+      console.error("[WebRTC] Error handling offer:", err)
+      this._setStatus("error")
+    }
   }
 
   async _handleAnswer({ sdp }) {
-    console.log("[WebRTC] Received answer")
-    if (this.peerConnection) {
-      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
+    try {
+      console.log("[WebRTC] Received answer")
+      if (this.peerConnection) {
+        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
+      }
+    } catch (err) {
+      console.error("[WebRTC] Error handling answer:", err)
+      this._setStatus("error")
     }
   }
 
@@ -429,7 +434,7 @@ export default class WebRTCManager {
         this.canvasEl.style.width = displayW + "px"
         this.canvasEl.style.height = displayH + "px"
 
-        // Set buffer to native video resolution for sharp OCR captures
+        // Set buffer to native video resolution for sharp card captures
         if (this.canvasEl.width !== vw || this.canvasEl.height !== vh) {
           this.canvasEl.width = vw
           this.canvasEl.height = vh

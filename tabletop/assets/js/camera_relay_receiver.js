@@ -11,9 +11,9 @@ const ICE_SERVERS = [
 ]
 
 export default class CameraRelayReceiver {
-  constructor({ token, relayToken, onStream, onDisconnect, onStatusChange }) {
+  constructor({ token, relayUserId, onStream, onDisconnect, onStatusChange }) {
     this.token = token
-    this.relayToken = relayToken
+    this.relayUserId = relayUserId
     this.onStream = onStream || (() => {})
     this.onDisconnect = onDisconnect || (() => {})
     this.onStatusChange = onStatusChange || (() => {})
@@ -32,7 +32,9 @@ export default class CameraRelayReceiver {
     this.socket = new Socket("/socket", { params: { token: this.token } })
     this.socket.connect()
 
-    this.channel = this.socket.channel(`camera_relay:${this.relayToken}`, {})
+    // Topic is keyed by user_id (stable across page mounts); the socket
+    // connection above is authenticated by the user-socket token.
+    this.channel = this.socket.channel(`camera_relay:${this.relayUserId}`, {})
 
     this.channel.on("peer_joined", () => this._createOffer())
     this.channel.on("peer_exists", () => {
@@ -112,36 +114,51 @@ export default class CameraRelayReceiver {
   }
 
   async _createOffer() {
-    console.log("[RelayReceiver] Creating offer (phone joined)")
-    this._createPeerConnection()
+    try {
+      console.log("[RelayReceiver] Creating offer (phone joined)")
+      this._createPeerConnection()
 
-    // Add a transceiver to receive video (we don't send anything)
-    this.peerConnection.addTransceiver("video", { direction: "recvonly" })
-    this.peerConnection.addTransceiver("audio", { direction: "recvonly" })
+      // Add a transceiver to receive video (we don't send anything)
+      this.peerConnection.addTransceiver("video", { direction: "recvonly" })
+      this.peerConnection.addTransceiver("audio", { direction: "recvonly" })
 
-    const offer = await this.peerConnection.createOffer()
-    await this.peerConnection.setLocalDescription(offer)
-    this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+      const offer = await this.peerConnection.createOffer()
+      await this.peerConnection.setLocalDescription(offer)
+      this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+    } catch (err) {
+      console.error("[RelayReceiver] Error creating offer:", err)
+      this._setStatus("error")
+    }
   }
 
   async _handleOffer({ sdp }) {
-    console.log("[RelayReceiver] Received offer, creating answer")
-    this._createPeerConnection()
+    try {
+      console.log("[RelayReceiver] Received offer, creating answer")
+      this._createPeerConnection()
 
-    await this.peerConnection.setRemoteDescription(
-      new RTCSessionDescription(sdp)
-    )
-    const answer = await this.peerConnection.createAnswer()
-    await this.peerConnection.setLocalDescription(answer)
-    this.channel.push("answer", { sdp: this.peerConnection.localDescription })
-  }
-
-  async _handleAnswer({ sdp }) {
-    console.log("[RelayReceiver] Received answer")
-    if (this.peerConnection) {
       await this.peerConnection.setRemoteDescription(
         new RTCSessionDescription(sdp)
       )
+      const answer = await this.peerConnection.createAnswer()
+      await this.peerConnection.setLocalDescription(answer)
+      this.channel.push("answer", { sdp: this.peerConnection.localDescription })
+    } catch (err) {
+      console.error("[RelayReceiver] Error handling offer:", err)
+      this._setStatus("error")
+    }
+  }
+
+  async _handleAnswer({ sdp }) {
+    try {
+      console.log("[RelayReceiver] Received answer")
+      if (this.peerConnection) {
+        await this.peerConnection.setRemoteDescription(
+          new RTCSessionDescription(sdp)
+        )
+      }
+    } catch (err) {
+      console.error("[RelayReceiver] Error handling answer:", err)
+      this._setStatus("error")
     }
   }
 

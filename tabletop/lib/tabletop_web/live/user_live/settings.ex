@@ -1,7 +1,7 @@
 defmodule TabletopWeb.UserLive.Settings do
   use TabletopWeb, :live_view
 
-  on_mount({TabletopWeb.UserAuth, :require_sudo_mode})
+  on_mount({TabletopWeb.UserAuth, :require_authenticated})
 
   alias Tabletop.Accounts
 
@@ -10,9 +10,16 @@ defmodule TabletopWeb.UserLive.Settings do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
       <div class="text-center">
+        <.link navigate={~p"/camera-setup"} class="btn btn-primary">
+          Camera Setup
+        </.link>
+      </div>
+
+      <hr />
+
+      <div class="text-center">
         <.header>
           Account Settings
-          <:subtitle>Manage your account settings</:subtitle>
         </.header>
       </div>
 

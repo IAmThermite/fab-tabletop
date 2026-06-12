@@ -14,8 +14,10 @@ defmodule Tabletop.GamesTest do
     test "list_games/1 returns all scoped games" do
       scope = user_scope_fixture()
       game = game_fixture(scope)
+      {:ok, _} = Games.terminate_game(scope, game)
       other_game = game_fixture(scope)
-      assert Games.list_games(scope) == [game, other_game]
+      ids = Games.list_games(scope) |> Enum.map(& &1.id) |> Enum.sort()
+      assert ids == Enum.sort([game.id, other_game.id])
     end
 
     test "get_game!/2 returns the game with given id" do
@@ -25,6 +27,40 @@ defmodule Tabletop.GamesTest do
       assert fetched.id == game.id
       assert fetched.title == game.title
       assert fetched.user.id == scope.user.id
+    end
+
+    test "get_game!/2 raises when the scoped user is not a participant" do
+      owner_scope = user_scope_fixture()
+      outsider_scope = user_scope_fixture()
+      game = game_fixture(owner_scope)
+
+      assert_raise Ecto.NoResultsError, fn ->
+        Games.get_game!(outsider_scope, game.id)
+      end
+    end
+
+    test "get_game/2 returns :not_found when the scoped user is not a participant" do
+      owner_scope = user_scope_fixture()
+      outsider_scope = user_scope_fixture()
+      game = game_fixture(owner_scope)
+
+      assert {:error, :not_found} = Games.get_game(outsider_scope, game.id)
+    end
+
+    test "get_game/2 returns {:ok, game} when the scoped user is a participant" do
+      scope = user_scope_fixture()
+      game = game_fixture(scope)
+
+      assert {:ok, fetched} = Games.get_game(scope, game.id)
+      assert fetched.id == game.id
+    end
+
+    test "fetch_game/1 returns the game regardless of participation" do
+      owner_scope = user_scope_fixture()
+      game = game_fixture(owner_scope)
+
+      assert {:ok, fetched} = Games.fetch_game(game.id)
+      assert fetched.id == game.id
     end
 
     test "create_game/2 with valid data creates a game" do
@@ -117,6 +153,93 @@ defmodule Tabletop.GamesTest do
 
       assert {:ok, game} = Games.join_game(scope2, game)
       assert {:error, :game_full} = Games.join_game(scope3, game)
+    end
+  end
+
+  describe "one active game per user constraint" do
+    import Tabletop.AccountsFixtures, only: [user_scope_fixture: 0]
+    import Tabletop.GamesFixtures
+
+    test "create_game/2 refuses when the user already has a waiting game" do
+      scope = user_scope_fixture()
+      _game = game_fixture(scope)
+
+      assert {:error, :already_in_game} =
+               Games.create_game(scope, %{title: "second", format: :classic_constructed})
+    end
+
+    test "create_game/2 refuses when the user is the opponent in an active game" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1)
+      {:ok, _} = Games.join_game(scope2, game)
+
+      assert {:error, :already_in_game} =
+               Games.create_game(scope2, %{title: "second", format: :classic_constructed})
+    end
+
+    test "create_game/2 succeeds after the previous game is finished" do
+      scope = user_scope_fixture()
+      game = game_fixture(scope)
+      {:ok, _} = Games.terminate_game(scope, game)
+
+      assert {:ok, _new} =
+               Games.create_game(scope, %{title: "second", format: :classic_constructed})
+    end
+
+    test "join_game/2 refuses when the joiner already has a waiting game of their own" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      _own = game_fixture(scope2)
+      target = game_fixture(scope1)
+
+      assert {:error, :already_in_game} = Games.join_game(scope2, target)
+    end
+
+    test "reserve_join/2 refuses when the user already has a different active game" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      _own = game_fixture(scope2)
+      target = game_fixture(scope1)
+
+      assert {:error, :already_in_game} = Games.reserve_join(scope2, target)
+    end
+
+    test "reserve_join/2 is idempotent for the same user (LiveView dead+live mount)" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      target = game_fixture(scope1)
+
+      assert {:ok, game1} = Games.reserve_join(scope2, target)
+      assert game1.joining_user_id == scope2.user.id
+      assert {:ok, game2} = Games.reserve_join(scope2, target)
+      assert game2.joining_user_id == scope2.user.id
+    end
+
+    test "reserve_join/2 refuses when a different user already holds an unexpired reservation" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      scope3 = user_scope_fixture()
+      target = game_fixture(scope1)
+
+      assert {:ok, _} = Games.reserve_join(scope2, target)
+      assert {:error, :unavailable} = Games.reserve_join(scope3, target)
+    end
+
+    test "DB-level partial unique index blocks duplicate active games for user1" do
+      scope = user_scope_fixture()
+      _game = game_fixture(scope)
+
+      assert_raise Ecto.ConstraintError, ~r/games_one_active_per_user1/, fn ->
+        %Tabletop.Games.Game{}
+        |> Ecto.Changeset.change(%{
+          title: "bypass",
+          format: :classic_constructed,
+          status: :waiting,
+          user_id: scope.user.id
+        })
+        |> Tabletop.Repo.insert()
+      end
     end
   end
 

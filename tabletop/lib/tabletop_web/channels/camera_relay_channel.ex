@@ -1,21 +1,26 @@
 defmodule TabletopWeb.CameraRelayChannel do
   use Phoenix.Channel
 
-  @impl true
-  def join("camera_relay:" <> token, _payload, socket) do
-    case Phoenix.Token.verify(socket, "camera relay", token, max_age: 3600) do
-      {:ok, _user_id} ->
-        send(self(), :after_join)
-        {:ok, assign(socket, :relay_token, token)}
+  require Logger
 
-      {:error, _reason} ->
-        {:error, %{reason: "invalid_token"}}
+  @impl true
+  def join("camera_relay:" <> relay_user_id, _payload, socket) do
+    # The relay topic is keyed by user_id, which is stable across page mounts.
+    # (The signed token can't be the topic — it's regenerated on every mount,
+    # so the phone and desktop would land in different topics.) The socket is
+    # already authenticated in UserSocket; here we just confirm the joining
+    # socket belongs to the user whose relay topic this is.
+    if socket.assigns.user_id == relay_user_id do
+      send(self(), :after_join)
+      {:ok, assign(socket, :relay_user_id, relay_user_id)}
+    else
+      {:error, %{reason: "unauthorized"}}
     end
   end
 
   @impl true
   def handle_info(:after_join, socket) do
-    group = relay_group(socket.assigns.relay_token)
+    group = relay_group(socket.assigns.relay_user_id)
     has_peer = :pg.get_members(:game_channels, group) != []
     :pg.join(:game_channels, group, self())
 
@@ -44,12 +49,30 @@ defmodule TabletopWeb.CameraRelayChannel do
     {:noreply, socket}
   end
 
+  def handle_in(event, _payload, socket) do
+    Logger.warning(
+      "CameraRelayChannel: ignoring unexpected event #{inspect(event)} on #{socket.topic}"
+    )
+
+    {:noreply, socket}
+  end
+
   @impl true
   def terminate(_reason, socket) do
-    :pg.leave(:game_channels, relay_group(socket.assigns.relay_token), self())
-    broadcast_from!(socket, "peer_left", %{})
+    # terminate/2 is still invoked when join/3 returns {:error, _}, so the
+    # relay assigns may never have been set. Only clean up if we actually
+    # joined the relay group.
+    case socket.assigns do
+      %{relay_user_id: relay_user_id} ->
+        :pg.leave(:game_channels, relay_group(relay_user_id), self())
+        broadcast_from!(socket, "peer_left", %{})
+
+      _ ->
+        :ok
+    end
+
     :ok
   end
 
-  defp relay_group(token), do: {:camera_relay, token}
+  defp relay_group(relay_user_id), do: {:camera_relay, relay_user_id}
 end

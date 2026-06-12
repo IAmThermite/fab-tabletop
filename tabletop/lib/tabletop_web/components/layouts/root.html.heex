@@ -4,7 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <.live_title default="Tabletop" suffix=" · Fab Tabletop">
+    <link rel="icon" type="image/png" href={~p"/images/logo.png"} />
+    <.live_title default="Tabletop" suffix=" · FaB Tabletop">
       {assigns[:page_title]}
     </.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
@@ -32,6 +33,7 @@
   </head>
   <body>
     <ul class="menu menu-horizontal w-full relative z-10 flex items-center gap-4 px-4 sm:px-6 lg:px-8 justify-end">
+      <.theme_toggle />
       <%= if @current_scope do %>
         <li>
           {@current_scope.user.name}

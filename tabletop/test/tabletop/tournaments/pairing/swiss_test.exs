@@ -3,7 +3,7 @@ defmodule Tabletop.Tournaments.Pairing.SwissTest do
 
   alias Tabletop.Tournaments.Pairing.{Player, Swiss}
 
-  defp player(id, opts \\ []) do
+  defp player(id, opts) do
     struct!(Player, [{:id, id} | opts])
   end
 

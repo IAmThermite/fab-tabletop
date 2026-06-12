@@ -3,6 +3,7 @@ defmodule TabletopWeb.CameraSetupLive do
   use TabletopWeb.CardLookup
 
   alias Tabletop.Fab.GameState
+  alias Tabletop.Games
 
   @impl true
   def render(assigns) do
@@ -15,6 +16,7 @@ defmodule TabletopWeb.CameraSetupLive do
         data-game-id={@game_id}
         data-user-token={@user_token}
         data-camera-relay-token={@camera_relay_token}
+        data-relay-user-id={@relay_user_id}
         class="flex flex-col h-full"
       >
         <%!-- Top bar --%>
@@ -96,10 +98,16 @@ defmodule TabletopWeb.CameraSetupLive do
             game_state={@game_state}
             abilities_open={@abilities_open}
             on_hits_open={@on_hits_open}
+            create_token_open={@create_token_open}
+            create_proxy_token_open={@create_proxy_token_open}
           />
 
           <%!-- Central area — camera preview canvas --%>
-          <div id="game-area" class="flex-1 relative bg-blue-100 flex items-center justify-center overflow-hidden" style="container-type: size;">
+          <div
+            id="game-area"
+            class="flex-1 relative bg-blue-100 flex items-center justify-center overflow-hidden"
+            style="container-type: size;"
+          >
             <div class="aspect-video" style="width: min(100cqw, 100cqh * 16 / 9);">
               <canvas id="test-canvas" class="w-full h-full block"></canvas>
             </div>
@@ -116,8 +124,14 @@ defmodule TabletopWeb.CameraSetupLive do
               </div>
             </div>
 
-            <%!-- Zoom/rotation controls --%>
-            <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-base-200/90 rounded-lg px-4 py-2 backdrop-blur-sm">
+            <%!-- Zoom/rotation controls. Wrapped in phx-update="ignore" so a
+                 LiveView re-render (e.g. when a card popout opens) doesn't
+                 reset the slider values back to the template defaults. --%>
+            <div
+              id="camera-adjust-controls"
+              phx-update="ignore"
+              class="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-base-200/90 rounded-lg px-4 py-2 backdrop-blur-sm"
+            >
               <div class="flex items-center gap-2">
                 <span class="text-xs font-semibold">Rotate</span>
                 <input
@@ -146,7 +160,9 @@ defmodule TabletopWeb.CameraSetupLive do
               </div>
             </div>
 
-            <.game_tiles game_state={@game_state} context={:remote} />
+            <.game_tiles game_state={@game_state} context={:setup} />
+
+            <.proxy_tokens_panel game_state={@game_state} expanded={@proxy_tokens_expanded} />
 
             <.card_popouts open_cards={@open_cards} />
           </div>
@@ -157,7 +173,7 @@ defmodule TabletopWeb.CameraSetupLive do
     </Layouts.game>
 
     <script :type={ColocatedHook} name=".CameraSetup">
-      import { setupCardLookup, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
+      import { setupCardLookup, preloadScanner } from "@/js/card_scanner/liveview_hook.js"
       import { isDebugEnabled, setDebugEnabled } from "@/js/card_scanner/debug.js"
       import CameraRelayReceiver from "@/js/camera_relay_receiver.js"
 
@@ -364,20 +380,30 @@ defmodule TabletopWeb.CameraSetupLive do
             localStorage.setItem("tabletop:camera-rotation", rotationSlider.value)
             localStorage.setItem("tabletop:camera-setup-done", "true")
 
-            const redirect = el.dataset.redirect
-            window.location.href = redirect || "/"
+            const gameId = el.dataset.gameId
+            if (gameId) {
+              // When invoked from a game's pre-join flow, jump straight into
+              // the game (joining if needed) instead of bouncing back through
+              // pre-join.
+              localStorage.setItem(`tabletop:camera-confirmed:${gameId}`, "true")
+              localStorage.setItem("tabletop:camera-source", this._usingPhone ? "phone" : "webcam")
+              this.pushEvent("save_and_join", {})
+            } else {
+              const redirect = el.dataset.redirect
+              window.location.href = redirect || "/"
+            }
           })
 
           start()
 
-          // Card lookup — click on canvas to OCR card name
+          // Card lookup — click on canvas to identify the card via pHash
           const gameArea = document.getElementById("game-area")
-          preloadTesseract()
+          preloadScanner()
           setupCardLookup(this, canvasEl, gameArea)
 
           // --- Phone Camera Relay ---
           const token = el.dataset.userToken
-          const relayToken = el.dataset.cameraRelayToken
+          const relayUserId = el.dataset.relayUserId
           const phoneStatusEl = document.getElementById("phone-camera-status")
           const usePhoneBtn = document.getElementById("use-phone-camera-btn")
           const useWebcamBtn = document.getElementById("use-webcam-btn")
@@ -402,7 +428,7 @@ defmodule TabletopWeb.CameraSetupLive do
 
           this.cameraRelay = new CameraRelayReceiver({
             token,
-            relayToken,
+            relayUserId,
             onStream: (remoteStream) => {
               phoneStream = remoteStream
               phoneStatusEl.innerHTML = '<span class="badge badge-sm badge-success">Phone connected</span>'
@@ -448,20 +474,6 @@ defmodule TabletopWeb.CameraSetupLive do
           }
         },
 
-        updated() {
-          const zoomSlider = document.getElementById("zoom-slider")
-          const zoomValueEl = document.getElementById("zoom-value")
-          const rotationSlider = document.getElementById("rotation-slider")
-          const rotationValueEl = document.getElementById("rotation-value")
-
-          const savedZoom = localStorage.getItem("tabletop:camera-zoom") || "1"
-          const savedRotation = localStorage.getItem("tabletop:camera-rotation") || "0"
-          zoomSlider.value = savedZoom
-          rotationSlider.value = savedRotation
-          zoomValueEl.textContent = parseFloat(savedZoom).toFixed(1) + "x"
-          rotationValueEl.textContent = savedRotation + "\u00B0"
-        },
-
         destroyed() {
           if (this.cleanup) this.cleanup()
         },
@@ -491,14 +503,55 @@ defmodule TabletopWeb.CameraSetupLive do
      |> assign(:game_id, params["game_id"])
      |> assign(:user_token, user_token)
      |> assign(:camera_relay_token, camera_relay_token)
+     |> assign(:relay_user_id, user_id)
      |> assign(:qr_svg, qr_svg)
      |> assign(:game_state, new_preview_state())
      |> assign(:abilities_open, false)
      |> assign(:on_hits_open, false)
+     |> assign(:create_token_open, false)
+     |> assign(:create_proxy_token_open, false)
+     |> assign(:proxy_tokens_expanded, false)
      |> assign(:open_cards, [])}
   end
 
   @impl true
+  def handle_event("save_and_join", _params, socket) do
+    scope = socket.assigns.current_scope
+    game_id = socket.assigns.game_id
+
+    with %{user: %{id: _}} <- scope,
+         {:ok, game} <- fetch_game_for_setup(scope, game_id) do
+      if Games.user_part_of_game?(scope, game) do
+        {:noreply, push_navigate(socket, to: ~p"/games/#{game}")}
+      else
+        case Games.join_game(scope, game) do
+          {:ok, game} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Joined game successfully")
+             |> push_navigate(to: ~p"/games/#{game}")}
+
+          {:error, :already_in_game} ->
+            {:noreply,
+             socket
+             |> put_flash(
+               :error,
+               "You're already in a game. Finish or leave it before joining another."
+             )
+             |> push_navigate(to: ~p"/")}
+
+          {:error, _reason} ->
+            {:noreply,
+             socket
+             |> put_flash(:error, "Unable to join game. It may no longer be available.")
+             |> push_navigate(to: ~p"/")}
+        end
+      end
+    else
+      _ -> {:noreply, push_navigate(socket, to: ~p"/")}
+    end
+  end
+
   def handle_event("toggle_damage", %{"type" => type}, socket) do
     apply_action(socket, GameState.toggle_damage(my(socket), validate_damage_type(type)))
   end
@@ -516,6 +569,17 @@ defmodule TabletopWeb.CameraSetupLive do
 
   def handle_event("toggle_effect", %{"type" => type, "category" => category}, socket) do
     apply_action(socket, GameState.toggle_effect(my(socket), category, type))
+  end
+
+  def handle_event(
+        "change_effect_count",
+        %{"type" => type, "category" => category, "delta" => delta},
+        socket
+      ) do
+    apply_action(
+      socket,
+      GameState.change_effect_count(my(socket), category, type, String.to_integer(delta))
+    )
   end
 
   def handle_event("change_life", %{"delta" => delta}, socket) do
@@ -539,10 +603,44 @@ defmodule TabletopWeb.CameraSetupLive do
   end
 
   def handle_event("toggle_dropdown", %{"name" => "on_hits"}, socket) do
-    {:noreply, assign(socket, :on_hits_open, !socket.assigns.on_hits_open)}
+    new_open = !socket.assigns.on_hits_open
+
+    socket =
+      socket
+      |> assign(:on_hits_open, new_open)
+      |> assign(:create_token_open, new_open && socket.assigns.create_token_open)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "create_token"}, socket) do
+    {:noreply, assign(socket, :create_token_open, !socket.assigns.create_token_open)}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "create_proxy_token"}, socket) do
+    {:noreply, assign(socket, :create_proxy_token_open, !socket.assigns.create_proxy_token_open)}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "proxy_tokens_panel"}, socket) do
+    {:noreply, assign(socket, :proxy_tokens_expanded, !socket.assigns.proxy_tokens_expanded)}
+  end
+
+  def handle_event("add_proxy_token", %{"type" => name}, socket) do
+    apply_action(socket, GameState.add_proxy_token(my(socket), name))
+  end
+
+  def handle_event("remove_proxy_token", %{"type" => name}, socket) do
+    apply_action(socket, GameState.remove_proxy_token(my(socket), name))
+  end
+
+  def handle_event("toggle_proxy_token", %{"type" => name}, socket) do
+    apply_action(socket, GameState.toggle_proxy_token(my(socket), name))
   end
 
   defp my(socket), do: socket.assigns.game_state.my
+
+  defp fetch_game_for_setup(_scope, nil), do: {:error, :not_found}
+  defp fetch_game_for_setup(scope, id), do: Games.get_game(scope, id)
 
   defp apply_action(socket, {:ok, new_player, _broadcast_msg}) do
     {:noreply, assign(socket, :game_state, %{socket.assigns.game_state | my: new_player})}

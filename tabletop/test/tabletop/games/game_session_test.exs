@@ -75,6 +75,29 @@ defmodule Tabletop.Games.GameSessionTest do
       assert {:error, :invalid_damage_type} =
                GameSession.apply_action(game_id, 1001, {:toggle_damage, :fire})
     end
+
+    test "set_media persists mic/camera state into the snapshot",
+         %{game_id: game_id} do
+      # Defaults: both on for both users.
+      assert %{user1: %{mic: true, camera: true}, user2: %{mic: true, camera: true}} =
+               GameSession.get_state(game_id)
+
+      :ok = GameSession.apply_action(game_id, 1001, {:set_media, :mic, false})
+      :ok = GameSession.apply_action(game_id, 1002, {:set_media, :camera, false})
+
+      assert %{
+               user1: %{mic: false, camera: true},
+               user2: %{mic: true, camera: false}
+             } = GameSession.get_state(game_id)
+
+      assert_receive {:game_update, :user1, {:media_changed, :mic, false}, 1001}
+      assert_receive {:game_update, :user2, {:media_changed, :camera, false}, 1002}
+    end
+
+    test "set_media rejects unknown kinds", %{game_id: game_id} do
+      assert {:error, :invalid_media} =
+               GameSession.apply_action(game_id, 1001, {:set_media, :speaker, false})
+    end
   end
 
   describe "init broadcasts :session_reset" do

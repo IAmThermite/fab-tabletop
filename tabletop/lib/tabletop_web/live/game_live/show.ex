@@ -1,4 +1,6 @@
 defmodule TabletopWeb.GameLive.Show do
+  require Logger
+
   use TabletopWeb, :live_view
   use TabletopWeb.CardLookup
 
@@ -12,18 +14,19 @@ defmodule TabletopWeb.GameLive.Show do
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     scope = socket.assigns.current_scope
+    # get_game!/2 is participant-scoped — raises Ecto.NoResultsError (→ 404)
+    # for non-participants or unknown ids, so we never assign metadata for a
+    # game the user isn't in.
     game = Games.get_game!(scope, id)
 
     user_id = scope.user.id
 
-    if connected?(socket) do
-      Games.subscribe_games(scope)
-      Phoenix.PubSub.subscribe(Tabletop.PubSub, "game_session:#{game.id}")
-    end
-
     if Games.user_part_of_game?(scope, game) do
       if connected?(socket) do
+        Games.subscribe_games(scope)
+        Phoenix.PubSub.subscribe(Tabletop.PubSub, "game_session:#{game.id}")
         LeaveTimer.cancel_leave(game.id, user_id)
+        LeaveTimer.track_connection(game.id, user_id)
         Games.rejoin_game(scope, game)
         GameSession.ensure_started(game)
       end
@@ -51,6 +54,9 @@ defmodule TabletopWeb.GameLive.Show do
        |> assign_session_state(session_state)
        |> assign(:abilities_open, false)
        |> assign(:on_hits_open, false)
+       |> assign(:create_token_open, false)
+       |> assign(:create_proxy_token_open, false)
+       |> assign(:proxy_tokens_expanded, false)
        |> assign(:preview_open, false)
        |> assign(:open_cards, [])
        |> assign(:tournament_match, Tournaments.get_match_by_game_id(game.id))
@@ -93,6 +99,14 @@ defmodule TabletopWeb.GameLive.Show do
     dispatch(socket, {:toggle_effect, category, type})
   end
 
+  def handle_event(
+        "change_effect_count",
+        %{"type" => type, "category" => category, "delta" => delta},
+        socket
+      ) do
+    dispatch(socket, {:change_effect_count, category, type, String.to_integer(delta)})
+  end
+
   def handle_event("change_life", %{"delta" => delta}, socket) do
     dispatch(socket, {:change_life, String.to_integer(delta)})
   end
@@ -120,7 +134,38 @@ defmodule TabletopWeb.GameLive.Show do
   end
 
   def handle_event("toggle_dropdown", %{"name" => "on_hits"}, socket) do
-    {:noreply, assign(socket, :on_hits_open, !socket.assigns.on_hits_open)}
+    new_open = !socket.assigns.on_hits_open
+
+    socket =
+      socket
+      |> assign(:on_hits_open, new_open)
+      |> assign(:create_token_open, new_open && socket.assigns.create_token_open)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "create_token"}, socket) do
+    {:noreply, assign(socket, :create_token_open, !socket.assigns.create_token_open)}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "create_proxy_token"}, socket) do
+    {:noreply, assign(socket, :create_proxy_token_open, !socket.assigns.create_proxy_token_open)}
+  end
+
+  def handle_event("toggle_dropdown", %{"name" => "proxy_tokens_panel"}, socket) do
+    {:noreply, assign(socket, :proxy_tokens_expanded, !socket.assigns.proxy_tokens_expanded)}
+  end
+
+  def handle_event("add_proxy_token", %{"type" => name}, socket) do
+    dispatch(socket, {:add_proxy_token, name})
+  end
+
+  def handle_event("remove_proxy_token", %{"type" => name}, socket) do
+    dispatch(socket, {:remove_proxy_token, name})
+  end
+
+  def handle_event("toggle_proxy_token", %{"type" => name}, socket) do
+    dispatch(socket, {:toggle_proxy_token, name})
   end
 
   def handle_event("toggle_preview", _params, socket) do
@@ -158,6 +203,11 @@ defmodule TabletopWeb.GameLive.Show do
          |> put_flash(:error, "Couldn't report result, but the game has ended.")
          |> push_navigate(to: ~p"/tournaments/#{match.tournament_id}")}
     end
+  end
+
+  def handle_event("set_media", %{"kind" => kind, "value" => value}, socket)
+      when kind in ["mic", "camera"] and is_boolean(value) do
+    dispatch(socket, {:set_media, String.to_existing_atom(kind), value})
   end
 
   def handle_event("leave_game", _params, socket) do
@@ -227,10 +277,15 @@ defmodule TabletopWeb.GameLive.Show do
 
   defp dispatch(socket, action) do
     case GameSession.apply_action(socket.assigns.game.id, socket.assigns.user_id, action) do
-      :ok -> {:noreply, socket}
-      {:error, reason} ->
-        IO.inspect(reason, label: "Action error")
+      :ok ->
         {:noreply, socket}
+
+      {:error, reason} ->
+        Logger.warning("Action error: #{inspect(reason)}")
+
+        {:noreply,
+         socket
+         |> put_flash(:error, "Action error: #{inspect(reason)}")}
     end
   end
 
@@ -288,6 +343,11 @@ defmodule TabletopWeb.GameLive.Show do
   @impl true
   def terminate(_reason, socket) do
     if game = socket.assigns[:game] do
+      # Phoenix would clean these up on process exit anyway, but being explicit
+      # makes the subscription lifecycle obvious.
+      Phoenix.PubSub.unsubscribe(Tabletop.PubSub, "game_session:#{game.id}")
+      Phoenix.PubSub.unsubscribe(Tabletop.PubSub, "games")
+
       if scope = socket.assigns[:current_scope] do
         user_id = scope.user.id
         LeaveTimer.schedule_leave(game.id, user_id, scope)

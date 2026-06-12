@@ -14,8 +14,8 @@
 /* daisyUI Tailwind Plugin. You can update this file by fetching the latest version with:
    curl -sLO https://github.com/saadeghi/daisyui/releases/latest/download/daisyui.js
    Make sure to look at the daisyUI changelog: https://daisyui.com/docs/changelog/ */
-@plugin "../vendor/daisyui" {
-  themes: forest --default, emerald;
+@plugin "../vendor/daisyui.mjs" {
+  themes: halloween --default, cupcake;
 }
 
 /* Add variants based on LiveView classes */

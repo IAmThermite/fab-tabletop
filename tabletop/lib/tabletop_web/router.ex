@@ -10,6 +10,7 @@ defmodule TabletopWeb.Router do
     plug(:put_root_layout, html: {TabletopWeb.Layouts, :root})
     plug(:protect_from_forgery)
     plug(:put_secure_browser_headers)
+    plug(TabletopWeb.Plugs.SecurityHeaders)
     plug(:fetch_current_scope_for_user)
   end
 
@@ -20,8 +21,8 @@ defmodule TabletopWeb.Router do
   scope "/", TabletopWeb do
     pipe_through(:browser)
 
-    # get("/", PageController, :home)
     get("/about", PageController, :about)
+    get("/health", PageController, :health)
 
     live_session :phone_camera do
       live "/phone-camera/:token", PhoneCameraLive, :index
@@ -65,12 +66,11 @@ defmodule TabletopWeb.Router do
 
   # require user to be recently athenticated (sudo mode) to access these routes
   scope "/", TabletopWeb do
-    pipe_through([:browser, :require_authenticated_user, :require_sudo_mode])
+    pipe_through([:browser, :require_authenticated_user])
 
     live_session :require_authenticated_user_and_sudo_mode,
       on_mount: [
-        {TabletopWeb.UserAuth, :require_authenticated},
-        {TabletopWeb.UserAuth, :require_sudo_mode}
+        {TabletopWeb.UserAuth, :require_authenticated}
       ] do
       live("/users/settings/confirm-password", UserLive.Settings, :confirm_password)
     end

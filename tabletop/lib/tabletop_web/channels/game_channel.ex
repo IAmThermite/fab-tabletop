@@ -1,6 +1,8 @@
 defmodule TabletopWeb.GameChannel do
   use Phoenix.Channel
 
+  require Logger
+
   alias Tabletop.Repo
   alias Tabletop.Games.Game
 
@@ -64,17 +66,19 @@ defmodule TabletopWeb.GameChannel do
     {:noreply, socket}
   end
 
-  def handle_in("media_status", %{"camera" => camera, "mic" => mic}, socket) do
-    broadcast_from!(socket, "media_status", %{camera: camera, mic: mic})
+  def handle_in(event, _payload, socket) do
+    Logger.warning("GameChannel: ignoring unexpected event #{inspect(event)} on #{socket.topic}")
     {:noreply, socket}
   end
 
   @impl true
-  def terminate(_reason, socket) do
-    :pg.leave(:game_channels, game_group(socket.assigns.game_id), self())
-    broadcast_from!(socket, "peer_left", %{user_id: socket.assigns.user_id})
+  def terminate(_reason, %{assigns: %{game_id: game_id, user_id: user_id}} = socket) do
+    :pg.leave(:game_channels, game_group(game_id), self())
+    broadcast_from!(socket, "peer_left", %{user_id: user_id})
     :ok
   end
+
+  def terminate(_, _), do: :ok
 
   defp game_group(game_id), do: {:game_channel, game_id}
 end

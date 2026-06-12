@@ -5,7 +5,9 @@ config :tabletop, Tabletop.Repo,
   username: "postgres",
   password: "postgres",
   hostname: "localhost",
-  database: "tabletop_dev",
+  # DEV_DATABASE lets each git worktree run against an isolated database
+  # (see tabletop/bin/dev). Defaults to the shared dev database.
+  database: System.get_env("DEV_DATABASE", "tabletop_dev"),
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
@@ -21,7 +23,7 @@ config :tabletop, TabletopWeb.Endpoint,
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   http: [ip: {0, 0, 0, 0}],
   https: [
-    port: 4001,
+    port: String.to_integer(System.get_env("HTTPS_PORT", "4001")),
     cipher_suite: :strong,
     certfile: "priv/cert/selfsigned.pem",
     keyfile: "priv/cert/selfsigned_key.pem"

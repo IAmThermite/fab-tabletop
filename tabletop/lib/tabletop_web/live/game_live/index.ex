@@ -11,36 +11,30 @@ defmodule TabletopWeb.GameLive.Index do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-7xl">
       <div id="game-index" phx-hook=".GameIndex">
-        <div
+        <.notice_banner
           id="camera-setup-banner"
           phx-update="ignore"
-          class="hidden mb-6 border-2 border-warning rounded-lg p-4 bg-warning/10"
+          class="hidden mb-6"
+          title="Camera Setup Required"
+          body="Set up your camera before joining or creating a game."
         >
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="font-bold">Camera Setup Required</h3>
-              <p class="text-sm opacity-75">Set up your camera before joining or creating a game.</p>
-            </div>
+          <:action>
             <.link navigate={~p"/camera-setup"} class="btn btn-warning btn-sm">Set Up Camera</.link>
-          </div>
-        </div>
+          </:action>
+        </.notice_banner>
 
-        <div
+        <.notice_banner
           :if={@current_scope && is_nil(@current_scope.user.confirmed_at)}
-          class="mb-6 border-2 border-warning rounded-lg p-4 bg-warning/10"
+          class="mb-6"
+          title="Email Confirmation Required"
+          body="Please confirm your email address to create or join games."
         >
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="font-bold">Email Confirmation Required</h3>
-              <p class="text-sm opacity-75">
-                Please confirm your email address to create or join games.
-              </p>
-            </div>
+          <:action>
             <button phx-click="resend_confirmation" class="btn btn-warning btn-sm">
               Resend Confirmation Email
             </button>
-          </div>
-        </div>
+          </:action>
+        </.notice_banner>
 
         <div
           :if={@current_game}
@@ -85,38 +79,68 @@ defmodule TabletopWeb.GameLive.Index do
               </button>
             </div>
 
+            <p :if={!@current_scope} class="text-zinc-500 mb-3">
+              <.link navigate={~p"/users/log-in"} class="text-blue-600 underline">Log in</.link>
+              to join a game.
+            </p>
+
             <div class="space-y-3">
               <details
                 :for={{format, games} <- @grouped_games}
+                :if={games != []}
                 open={format == :classic_constructed}
                 class="border border-zinc-200 dark:border-zinc-700 rounded-lg"
               >
                 <summary class="flex items-center justify-between p-3 cursor-pointer font-semibold select-none">
                   <span>{Game.format_name_for(format)}</span>
-                  <span class="text-sm font-normal text-zinc-500">
-                    {length(games)}
-                  </span>
+                  <span class="badge badge-sm badge-neutral">{length(games)}</span>
                 </summary>
                 <div class="px-3 pb-3 space-y-2">
                   <div
                     :for={game <- games}
-                    class="flex items-center justify-between border border-zinc-200 dark:border-zinc-700 rounded-lg p-3"
+                    class="flex items-center justify-between gap-3 border border-zinc-200 dark:border-zinc-700 rounded-lg p-3"
                   >
-                    <span class="truncate">{game.title}</span>
+                    <div class="min-w-0">
+                      <div class="flex items-center gap-2">
+                        <span class="truncate font-medium">{game.title}</span>
+                        <span :if={game.user} class="text-sm text-zinc-500 shrink-0">
+                          {game.user.name}
+                        </span>
+                      </div>
+                      <div
+                        :if={present?(game.hero) || present?(game.decklist)}
+                        class="flex items-center gap-2 mt-1"
+                      >
+                        <span :if={present?(game.hero)} class="badge badge-sm badge-outline">
+                          {game.hero}
+                        </span>
+                        <.link
+                          :if={present?(game.decklist)}
+                          href={game.decklist}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-xs text-blue-600 underline"
+                        >
+                          Decklist ↗
+                        </.link>
+                      </div>
+                    </div>
                     <.button
                       :if={@current_scope}
                       phx-click="join"
                       phx-value-id={game.id}
+                      phx-disable-with="Joining…"
                       variant="primary"
                     >
                       JOIN
                     </.button>
                   </div>
-                  <p :if={games == []} class="text-sm text-zinc-500 py-1">
-                    No games available
-                  </p>
                 </div>
               </details>
+
+              <p :if={!@any_games?} class="text-sm text-zinc-500 py-1">
+                No open games right now — create one to get started.
+              </p>
             </div>
           </div>
 
@@ -168,13 +192,20 @@ defmodule TabletopWeb.GameLive.Index do
             </p>
           </div>
 
-          <%!-- News --%>
+          <%!-- Open games --%>
           <div>
-            <h2 class="text-2xl font-bold mb-4">News</h2>
+            <h2 class="text-2xl font-bold mb-4">Open games</h2>
 
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
-              <h3 class="font-bold text-lg">Welcome to FaB Tabletop</h3>
-              <p class="mt-2 text-zinc-600 dark:text-zinc-400">
+              <div class="flex items-baseline gap-2">
+                <span class="text-3xl font-bold">{@open_games_count}</span>
+                <span class="text-zinc-600 dark:text-zinc-400">
+                  {if @open_games_count == 1,
+                    do: "game waiting for an opponent",
+                    else: "games waiting for an opponent"}
+                </span>
+              </div>
+              <p class="mt-3 text-zinc-600 dark:text-zinc-400">
                 Create or join a game of Flesh and Blood to get started.
                 Set up your hero, share your decklist, and battle your opponent with live video chat.
               </p>
@@ -196,8 +227,8 @@ defmodule TabletopWeb.GameLive.Index do
               name="code"
               value=""
               type="text"
-              label="Game code"
-              placeholder="e.g. 3f8a4b2c-1e7d-4f9a-9c5b-7e8d1f2a3c4d"
+              label="Game code or link"
+              placeholder="Paste a game code or link"
               autocomplete="off"
             />
             <div class="modal-action">
@@ -344,7 +375,7 @@ defmodule TabletopWeb.GameLive.Index do
       {:noreply,
        put_flash(socket, :error, "Please confirm your email address before joining a game.")}
     else
-      case Games.get_joinable_game_by_code(code) do
+      case Games.get_joinable_game_by_code(extract_game_code(code)) do
         {:ok, game} ->
           {:noreply,
            socket
@@ -390,6 +421,24 @@ defmodule TabletopWeb.GameLive.Index do
         end
       end)
 
-    assign(socket, :grouped_games, grouped)
+    socket
+    |> assign(:grouped_games, grouped)
+    |> assign(:open_games_count, length(games))
+    |> assign(:any_games?, games != [])
+  end
+
+  defp present?(value), do: is_binary(value) and String.trim(value) != ""
+
+  # Accepts a bare game code or a pasted game URL (e.g. ".../games/<id>" or
+  # ".../games/<id>/pre-join") and returns the embedded UUID when present,
+  # otherwise the trimmed input (which the lookup will reject as invalid).
+  defp extract_game_code(input) do
+    trimmed = String.trim(input || "")
+    uuid = ~r/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+
+    case Regex.run(uuid, trimmed) do
+      [match | _] -> match
+      nil -> trimmed
+    end
   end
 end

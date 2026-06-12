@@ -9,6 +9,9 @@ defmodule TabletopWeb.Plugs.SecurityHeaders do
       (`assets/js/card_scanner/scanner_worker.js`) from that CDN.
     * `'wasm-unsafe-eval'` is required by OpenCV.js + tesseract.js (WASM).
     * `worker-src 'self' blob:` — tesseract.js spawns its worker from a Blob URL.
+    * `style-src` / `font-src` allow Google Fonts (`fonts.googleapis.com` serves
+      the stylesheet, `fonts.gstatic.com` serves the woff2 files) — see the
+      `<link>` in `root.html.heex`.
     * `img-src` allows the legendstory S3 bucket (card images) and `data:`
       / `blob:` URLs used by canvas captures and tesseract.
     * `connect-src` is intentionally permissive (`wss:` and `https:`) because
@@ -21,19 +24,19 @@ defmodule TabletopWeb.Plugs.SecurityHeaders do
   import Plug.Conn
 
   @csp [
-    "default-src 'self'",
-    "img-src 'self' https://*.s3.amazonaws.com https://cdn.jsdelivr.net data: blob:",
-    "media-src 'self' blob:",
-    "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
-    "style-src 'self' 'unsafe-inline'",
-    "connect-src 'self' wss: https:",
-    "worker-src 'self' blob:",
-    "font-src 'self' data:",
-    "frame-ancestors 'none'",
-    "base-uri 'self'",
-    "form-action 'self'"
-  ]
-  |> Enum.join("; ")
+         "default-src 'self'",
+         "img-src 'self' https://*.s3.amazonaws.com https://cdn.jsdelivr.net data: blob:",
+         "media-src 'self' blob:",
+         "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
+         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+         "connect-src 'self' wss: https:",
+         "worker-src 'self' blob:",
+         "font-src 'self' data: https://fonts.gstatic.com",
+         "frame-ancestors 'none'",
+         "base-uri 'self'",
+         "form-action 'self'"
+       ]
+       |> Enum.join("; ")
 
   def init(opts), do: opts
 

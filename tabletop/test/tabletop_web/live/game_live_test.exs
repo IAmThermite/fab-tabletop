@@ -101,7 +101,45 @@ defmodule TabletopWeb.GameLiveTest do
 
       assert html =~ "Games to join"
       assert html =~ "Create Game"
-      assert html =~ "News"
+      assert html =~ "Open games"
+    end
+
+    test "shows hero and decklist on a joinable game row", %{conn: conn} do
+      other_scope = user_scope_fixture()
+
+      game_fixture(other_scope, %{
+        title: "Hero Game",
+        hero: "Briar, Warden of Thorns",
+        decklist: "https://fabrary.net/decks/abc123"
+      })
+
+      {:ok, _live, html} = live(conn, ~p"/")
+
+      assert html =~ "Briar, Warden of Thorns"
+      assert html =~ "https://fabrary.net/decks/abc123"
+    end
+
+    test "shows a single empty state when no games are open", %{conn: conn} do
+      {:ok, _live, html} = live(conn, ~p"/")
+
+      assert html =~ "No open games right now"
+      refute html =~ "No games available"
+    end
+
+    test "join private accepts a pasted game URL", %{conn: conn} do
+      other_scope = user_scope_fixture()
+      game = game_fixture(other_scope, %{title: "Private Game", private: true})
+
+      {:ok, live_view, _html} = live(conn, ~p"/")
+
+      live_view |> element("button", "Join private") |> render_click()
+
+      assert {:error, {:live_redirect, %{to: to}}} =
+               live_view
+               |> form("#join-private-dialog form", code: "https://example.com/games/#{game.id}")
+               |> render_submit()
+
+      assert to == ~p"/games/#{game}/pre-join"
     end
 
     test "creates new game inline", %{conn: conn} do

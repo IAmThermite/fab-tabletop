@@ -18,6 +18,27 @@
   themes: halloween --default, cupcake;
 }
 
+/* Design tokens: typography + FaB pitch palette.
+   Inter (body/UI) and Cinzel (display/headings) are loaded from Google Fonts —
+   see the <link> in root.html.heex and the CSP allowances in
+   plugs/security_headers.ex.
+   Pitch colours map to Flesh and Blood's red/yellow/blue resource pitch. */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: "Cinzel", ui-serif, Georgia, "Times New Roman", serif;
+
+  --color-pitch-red: oklch(63% 0.21 25);
+  --color-pitch-yellow: oklch(83% 0.16 85);
+  --color-pitch-blue: oklch(60% 0.17 255);
+}
+
+/* Inter as the base UI font; Cinzel via the `font-display` utility. */
+@layer base {
+  html {
+    font-family: var(--font-sans);
+  }
+}
+
 /* Add variants based on LiveView classes */
 @custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);
 @custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);

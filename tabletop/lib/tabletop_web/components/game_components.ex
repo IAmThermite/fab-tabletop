@@ -895,9 +895,11 @@ defmodule TabletopWeb.GameComponents do
   defp tile_group_name(%{type: :token}), do: "on_hit"
   defp tile_group_name(_), do: nil
 
-  defp pitch_color_class(1), do: "bg-red-500"
-  defp pitch_color_class(2), do: "bg-yellow-400"
-  defp pitch_color_class(3), do: "bg-blue-500"
+  # FaB pitch colours, sourced from the shared palette defined in app.css
+  # (`--color-pitch-*` → `bg-pitch-*` utilities).
+  defp pitch_color_class(1), do: "bg-pitch-red"
+  defp pitch_color_class(2), do: "bg-pitch-yellow"
+  defp pitch_color_class(3), do: "bg-pitch-blue"
   defp pitch_color_class(_), do: "bg-base-300"
 
   # Hamming distance between a captured client phash (of `kind`) and the
@@ -961,6 +963,33 @@ defmodule TabletopWeb.GameComponents do
   end
 
   defp winning_phash_kind(_, _), do: nil
+
+  attr :title, :string, required: true
+  attr :body, :string, default: nil
+  attr :class, :string, default: nil, doc: "extra classes merged onto the banner container"
+  attr :rest, :global, doc: "passed to the outer container (id, phx-update, …)"
+  slot :action, doc: "trailing action — a link or button"
+
+  @doc """
+  A warning/notice banner with a title, optional body, and a trailing action.
+
+  Used on the lobby for the camera-setup and email-confirmation prompts. Pass
+  `id` / `phx-update` through `@rest` and toggling classes through `@class` when
+  the caller needs to show/hide the banner client-side.
+  """
+  def notice_banner(assigns) do
+    ~H"""
+    <div class={["border-2 border-warning rounded-lg p-4 bg-warning/10", @class]} {@rest}>
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="font-bold">{@title}</h3>
+          <p :if={@body} class="text-sm opacity-75">{@body}</p>
+        </div>
+        {render_slot(@action)}
+      </div>
+    </div>
+    """
+  end
 
   attr :id, :string, required: true
   attr :code, :string, required: true

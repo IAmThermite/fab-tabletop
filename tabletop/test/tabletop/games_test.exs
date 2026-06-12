@@ -72,6 +72,30 @@ defmodule Tabletop.GamesTest do
       assert game.user_id == scope.user.id
     end
 
+    test "create_game/2 defaults language to the default when not provided" do
+      scope = user_scope_fixture()
+      assert {:ok, %Game{} = game} = Games.create_game(scope, %{title: "some title"})
+      assert game.language == Tabletop.Languages.default()
+    end
+
+    test "create_game/2 accepts a language" do
+      scope = user_scope_fixture()
+
+      assert {:ok, %Game{} = game} =
+               Games.create_game(scope, %{title: "fr game", language: :fra})
+
+      assert game.language == :fra
+    end
+
+    test "create_game/2 rejects an unknown language" do
+      scope = user_scope_fixture()
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Games.create_game(scope, %{title: "x", language: :klingon})
+
+      assert %{language: ["is invalid"]} = errors_on(changeset)
+    end
+
     test "create_game/2 with invalid data returns error changeset" do
       scope = user_scope_fixture()
       assert {:error, %Ecto.Changeset{}} = Games.create_game(scope, @invalid_attrs)

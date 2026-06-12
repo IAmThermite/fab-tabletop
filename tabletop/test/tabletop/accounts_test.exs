@@ -190,6 +190,28 @@ defmodule Tabletop.AccountsTest do
     end
   end
 
+  describe "update_user_language/2" do
+    setup do
+      %{user: user_fixture()}
+    end
+
+    test "sets a preferred language", %{user: user} do
+      assert {:ok, %User{language: :fra}} = Accounts.update_user_language(user, %{language: :fra})
+    end
+
+    test "clears the preference with a blank value", %{user: user} do
+      {:ok, user} = Accounts.update_user_language(user, %{language: :deu})
+      assert {:ok, %User{language: nil}} = Accounts.update_user_language(user, %{language: ""})
+    end
+
+    test "rejects an unknown language", %{user: user} do
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Accounts.update_user_language(user, %{language: :klingon})
+
+      assert %{language: ["is invalid"]} = errors_on(changeset)
+    end
+  end
+
   describe "generate_user_session_token/1" do
     setup do
       %{user: user_fixture()}

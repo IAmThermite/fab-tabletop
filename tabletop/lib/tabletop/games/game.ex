@@ -13,6 +13,11 @@ defmodule Tabletop.Games.Game do
   schema "games" do
     field :title, :string
     field :format, Ecto.Enum, values: Map.keys(@valid_formats), default: :classic_constructed
+
+    field :language, Ecto.Enum,
+      values: Tabletop.Languages.keys(),
+      default: Tabletop.Languages.default()
+
     field :hero, :string
     field :decklist, :string
     field :status, Ecto.Enum, values: [:waiting, :active, :finished], default: :waiting
@@ -44,9 +49,10 @@ defmodule Tabletop.Games.Game do
   @doc false
   def changeset(game, attrs, user_scope) do
     game
-    |> cast(attrs, [:title, :format, :hero, :decklist, :private])
-    |> validate_required([:title, :format])
+    |> cast(attrs, [:title, :format, :language, :hero, :decklist, :private])
+    |> validate_required([:title, :format, :language])
     |> validate_inclusion(:format, Map.keys(@valid_formats))
+    |> validate_inclusion(:language, Tabletop.Languages.keys())
     |> put_change(:user_id, user_scope.user.id)
     |> unique_constraint(:user_id,
       name: :games_one_active_per_user1,

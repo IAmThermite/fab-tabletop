@@ -23,6 +23,12 @@ defmodule TabletopWeb.GameLive.Form do
           label="Format"
           options={Game.format_options()}
         />
+        <.input
+          field={@form[:language]}
+          type="select"
+          label="Language"
+          options={Tabletop.Languages.options()}
+        />
         <.input field={@form[:hero]} type="text" label="Hero" />
         <.input
           field={@form[:decklist]}

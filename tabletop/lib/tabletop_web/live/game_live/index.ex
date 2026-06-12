@@ -5,6 +5,7 @@ defmodule TabletopWeb.GameLive.Index do
   alias Tabletop.Accounts.Scope
   alias Tabletop.Games
   alias Tabletop.Games.Game
+  alias Tabletop.Languages
 
   @impl true
   def render(assigns) do
@@ -84,6 +85,35 @@ defmodule TabletopWeb.GameLive.Index do
               to join a game.
             </p>
 
+            <%!-- Language filter (multi-select; no selection = show all) --%>
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+              <span class="text-sm text-zinc-500">Language:</span>
+              <button
+                :for={{label, key} <- Languages.options()}
+                type="button"
+                phx-click="toggle_language_filter"
+                phx-value-lang={key}
+                aria-pressed={MapSet.member?(@language_filter, key)}
+                class={[
+                  "badge badge-sm cursor-pointer",
+                  if(MapSet.member?(@language_filter, key),
+                    do: "badge-primary",
+                    else: "badge-outline"
+                  )
+                ]}
+              >
+                {label}
+              </button>
+              <button
+                :if={MapSet.size(@language_filter) > 0}
+                type="button"
+                phx-click="clear_language_filter"
+                class="text-xs text-zinc-500 underline ml-1"
+              >
+                Clear
+              </button>
+            </div>
+
             <div class="space-y-3">
               <details
                 :for={{format, games} <- @grouped_games}
@@ -105,6 +135,9 @@ defmodule TabletopWeb.GameLive.Index do
                         <span class="truncate font-medium">{game.title}</span>
                         <span :if={game.user} class="text-sm text-zinc-500 shrink-0">
                           {game.user.name}
+                        </span>
+                        <span class="text-xs text-zinc-400 shrink-0">
+                          · {Languages.name(game.language)}
                         </span>
                       </div>
                       <div
@@ -164,6 +197,12 @@ defmodule TabletopWeb.GameLive.Index do
                   type="select"
                   label="Format"
                   options={Game.format_options()}
+                />
+                <.input
+                  field={@form[:language]}
+                  type="select"
+                  label="Language"
+                  options={Languages.options()}
                 />
                 <.input field={@form[:title]} type="text" label="Game Title" />
                 <.input field={@form[:hero]} type="text" label="Hero" />
@@ -270,6 +309,7 @@ defmodule TabletopWeb.GameLive.Index do
       socket
       |> assign(:page_title, "Games")
       |> assign(:show_join_private, false)
+      |> assign(:language_filter, MapSet.new())
       |> assign_form(scope)
       |> assign_current_game(scope)
       |> assign_games()
@@ -278,7 +318,8 @@ defmodule TabletopWeb.GameLive.Index do
   end
 
   defp assign_form(socket, %Scope{} = scope) do
-    game = %Game{user_id: scope.user.id}
+    # Auto-fill the game language from the user's preference when they have one.
+    game = %Game{user_id: scope.user.id, language: scope.user.language || Languages.default()}
 
     socket
     |> assign(:game, game)
@@ -362,6 +403,23 @@ defmodule TabletopWeb.GameLive.Index do
     end
   end
 
+  def handle_event("toggle_language_filter", %{"lang" => lang}, socket) do
+    # Safe: language keys are compile-time atoms defined in Tabletop.Languages.
+    lang = String.to_existing_atom(lang)
+    filter = socket.assigns.language_filter
+
+    filter =
+      if MapSet.member?(filter, lang),
+        do: MapSet.delete(filter, lang),
+        else: MapSet.put(filter, lang)
+
+    {:noreply, socket |> assign(:language_filter, filter) |> assign_games()}
+  end
+
+  def handle_event("clear_language_filter", _params, socket) do
+    {:noreply, socket |> assign(:language_filter, MapSet.new()) |> assign_games()}
+  end
+
   def handle_event("open_join_private", _params, socket) do
     {:noreply, assign(socket, :show_join_private, true)}
   end
@@ -410,8 +468,15 @@ defmodule TabletopWeb.GameLive.Index do
 
   defp assign_games(socket) do
     scope = socket.assigns.current_scope
+    filter = socket.assigns.language_filter
 
-    games = Games.list_joinable_games(scope)
+    all_games = Games.list_joinable_games(scope)
+
+    # No languages selected = show all; otherwise keep only matching languages.
+    games =
+      if MapSet.size(filter) == 0,
+        do: all_games,
+        else: Enum.filter(all_games, &MapSet.member?(filter, &1.language))
 
     grouped =
       Enum.group_by(games, & &1.format)
@@ -423,7 +488,7 @@ defmodule TabletopWeb.GameLive.Index do
 
     socket
     |> assign(:grouped_games, grouped)
-    |> assign(:open_games_count, length(games))
+    |> assign(:open_games_count, length(all_games))
     |> assign(:any_games?, games != [])
   end
 

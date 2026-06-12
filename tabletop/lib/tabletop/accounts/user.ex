@@ -11,8 +11,18 @@ defmodule Tabletop.Accounts.User do
     field(:confirmed_at, :utc_datetime)
     field(:authenticated_at, :utc_datetime, virtual: true)
     field(:name, :string)
+    field(:language, Ecto.Enum, values: Tabletop.Languages.keys())
 
     timestamps(type: :utc_datetime)
+  end
+
+  @doc """
+  A changeset for the user's optional preferred language. A blank value clears
+  the preference (stored as `nil`). `Ecto.Enum` rejects any non-blank value
+  outside the allowed set, so no extra inclusion check is needed.
+  """
+  def language_changeset(user, attrs) do
+    cast(user, attrs, [:language])
   end
 
   def changeset(user, attrs) do

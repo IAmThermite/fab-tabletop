@@ -131,6 +131,22 @@ defmodule Tabletop.Accounts do
     |> update_user_and_delete_all_tokens()
   end
 
+  @doc """
+  Returns an `%Ecto.Changeset{}` for changing the user's preferred language.
+  """
+  def change_user_language(user, attrs \\ %{}) do
+    User.language_changeset(user, attrs)
+  end
+
+  @doc """
+  Updates the user's preferred language.
+  """
+  def update_user_language(user, attrs) do
+    user
+    |> User.language_changeset(attrs)
+    |> Repo.update()
+  end
+
   ## Session
 
   @doc """

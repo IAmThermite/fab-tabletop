@@ -188,6 +188,47 @@ defmodule TabletopWeb.GameLiveTest do
 
       assert to == ~p"/games/#{game}/pre-join"
     end
+
+    test "creates a game with the selected language", %{conn: conn, scope: scope} do
+      {:ok, live_view, _html} = live(conn, ~p"/")
+
+      {:ok, _show, _html} =
+        live_view
+        |> form("#create-game-form", game: Map.put(@create_attrs, :language, :fra))
+        |> render_submit()
+        |> follow_redirect(conn)
+
+      assert Tabletop.Games.get_current_game_for_user(scope).language == :fra
+    end
+
+    test "shows the game language on join rows", %{conn: conn} do
+      other_scope = user_scope_fixture()
+      game_fixture(other_scope, %{title: "DE Game", language: :deu})
+
+      {:ok, _live, html} = live(conn, ~p"/")
+
+      assert html =~ "DE Game"
+      assert html =~ "· German"
+    end
+
+    test "language filter narrows the joinable list", %{conn: conn} do
+      en_scope = user_scope_fixture()
+      game_fixture(en_scope, %{title: "English Game", language: :eng})
+      fr_scope = user_scope_fixture()
+      game_fixture(fr_scope, %{title: "French Game", language: :fra})
+
+      {:ok, live_view, html} = live(conn, ~p"/")
+      assert html =~ "English Game"
+      assert html =~ "French Game"
+
+      html =
+        live_view
+        |> element("button[phx-value-lang='fra']")
+        |> render_click()
+
+      assert html =~ "French Game"
+      refute html =~ "English Game"
+    end
   end
 
   describe "Show" do

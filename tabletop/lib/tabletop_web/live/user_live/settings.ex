@@ -56,6 +56,33 @@ defmodule TabletopWeb.UserLive.Settings do
           Save Password
         </.button>
       </.form>
+
+      <hr class="my-8" />
+
+      <div class="text-center">
+        <.header>Preferences</.header>
+      </div>
+
+      <.form
+        for={@language_form}
+        id="language_form"
+        phx-change="validate_language"
+        phx-submit="update_language"
+      >
+        <.input
+          field={@language_form[:language]}
+          type="select"
+          label="Preferred language"
+          prompt="No preference"
+          options={Tabletop.Languages.options()}
+        />
+        <p class="text-sm text-zinc-500 mt-1">
+          When set, new games you create default to this language.
+        </p>
+        <.button variant="primary" phx-disable-with="Saving...">
+          Save Preferences
+        </.button>
+      </.form>
     </Layouts.app>
     """
   end
@@ -69,6 +96,7 @@ defmodule TabletopWeb.UserLive.Settings do
       socket
       |> assign(:current_email, user.email)
       |> assign(:password_form, to_form(password_changeset))
+      |> assign(:language_form, to_form(Accounts.change_user_language(user)))
       |> assign(:trigger_submit, false)
 
     {:ok, socket}
@@ -110,6 +138,29 @@ defmodule TabletopWeb.UserLive.Settings do
 
       changeset ->
         {:noreply, assign(socket, password_form: to_form(changeset, action: :insert))}
+    end
+  end
+
+  def handle_event("validate_language", %{"user" => user_params}, socket) do
+    language_form =
+      socket.assigns.current_scope.user
+      |> Accounts.change_user_language(user_params)
+      |> Map.put(:action, :validate)
+      |> to_form()
+
+    {:noreply, assign(socket, language_form: language_form)}
+  end
+
+  def handle_event("update_language", %{"user" => user_params}, socket) do
+    case Accounts.update_user_language(socket.assigns.current_scope.user, user_params) do
+      {:ok, user} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Preferences updated")
+         |> assign(:language_form, to_form(Accounts.change_user_language(user)))}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, language_form: to_form(changeset, action: :insert))}
     end
   end
 end

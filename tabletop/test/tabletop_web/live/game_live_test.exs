@@ -109,7 +109,8 @@ defmodule TabletopWeb.GameLiveTest do
 
       game_fixture(other_scope, %{
         title: "Hero Game",
-        hero: "Briar, Warden of Thorns",
+        format: :living_legend,
+        hero: "briar-warden-of-thorns",
         decklist: "https://fabrary.net/decks/abc123"
       })
 
@@ -140,6 +141,26 @@ defmodule TabletopWeb.GameLiveTest do
                |> render_submit()
 
       assert to == ~p"/games/#{game}/pre-join"
+    end
+
+    test "hero dropdown filters to heroes legal in the selected format", %{conn: conn} do
+      {:ok, live_view, html} = live(conn, ~p"/")
+
+      cc_hero = hd(Tabletop.Heroes.legal_for(:classic_constructed))
+      blitz_only = Enum.find(Tabletop.Heroes.all(), &(&1.formats == [:blitz]))
+
+      # Default format is Classic Constructed: a CC hero is listed, a
+      # Blitz-only hero is not.
+      assert html =~ cc_hero.name
+      refute html =~ blitz_only.name
+
+      # Switching the format to Blitz re-filters the options live.
+      filtered =
+        live_view
+        |> form("#create-game-form", game: %{format: "blitz"})
+        |> render_change()
+
+      assert filtered =~ blitz_only.name
     end
 
     test "creates new game inline", %{conn: conn} do

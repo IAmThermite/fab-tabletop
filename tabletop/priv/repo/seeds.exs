@@ -37,14 +37,16 @@ user2_scope = Scope.for_user(user2)
   Games.create_game(user1_scope, %{
     title: "Game 1",
     description: "A test game created by user 1",
-    format: :classic_constructed
+    format: :classic_constructed,
+    hero: hd(Tabletop.Heroes.legal_for(:classic_constructed)).slug
   })
 
 {:ok, _game2} =
   Games.create_game(user2_scope, %{
     title: "Game 2",
     description: "A test game created by user 2",
-    format: :silver_age
+    format: :silver_age,
+    hero: hd(Tabletop.Heroes.legal_for(:silver_age)).slug
   })
 
 # populate card database

@@ -5,6 +5,7 @@ defmodule TabletopWeb.GameLive.Index do
   alias Tabletop.Accounts.Scope
   alias Tabletop.Games
   alias Tabletop.Games.Game
+  alias Tabletop.Heroes
   alias Tabletop.Languages
 
   @impl true
@@ -130,32 +131,40 @@ defmodule TabletopWeb.GameLive.Index do
                     :for={game <- games}
                     class="flex items-center justify-between gap-3 border border-zinc-200 dark:border-zinc-700 rounded-lg p-3"
                   >
-                    <div class="min-w-0">
-                      <div class="flex items-center gap-2">
-                        <span class="truncate font-medium">{game.title}</span>
-                        <span :if={game.user} class="text-sm text-zinc-500 shrink-0">
-                          {game.user.name}
-                        </span>
-                        <span class="text-xs text-zinc-400 shrink-0">
-                          · {Languages.name(game.language)}
-                        </span>
-                      </div>
-                      <div
-                        :if={present?(game.hero) || present?(game.decklist)}
-                        class="flex items-center gap-2 mt-1"
-                      >
-                        <span :if={present?(game.hero)} class="badge badge-sm badge-outline">
-                          {game.hero}
-                        </span>
-                        <.link
-                          :if={present?(game.decklist)}
-                          href={game.decklist}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="text-xs text-blue-600 underline"
+                    <div class="flex items-center gap-3 min-w-0">
+                      <img
+                        :if={Heroes.known?(game.hero)}
+                        src={Heroes.icon_path(game.hero)}
+                        alt={Heroes.name(game.hero)}
+                        class="w-10 h-10 rounded-full shrink-0 bg-base-200"
+                      />
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                          <span class="truncate font-medium">{game.title}</span>
+                          <span :if={game.user} class="text-sm text-zinc-500 shrink-0">
+                            {game.user.name}
+                          </span>
+                          <span class="text-xs text-zinc-400 shrink-0">
+                            · {Languages.name(game.language)}
+                          </span>
+                        </div>
+                        <div
+                          :if={present?(game.hero) || present?(game.decklist)}
+                          class="flex items-center gap-2 mt-1"
                         >
-                          Decklist ↗
-                        </.link>
+                          <span :if={present?(game.hero)} class="badge badge-sm badge-outline">
+                            {Heroes.name(game.hero) || game.hero}
+                          </span>
+                          <.link
+                            :if={present?(game.decklist)}
+                            href={game.decklist}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-xs text-blue-600 underline"
+                          >
+                            Decklist ↗
+                          </.link>
+                        </div>
                       </div>
                     </div>
                     <.button
@@ -205,7 +214,23 @@ defmodule TabletopWeb.GameLive.Index do
                   options={Languages.options()}
                 />
                 <.input field={@form[:title]} type="text" label="Game Title" />
-                <.input field={@form[:hero]} type="text" label="Hero" />
+                <div>
+                  <.input
+                    field={@form[:hero]}
+                    type="select"
+                    label="Hero"
+                    prompt="— Select hero —"
+                    options={@hero_options}
+                  />
+                  <div :if={Heroes.known?(@form[:hero].value)} class="flex items-center gap-2 mt-2">
+                    <img
+                      src={Heroes.icon_path(@form[:hero].value)}
+                      alt={Heroes.name(@form[:hero].value)}
+                      class="w-12 h-12 rounded-full bg-base-200"
+                    />
+                    <span class="text-sm text-zinc-500">{Heroes.name(@form[:hero].value)}</span>
+                  </div>
+                </div>
                 <.input
                   field={@form[:decklist]}
                   type="text"
@@ -323,21 +348,30 @@ defmodule TabletopWeb.GameLive.Index do
 
     socket
     |> assign(:game, game)
+    |> assign(:hero_options, Heroes.options_for(game.format))
     |> assign(:form, to_form(Games.change_game(scope, game)))
   end
 
   defp assign_form(socket, nil) do
     socket
     |> assign(:game, nil)
+    |> assign(:hero_options, [])
     |> assign(:form, nil)
   end
 
   @impl true
   def handle_event("validate", %{"game" => game_params}, socket) do
+    format = parse_format(game_params["format"], socket.assigns.game.format)
+    hero_options = Heroes.options_for(format)
+    game_params = drop_illegal_hero(game_params, hero_options)
+
     changeset =
       Games.change_game(socket.assigns.current_scope, socket.assigns.game, game_params)
 
-    {:noreply, assign(socket, form: to_form(changeset, action: :validate))}
+    {:noreply,
+     socket
+     |> assign(:hero_options, hero_options)
+     |> assign(form: to_form(changeset, action: :validate))}
   end
 
   def handle_event("create", %{"game" => game_params}, socket) do
@@ -493,6 +527,28 @@ defmodule TabletopWeb.GameLive.Index do
   end
 
   defp present?(value), do: is_binary(value) and String.trim(value) != ""
+
+  # Resolve the format param (a string) to its atom, falling back to the
+  # current game's format when absent or unrecognised.
+  defp parse_format(nil, fallback), do: fallback
+
+  defp parse_format(param, fallback) do
+    case Enum.find(Game.format_options(), fn {_label, key} -> to_string(key) == param end) do
+      {_label, key} -> key
+      nil -> fallback
+    end
+  end
+
+  # Clear the chosen hero when it isn't legal in the (possibly just-changed)
+  # format, so the dropdown never shows a stale, illegal selection.
+  defp drop_illegal_hero(%{"hero" => hero} = params, hero_options)
+       when is_binary(hero) and hero != "" do
+    if Enum.any?(hero_options, fn {_name, slug} -> slug == hero end),
+      do: params,
+      else: Map.put(params, "hero", "")
+  end
+
+  defp drop_illegal_hero(params, _hero_options), do: params
 
   # Accepts a bare game code or a pasted game URL (e.g. ".../games/<id>" or
   # ".../games/<id>/pre-join") and returns the embedded UUID when present,

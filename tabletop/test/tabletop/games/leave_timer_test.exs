@@ -83,11 +83,12 @@ defmodule Tabletop.Games.LeaveTimerTest do
   end
 
   # Retries `fun` until it returns a truthy value, for assertions that depend
-  # on asynchronous bookkeeping (e.g. Registry cleanup after a process exits).
-  # Returns as soon as the condition holds, so a generous attempt budget only
-  # affects the (rare) failing path — 2s tolerates scheduler jitter under load
-  # without slowing the happy path, where it typically succeeds in one pass.
-  defp eventually(fun, attempts \\ 200) do
+  # on asynchronous bookkeeping (e.g. Registry reaping a `:via` name after the
+  # timer process exits — there is no synchronous hook for that). Returns as
+  # soon as the condition holds, so a generous attempt budget only affects the
+  # (rare) failing path — 5s tolerates scheduler jitter under a loaded full-suite
+  # run without slowing the happy path, where it typically succeeds in one pass.
+  defp eventually(fun, attempts \\ 500) do
     cond do
       fun.() -> :ok
       attempts <= 0 -> flunk("condition was not met in time")

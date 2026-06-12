@@ -101,6 +101,55 @@ defmodule Tabletop.GamesTest do
       assert {:error, %Ecto.Changeset{}} = Games.create_game(scope, @invalid_attrs)
     end
 
+    test "create_game/2 accepts the blitz format" do
+      scope = user_scope_fixture()
+
+      assert {:ok, %Game{} = game} =
+               Games.create_game(scope, %{title: "blitz game", format: :blitz})
+
+      assert game.format == :blitz
+    end
+
+    test "create_game/2 accepts a hero legal in the chosen format" do
+      scope = user_scope_fixture()
+      [hero | _] = Tabletop.Heroes.legal_for(:classic_constructed)
+
+      assert {:ok, %Game{} = game} =
+               Games.create_game(scope, %{
+                 title: "hero game",
+                 format: :classic_constructed,
+                 hero: hero.slug
+               })
+
+      assert game.hero == hero.slug
+    end
+
+    test "create_game/2 rejects a hero not legal in the chosen format" do
+      scope = user_scope_fixture()
+      illegal = Enum.find(Tabletop.Heroes.all(), &(:blitz not in &1.formats))
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Games.create_game(scope, %{title: "x", format: :blitz, hero: illegal.slug})
+
+      assert %{hero: ["is not legal in this format"]} = errors_on(changeset)
+    end
+
+    test "create_game/2 rejects an unrecognized hero" do
+      scope = user_scope_fixture()
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Games.create_game(scope, %{title: "x", hero: "not-a-real-hero"})
+
+      assert %{hero: ["is not a recognized hero"]} = errors_on(changeset)
+    end
+
+    test "create_game/2 allows a hidden (blank) hero" do
+      scope = user_scope_fixture()
+
+      assert {:ok, %Game{} = game} = Games.create_game(scope, %{title: "no hero", hero: ""})
+      assert game.hero == nil
+    end
+
     test "update_game/3 with valid data updates the game" do
       scope = user_scope_fixture()
       game = game_fixture(scope)

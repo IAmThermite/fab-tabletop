@@ -1,0 +1,557 @@
+[
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Arakni, 5L!p3d 7hRu 7h3 cR4X",
+    "slug": "arakni-5lp3d-7hru-7h3-cr4x"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Arakni, Huntsman",
+    "slug": "arakni-huntsman"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Arakni, Marionette",
+    "slug": "arakni-marionette"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Aurora, Legacy of Tempest",
+    "slug": "aurora-legacy-of-tempest"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Aurora, Shooting Star",
+    "slug": "aurora-shooting-star"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Azalea, Ace in the Hole",
+    "slug": "azalea-ace-in-the-hole"
+  },
+  {
+    "formats": [
+      "blitz",
+      "silver_age"
+    ],
+    "name": "Benji, The Piercing Wind",
+    "slug": "benji-the-piercing-wind"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Betsy, Skin in the Game",
+    "slug": "betsy-skin-in-the-game"
+  },
+  {
+    "formats": [
+      "blitz",
+      "silver_age"
+    ],
+    "name": "Blaze, Firemind",
+    "slug": "blaze-firemind"
+  },
+  {
+    "formats": [
+      "blitz",
+      "silver_age"
+    ],
+    "name": "Bravo, Flattering Showman",
+    "slug": "bravo-flattering-showman"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Bravo, Showstopper",
+    "slug": "bravo-showstopper"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Bravo, Star of the Show",
+    "slug": "bravo-star-of-the-show"
+  },
+  {
+    "formats": [
+      "blitz"
+    ],
+    "name": "Brevant, Civic Protector",
+    "slug": "brevant-civic-protector"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Briar, Warden of Thorns",
+    "slug": "briar-warden-of-thorns"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Chane, Bound by Shadow",
+    "slug": "chane-bound-by-shadow"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Cindra, Dracai of Retribution",
+    "slug": "cindra-dracai-of-retribution"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Dash, I/O",
+    "slug": "dash-i-o"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Dash, Inventor Extraordinaire",
+    "slug": "dash-inventor-extraordinaire"
+  },
+  {
+    "formats": [],
+    "name": "Data Doll, MK II",
+    "slug": "data-doll-mk-ii"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Dorinthea, Ironsong",
+    "slug": "dorinthea-ironsong"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Dromai, Ash Artist",
+    "slug": "dromai-ash-artist"
+  },
+  {
+    "formats": [
+      "blitz"
+    ],
+    "name": "Emperor, Dracai of Aesir",
+    "slug": "emperor-dracai-of-aesir"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Enigma, LEDGER OF ANCESTRY",
+    "slug": "enigma-ledger-of-ancestry"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Fai, Rising Rebellion",
+    "slug": "fai-rising-rebellion"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Fang, Dracai of Blades",
+    "slug": "fang-dracai-of-blades"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Florian, Rotwood Harbinger",
+    "slug": "florian-rotwood-harbinger"
+  },
+  {
+    "formats": [],
+    "name": "Frankie, Make Ends Meat",
+    "slug": "frankie-make-ends-meat"
+  },
+  {
+    "formats": [
+      "blitz"
+    ],
+    "name": "Genis, Wotchuneed",
+    "slug": "genis-wotchuneed"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Gravy Bones, Shipwrecked Looter",
+    "slug": "gravy-bones-shipwrecked-looter"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Hala, Bladesaint of the Vow",
+    "slug": "hala-bladesaint-of-the-vow"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Ira, Scarlet Revenger",
+    "slug": "ira-scarlet-revenger"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Iyslander, Stormbind",
+    "slug": "iyslander-stormbind"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Jarl, Vetreiði",
+    "slug": "jarl-vetrei-i"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Kano, Dracai of Aether",
+    "slug": "kano-dracai-of-aether"
+  },
+  {
+    "formats": [
+      "silver_age",
+      "blitz"
+    ],
+    "name": "Kassai, Cintari Sellsword",
+    "slug": "kassai-cintari-sellsword"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Kassai, of the Golden Sand",
+    "slug": "kassai-of-the-golden-sand"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Katsu, The Wanderer",
+    "slug": "katsu-the-wanderer"
+  },
+  {
+    "formats": [
+      "blitz",
+      "silver_age"
+    ],
+    "name": "Kavdaen, Trader of Skins",
+    "slug": "kavdaen-trader-of-skins"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Kayo, Armed and Dangerous",
+    "slug": "kayo-armed-and-dangerous"
+  },
+  {
+    "formats": [
+      "blitz",
+      "silver_age"
+    ],
+    "name": "Kayo, Berserker Runt",
+    "slug": "kayo-berserker-runt"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Kayo, Underhanded Cheat",
+    "slug": "kayo-underhanded-cheat"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Levia, Shadowborn Abomination",
+    "slug": "levia-shadowborn-abomination"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Lexi, Livewire",
+    "slug": "lexi-livewire"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Lyath Goldmane, Vile Savant",
+    "slug": "lyath-goldmane-vile-savant"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Marlynn, Treasure Hunter",
+    "slug": "marlynn-treasure-hunter"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Maxx, \"The Hype\" Nitro",
+    "slug": "maxx-the-hype-nitro"
+  },
+  {
+    "formats": [
+      "blitz"
+    ],
+    "name": "Melody, Sing-along",
+    "slug": "melody-sing-along"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Nuu, Alluring Desire",
+    "slug": "nuu-alluring-desire"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Oldhim, Grandfather of Eternity",
+    "slug": "oldhim-grandfather-of-eternity"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Olympia, Prized Fighter",
+    "slug": "olympia-prized-fighter"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Oscilio, Constella Intelligence",
+    "slug": "oscilio-constella-intelligence"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Oscilio, Forked Continuum",
+    "slug": "oscilio-forked-continuum"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Pleiades, Superstar",
+    "slug": "pleiades-superstar"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Prism, Awakener of Sol",
+    "slug": "prism-awakener-of-sol"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Prism, Sculptor of Arc Light",
+    "slug": "prism-sculptor-of-arc-light"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Puffin, Hightail",
+    "slug": "puffin-hightail"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Rhinar, Reckless Rampage",
+    "slug": "rhinar-reckless-rampage"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Riptide, Lurker of the Deep",
+    "slug": "riptide-lurker-of-the-deep"
+  },
+  {
+    "formats": [
+      "blitz",
+      "silver_age"
+    ],
+    "name": "Scurv, Stowaway",
+    "slug": "scurv-stowaway"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Ser Boltyn, Breaker of Dawn",
+    "slug": "ser-boltyn-breaker-of-dawn"
+  },
+  {
+    "formats": [
+      "blitz"
+    ],
+    "name": "Shiyana, Diamond Gemini",
+    "slug": "shiyana-diamond-gemini"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Teklovossen, Esteemed Magnate",
+    "slug": "teklovossen-esteemed-magnate"
+  },
+  {
+    "formats": [
+      "blitz",
+      "silver_age"
+    ],
+    "name": "Terra",
+    "slug": "terra"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Tuffnut, Bumbling Hulkster",
+    "slug": "tuffnut-bumbling-hulkster"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Uzuri, Switchblade",
+    "slug": "uzuri-switchblade"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Valda, Seismic Impact",
+    "slug": "valda-seismic-impact"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Verdance, Thorn of the Rose",
+    "slug": "verdance-thorn-of-the-rose"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Victor Goldmane, High and Mighty",
+    "slug": "victor-goldmane-high-and-mighty"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Viserai, Rune Blood",
+    "slug": "viserai-rune-blood"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Vynnset, Iron Maiden",
+    "slug": "vynnset-iron-maiden"
+  },
+  {
+    "formats": [
+      "blitz"
+    ],
+    "name": "Yoji, Royal Protector",
+    "slug": "yoji-royal-protector"
+  },
+  {
+    "formats": [
+      "living_legend"
+    ],
+    "name": "Zen, Tamer of Purpose",
+    "slug": "zen-tamer-of-purpose"
+  },
+  {
+    "formats": [
+      "classic_constructed",
+      "living_legend"
+    ],
+    "name": "Zyggy Starlight",
+    "slug": "zyggy-starlight"
+  }
+]

@@ -21,6 +21,12 @@ defmodule Tabletop.Fab.GameStateTest do
       assert player.effects == %{}
     end
 
+    test "returns default state with amp off and no custom counters" do
+      player = GameState.default_player()
+      assert player.amp == %{active: false, count: 0}
+      assert player.custom_counters == %{}
+    end
+
     test "returns default state with zero damage" do
       player = GameState.default_player()
       assert player.physical.damage == 0
@@ -173,6 +179,141 @@ defmodule Tabletop.Fab.GameStateTest do
     end
   end
 
+  describe "toggle_amp/1" do
+    test "toggles from false to true and adds a tile position" do
+      assert {:ok, new_player, {:amp_toggled, true}} =
+               GameState.toggle_amp(GameState.default_player())
+
+      assert new_player.amp.active == true
+      assert Map.has_key?(new_player.tile_positions, "amp")
+    end
+
+    test "toggles from true to false and removes the tile position" do
+      {:ok, player, _} = GameState.toggle_amp(GameState.default_player())
+
+      assert {:ok, new_player, {:amp_toggled, false}} = GameState.toggle_amp(player)
+      assert new_player.amp.active == false
+      refute Map.has_key?(new_player.tile_positions, "amp")
+    end
+  end
+
+  describe "change_amp/2" do
+    test "increments the count by 1" do
+      assert {:ok, new_player, {:amp_changed, 1}} =
+               GameState.change_amp(GameState.default_player(), 1)
+
+      assert new_player.amp.count == 1
+    end
+
+    test "clamps the count at 0" do
+      assert {:ok, new_player, {:amp_changed, 0}} =
+               GameState.change_amp(GameState.default_player(), -5)
+
+      assert new_player.amp.count == 0
+    end
+  end
+
+  describe "add_custom_counter/2" do
+    test "adds a counter with the given name and a tile position" do
+      assert {:ok, new_player, {:custom_counter_added, id, "Energy"}} =
+               GameState.add_custom_counter(GameState.default_player(), "Energy")
+
+      assert new_player.custom_counters[id] == %{name: "Energy", count: 0}
+      assert Map.has_key?(new_player.tile_positions, id)
+    end
+
+    test "trims whitespace and allows a blank name" do
+      assert {:ok, new_player, {:custom_counter_added, id, ""}} =
+               GameState.add_custom_counter(GameState.default_player(), "   ")
+
+      assert new_player.custom_counters[id].name == ""
+    end
+
+    test "caps the name length" do
+      long = String.duplicate("a", 50)
+
+      {:ok, new_player, {:custom_counter_added, id, name}} =
+        GameState.add_custom_counter(GameState.default_player(), long)
+
+      assert String.length(name) == 24
+      assert new_player.custom_counters[id].name == name
+    end
+
+    test "supports multiple counters with distinct ids" do
+      {:ok, p, {:custom_counter_added, id1, _}} =
+        GameState.add_custom_counter(GameState.default_player(), "A")
+
+      {:ok, p, {:custom_counter_added, id2, _}} = GameState.add_custom_counter(p, "B")
+
+      assert id1 != id2
+      assert map_size(p.custom_counters) == 2
+    end
+  end
+
+  describe "change_custom_counter/3" do
+    test "increments and clamps at 0" do
+      {:ok, player, {:custom_counter_added, id, _}} =
+        GameState.add_custom_counter(GameState.default_player(), "X")
+
+      {:ok, player, {:custom_counter_changed, ^id, 1}} =
+        GameState.change_custom_counter(player, id, 1)
+
+      assert player.custom_counters[id].count == 1
+
+      {:ok, player, {:custom_counter_changed, ^id, 0}} =
+        GameState.change_custom_counter(player, id, -5)
+
+      assert player.custom_counters[id].count == 0
+    end
+
+    test "returns error for an unknown counter" do
+      assert {:error, :unknown_counter} =
+               GameState.change_custom_counter(GameState.default_player(), "custom:999", 1)
+    end
+  end
+
+  describe "remove_custom_counter/2" do
+    test "removes the counter and its tile position" do
+      {:ok, player, {:custom_counter_added, id, _}} =
+        GameState.add_custom_counter(GameState.default_player(), "X")
+
+      assert {:ok, new_player, {:custom_counter_removed, ^id}} =
+               GameState.remove_custom_counter(player, id)
+
+      refute Map.has_key?(new_player.custom_counters, id)
+      refute Map.has_key?(new_player.tile_positions, id)
+    end
+
+    test "returns error for an unknown counter" do
+      assert {:error, :unknown_counter} =
+               GameState.remove_custom_counter(GameState.default_player(), "custom:999")
+    end
+  end
+
+  describe "transform/2" do
+    test "routes an action tuple to its transform" do
+      assert {:ok, new_player, {:amp_toggled, true}} =
+               GameState.transform(GameState.default_player(), {:toggle_amp})
+
+      assert new_player.amp.active == true
+    end
+
+    test "applies move_tile and ignores the owner/target element" do
+      assert {:ok, new_player, {:tile_moved, "amp", 30.0, 40.0}} =
+               GameState.transform(
+                 GameState.default_player(),
+                 {:move_tile, "opponent", "amp", 30.0, 40.0}
+               )
+
+      assert new_player.tile_positions["amp"] == %{x: 30.0, y: 40.0}
+    end
+
+    test "returns an error for an unknown action" do
+      assert {:error, :unknown_action} =
+               GameState.transform(GameState.default_player(), {:bogus_action, 1})
+    end
+  end
+
   describe "change_life/2" do
     test "increments life by 1" do
       assert {:ok, new_player, {:life_changed, 41}} =
@@ -205,7 +346,7 @@ defmodule Tabletop.Fab.GameStateTest do
     end
   end
 
-  describe "reset_chain/1" do
+  describe "reset_board/1" do
     test "resets damage, toggles, and effects but preserves life" do
       player = GameState.default_player()
       {:ok, player, _} = GameState.change_life(player, -5)
@@ -213,8 +354,11 @@ defmodule Tabletop.Fab.GameStateTest do
       {:ok, player, _} = GameState.change_damage(player, :physical, 3)
       {:ok, player, _} = GameState.toggle_goagain(player)
       {:ok, player, _} = GameState.toggle_effect(player, "ability", "Dominate")
+      {:ok, player, _} = GameState.toggle_amp(player)
+      {:ok, player, _} = GameState.change_amp(player, 2)
+      {:ok, player, _} = GameState.add_custom_counter(player, "Energy")
 
-      assert {:ok, new_player, :chain_reset} = GameState.reset_chain(player)
+      assert {:ok, new_player, :chain_reset} = GameState.reset_board(player)
 
       assert new_player.life == 35
       assert new_player.physical.active == false
@@ -223,6 +367,8 @@ defmodule Tabletop.Fab.GameStateTest do
       assert new_player.arcane.damage == 0
       assert new_player.goagain == false
       assert new_player.effects == %{}
+      assert new_player.amp == %{active: false, count: 0}
+      assert new_player.custom_counters == %{}
       assert new_player.tile_positions == %{}
     end
   end

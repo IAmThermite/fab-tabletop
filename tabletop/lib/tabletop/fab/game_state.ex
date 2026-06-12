@@ -16,9 +16,11 @@ defmodule Tabletop.Fab.GameState do
     life: 40,
     physical: %{active: false, damage: 0},
     arcane: %{active: false, damage: 0},
+    amp: %{active: false, count: 0},
     goagain: false,
     effects: %{},
     effect_counts: %{},
+    custom_counters: %{},
     proxy_tokens: %{},
     tile_positions: %{},
     tile_order: [],
@@ -27,6 +29,49 @@ defmodule Tabletop.Fab.GameState do
   }
 
   def default_player, do: @default_player
+
+  @doc """
+  Applies an action tuple to a player and returns the transform result.
+
+  This is the single mapping from the action vocabulary (the tuples emitted by
+  `TabletopWeb.GameControls`) to the per-player transforms in this module. Both
+  consumers route through here: `Tabletop.Games.GameSession` (authoritative,
+  multiplayer) and the camera-setup preview (local, single-screen). Adding a new
+  action means adding its transform plus one clause here — nothing else.
+
+  `move_tile` carries an owner/target in its second element that is irrelevant to
+  the transform (the caller has already resolved which player to apply it to), so
+  it is ignored here.
+  """
+  def transform(player, {:toggle_damage, type}), do: toggle_damage(player, type)
+  def transform(player, {:change_damage, type, delta}), do: change_damage(player, type, delta)
+  def transform(player, {:toggle_goagain}), do: toggle_goagain(player)
+  def transform(player, {:toggle_amp}), do: toggle_amp(player)
+  def transform(player, {:change_amp, delta}), do: change_amp(player, delta)
+  def transform(player, {:add_custom_counter, name}), do: add_custom_counter(player, name)
+
+  def transform(player, {:change_custom_counter, id, delta}),
+    do: change_custom_counter(player, id, delta)
+
+  def transform(player, {:remove_custom_counter, id}), do: remove_custom_counter(player, id)
+
+  def transform(player, {:toggle_effect, category, name}),
+    do: toggle_effect(player, category, name)
+
+  def transform(player, {:change_effect_count, category, name, delta}),
+    do: change_effect_count(player, category, name, delta)
+
+  def transform(player, {:add_proxy_token, name}), do: add_proxy_token(player, name)
+  def transform(player, {:remove_proxy_token, name}), do: remove_proxy_token(player, name)
+  def transform(player, {:toggle_proxy_token, name}), do: toggle_proxy_token(player, name)
+  def transform(player, {:change_life, delta}), do: change_life(player, delta)
+  def transform(player, {:reset_board}), do: reset_board(player)
+  def transform(player, {:set_media, kind, value}), do: set_media(player, kind, value)
+
+  def transform(player, {:move_tile, _target, tile_id, x, y}),
+    do: move_tile(player, tile_id, x, y)
+
+  def transform(_player, _action), do: {:error, :unknown_action}
 
   @valid_media_kinds [:mic, :camera]
 
@@ -69,6 +114,84 @@ defmodule Tabletop.Fab.GameState do
         else: remove_tile(new_player, "goagain")
 
     {:ok, new_player, {:goagain_toggled, new_val}}
+  end
+
+  @doc """
+  Toggles the Amp tile on/off. Amp is a single named tile (like physical/arcane
+  damage) carrying a counter — the "X" in Amp X.
+  """
+  def toggle_amp(player) do
+    new_val = !player.amp.active
+    new_player = %{player | amp: %{player.amp | active: new_val}}
+
+    new_player =
+      if new_val,
+        do: ensure_tile_position(new_player, "amp"),
+        else: remove_tile(new_player, "amp")
+
+    {:ok, new_player, {:amp_toggled, new_val}}
+  end
+
+  def change_amp(player, delta) when is_integer(delta) do
+    new_val = max(0, player.amp.count + delta)
+    new_player = %{player | amp: %{player.amp | count: new_val}}
+    {:ok, new_player, {:amp_changed, new_val}}
+  end
+
+  @custom_counter_name_max 24
+
+  @doc """
+  Adds a player-defined counter tile with an optional name. The name is trimmed
+  and capped at #{@custom_counter_name_max} characters; a blank name renders as
+  just the number on the canvas. Counters are keyed by a generated `"custom:<n>"`
+  id so multiple can coexist and never collide with effect keys.
+  """
+  def add_custom_counter(player, name) when is_binary(name) do
+    name =
+      name
+      |> String.trim()
+      |> String.slice(0, @custom_counter_name_max)
+
+    id = "custom:#{System.unique_integer([:positive])}"
+    counters = Map.get(player, :custom_counters, %{})
+    new_counters = Map.put(counters, id, %{name: name, count: 0})
+
+    new_player =
+      %{player | custom_counters: new_counters}
+      |> ensure_tile_position(id)
+
+    {:ok, new_player, {:custom_counter_added, id, name}}
+  end
+
+  def change_custom_counter(player, id, delta) when is_binary(id) and is_integer(delta) do
+    counters = Map.get(player, :custom_counters, %{})
+
+    case Map.get(counters, id) do
+      nil ->
+        {:error, :unknown_counter}
+
+      counter ->
+        new_count = max(0, counter.count + delta)
+        new_counters = Map.put(counters, id, %{counter | count: new_count})
+        new_player = %{player | custom_counters: new_counters}
+        {:ok, new_player, {:custom_counter_changed, id, new_count}}
+    end
+  end
+
+  def remove_custom_counter(player, id) when is_binary(id) do
+    counters = Map.get(player, :custom_counters, %{})
+
+    if Map.has_key?(counters, id) do
+      new_counters = Map.delete(counters, id)
+
+      new_player =
+        %{player | custom_counters: new_counters}
+        |> remove_tile(id)
+
+      {:ok, new_player, {:custom_counter_removed, id}}
+    else
+      {:error, :unknown_counter}
+    end
   end
 
   @valid_effect_categories ["ability", "on_hit", "token"]
@@ -240,7 +363,7 @@ defmodule Tabletop.Fab.GameState do
     {:ok, %{player | life: new_life}, {:life_changed, new_life}}
   end
 
-  def reset_chain(player) do
+  def reset_board(player) do
     reset = %{
       @default_player
       | life: player.life,

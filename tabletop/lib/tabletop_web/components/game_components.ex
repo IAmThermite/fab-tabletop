@@ -139,6 +139,38 @@ defmodule TabletopWeb.GameComponents do
         </div>
       </div>
 
+      <%!-- Amp (compact, like Go Again but with an inline counter) --%>
+      <div class="bg-secondary/20 rounded p-2">
+        <div class="flex items-center gap-1">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-xs checkbox-secondary"
+            checked={@game_state.my.amp.active}
+            phx-click="toggle_amp"
+          />
+          <span class="text-xs font-semibold">Amp</span>
+          <div class="flex items-center gap-0.5 ml-auto shrink-0">
+            <button
+              type="button"
+              class="btn btn-xs btn-circle btn-error"
+              phx-click="change_amp"
+              phx-value-delta="-1"
+            >
+              -
+            </button>
+            <span class="text-xs font-bold w-3 text-center">{@game_state.my.amp.count}</span>
+            <button
+              type="button"
+              class="btn btn-xs btn-circle btn-success"
+              phx-click="change_amp"
+              phx-value-delta="1"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      </div>
+
       <%!-- Go Again --%>
       <div class="bg-success/20 rounded p-2">
         <div class="flex items-center gap-1 mb-1">
@@ -315,29 +347,33 @@ defmodule TabletopWeb.GameComponents do
         </ul>
       </div>
 
-      <button type="button" class="btn btn-success" phx-click="reset_chain">Reset Chain</button>
+      <%!-- Custom Counters (tinted block, styled like Go Again) --%>
+      <div class="bg-yellow-300/30 rounded p-2">
+        <form phx-submit="add_custom_counter" class="flex items-center gap-1">
+          <input
+            type="text"
+            name="name"
+            placeholder="Counter…"
+            maxlength={24}
+            class="input input-bordered input-xs flex-1 min-w-0 text-xs"
+          />
+          <button
+            type="submit"
+            class="btn btn-xs btn-square bg-yellow-400 hover:bg-yellow-500 text-yellow-950 border-yellow-500"
+            aria-label="Add custom counter"
+          >
+            <.icon name="hero-plus" class="size-3" />
+          </button>
+        </form>
+      </div>
 
       <div class="flex-1"></div>
-
-      <form phx-change="search_card" phx-submit="search_card" onsubmit="return false" class="relative">
-        <input
-          type="text"
-          placeholder="Search card..."
-          phx-debounce="1000"
-          name="query"
-          class="input input-bordered input-sm w-full pr-7 text-xs"
-        />
-        <.icon
-          name="hero-magnifying-glass"
-          class="size-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-40 pointer-events-none"
-        />
-      </form>
 
       <%!-- Create Proxy Token --%>
       <div class="relative">
         <button
           type="button"
-          class="btn btn-sm w-full bg-emerald-300 hover:bg-emerald-400 text-emerald-950 border-emerald-400"
+          class="btn w-full text-xs bg-emerald-300 hover:bg-emerald-400 text-emerald-950 border-emerald-400"
           phx-click="toggle_dropdown"
           phx-value-name="create_proxy_token"
         >
@@ -399,6 +435,22 @@ defmodule TabletopWeb.GameComponents do
           <% end %>
         </ul>
       </div>
+
+      <form phx-change="search_card" phx-submit="search_card" onsubmit="return false" class="relative">
+        <input
+          type="text"
+          placeholder="Search card..."
+          phx-debounce="1000"
+          name="query"
+          class="input input-bordered input-sm w-full pr-7 text-xs"
+        />
+        <.icon
+          name="hero-magnifying-glass"
+          class="size-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-40 pointer-events-none"
+        />
+      </form>
+
+      <button type="button" class="btn btn-success" phx-click="reset_board">Reset Board</button>
 
       <%!-- Player life --%>
       <div class="bg-warning text-warning-content rounded p-2 text-center">
@@ -572,36 +624,88 @@ defmodule TabletopWeb.GameComponents do
         phx-hook={if @context in [:expanded, :setup], do: "TabletopWeb.GameComponents.DraggableTile"}
         id={"tile-#{@context}-#{tile.owner}-#{tile.id}"}
       >
-        <span class={[
-          "rounded-full bg-black/25 flex items-center justify-center shrink-0",
-          case @context do
-            :local -> "p-[1px]"
-            _ -> "p-1"
-          end
-        ]}>
-          <.icon
-            name={tile_icon(tile)}
-            class={
+        <%= cond do %>
+          <% tile.type == :custom_counter and @context in [:expanded, :setup] -> %>
+            <%!-- Interactive custom counter: optional name, then −/value/+ and remove. --%>
+            <span
+              :if={tile.label not in [nil, ""]}
+              class="uppercase tracking-wide leading-none"
+            >
+              {tile.label}
+            </span>
+            <div class="flex items-center gap-0.5">
+              <button
+                type="button"
+                class="btn btn-xs btn-circle btn-error"
+                phx-click="change_custom_counter"
+                phx-value-id={tile.id}
+                phx-value-delta="-1"
+              >
+                -
+              </button>
+              <span class="font-bold leading-none text-sm min-w-3 text-center">{tile.value}</span>
+              <button
+                type="button"
+                class="btn btn-xs btn-circle btn-success"
+                phx-click="change_custom_counter"
+                phx-value-id={tile.id}
+                phx-value-delta="1"
+              >
+                +
+              </button>
+            </div>
+            <button
+              type="button"
+              class="opacity-50 hover:opacity-100 shrink-0 ml-0.5"
+              phx-click="remove_custom_counter"
+              phx-value-id={tile.id}
+              aria-label="Remove counter"
+            >
+              <.icon name="hero-x-mark" class="size-3" />
+            </button>
+          <% nameless_counter?(tile) -> %>
+            <%!-- Read-only nameless counter: just the number, larger. --%>
+            <span class={[
+              "font-bold leading-none",
               case @context do
-                :local -> "size-2"
-                _ -> "size-3.5"
+                :local -> "text-xs"
+                _ -> "text-base"
               end
-            }
-          />
-        </span>
-        <span class="uppercase tracking-wide leading-none">{tile.label}</span>
-        <span
-          :if={Map.get(tile, :value)}
-          class={[
-            "font-bold leading-none ml-0.5",
-            case @context do
-              :local -> "text-[10px]"
-              _ -> "text-sm"
-            end
-          ]}
-        >
-          {tile.value}
-        </span>
+            ]}>
+              {tile.value}
+            </span>
+          <% true -> %>
+            <span class={[
+              "rounded-full bg-black/25 flex items-center justify-center shrink-0",
+              case @context do
+                :local -> "p-[1px]"
+                _ -> "p-1"
+              end
+            ]}>
+              <.icon
+                name={tile_icon(tile)}
+                class={
+                  case @context do
+                    :local -> "size-2"
+                    _ -> "size-3.5"
+                  end
+                }
+              />
+            </span>
+            <span class="uppercase tracking-wide leading-none">{tile.label}</span>
+            <span
+              :if={Map.get(tile, :value)}
+              class={[
+                "font-bold leading-none ml-0.5",
+                case @context do
+                  :local -> "text-[10px]"
+                  _ -> "text-sm"
+                end
+              ]}
+            >
+              {tile.value}
+            </span>
+        <% end %>
         <.tile_hover_preview :if={@context != :local} tile={tile} />
       </div>
     <% end %>
@@ -643,6 +747,9 @@ defmodule TabletopWeb.GameComponents do
 
           const onPointerDown = (e) => {
             if (e.button !== 0) return
+            // Let in-tile controls (custom counter −/+/× buttons) handle their
+            // own clicks; capturing the pointer here would swallow them.
+            if (e.target.closest("button")) return
 
             startX = e.clientX
             startY = e.clientY
@@ -805,6 +912,46 @@ defmodule TabletopWeb.GameComponents do
         tiles
       end
 
+    amp = Map.get(player_state, :amp, %{active: false, count: 0})
+
+    tiles =
+      if amp.active do
+        pos = Map.get(player_state.tile_positions, "amp", %{x: 80.0, y: 65.0})
+
+        [
+          %{
+            id: "amp",
+            owner: owner,
+            label: "Amp",
+            value: amp.count,
+            x: pos.x,
+            y: pos.y,
+            type: :amp
+          }
+          | tiles
+        ]
+      else
+        tiles
+      end
+
+    tiles =
+      Enum.reduce(Map.get(player_state, :custom_counters, %{}), tiles, fn {id, counter}, acc ->
+        pos = Map.get(player_state.tile_positions, id, %{x: 50.0, y: 50.0})
+
+        [
+          %{
+            id: id,
+            owner: owner,
+            label: counter.name,
+            value: counter.count,
+            x: pos.x,
+            y: pos.y,
+            type: :custom_counter
+          }
+          | acc
+        ]
+      end)
+
     abilities_by_name =
       Map.new(Tabletop.Fab.Effects.abilities(), fn {_k, e} -> {e.name, e} end)
 
@@ -864,6 +1011,9 @@ defmodule TabletopWeb.GameComponents do
       Map.get(tile, :description_html) not in [nil, ""]
   end
 
+  defp nameless_counter?(%{type: :custom_counter, label: name}), do: name in [nil, ""]
+  defp nameless_counter?(_), do: false
+
   defp tile_color_class(%{owner: "my", type: :goagain}),
     do: "from-success to-success/70 text-success-content"
 
@@ -872,6 +1022,12 @@ defmodule TabletopWeb.GameComponents do
 
   defp tile_color_class(%{owner: "my", type: :arcane}),
     do: "from-info to-info/70 text-info-content"
+
+  defp tile_color_class(%{owner: "my", type: :amp}),
+    do: "from-secondary to-secondary/70 text-secondary-content"
+
+  defp tile_color_class(%{owner: "my", type: :custom_counter}),
+    do: "from-yellow-300 to-yellow-400/70 text-yellow-950"
 
   defp tile_color_class(%{owner: "my", type: :ability}),
     do: "from-purple-300 to-purple-400/70 text-purple-950"
@@ -894,6 +1050,12 @@ defmodule TabletopWeb.GameComponents do
   defp tile_color_class(%{owner: "opponent", type: :arcane}),
     do: "from-info/60 to-info/40 text-info-content border border-info"
 
+  defp tile_color_class(%{owner: "opponent", type: :amp}),
+    do: "from-secondary/60 to-secondary/40 text-secondary-content border border-secondary"
+
+  defp tile_color_class(%{owner: "opponent", type: :custom_counter}),
+    do: "from-yellow-300/60 to-yellow-400/40 text-yellow-950 border border-yellow-400"
+
   defp tile_color_class(%{owner: "opponent", type: :ability}),
     do: "from-purple-300/60 to-purple-400/40 text-purple-950 border border-purple-400"
 
@@ -910,6 +1072,8 @@ defmodule TabletopWeb.GameComponents do
   defp tile_icon(%{type: :goagain}), do: "hero-arrow-path"
   defp tile_icon(%{type: :physical}), do: "hero-bolt"
   defp tile_icon(%{type: :arcane}), do: "hero-sparkles"
+  defp tile_icon(%{type: :amp}), do: "hero-arrow-trending-up"
+  defp tile_icon(%{type: :custom_counter}), do: "hero-hashtag"
   defp tile_icon(_), do: "hero-star"
 
   defp tile_group_name(%{type: :ability}), do: "ability"

@@ -847,8 +847,13 @@ defmodule Tabletop.Tournaments do
     agg =
       Enum.reduce(confirmed_matches, %{}, fn m, acc ->
         acc
-        |> apply_result(m.player1_id, m.player2_id, m.confirmed_result, m.player1_games_won || 0,
-          m.player2_games_won || 0)
+        |> apply_result(
+          m.player1_id,
+          m.player2_id,
+          m.confirmed_result,
+          m.player1_games_won || 0,
+          m.player2_games_won || 0
+        )
       end)
 
     Enum.map(registrations, fn reg ->
@@ -894,28 +899,64 @@ defmodule Tabletop.Tournaments do
       "p1_win" ->
         acc
         |> update_player(p1, fn s ->
-          %{s | wins: s.wins + 1, game_wins: s.game_wins + gw1, game_losses: s.game_losses + gw2, opponents: [p2 | s.opponents]}
+          %{
+            s
+            | wins: s.wins + 1,
+              game_wins: s.game_wins + gw1,
+              game_losses: s.game_losses + gw2,
+              opponents: [p2 | s.opponents]
+          }
         end)
         |> update_player(p2, fn s ->
-          %{s | losses: s.losses + 1, game_wins: s.game_wins + gw2, game_losses: s.game_losses + gw1, opponents: [p1 | s.opponents]}
+          %{
+            s
+            | losses: s.losses + 1,
+              game_wins: s.game_wins + gw2,
+              game_losses: s.game_losses + gw1,
+              opponents: [p1 | s.opponents]
+          }
         end)
 
       "p2_win" ->
         acc
         |> update_player(p2, fn s ->
-          %{s | wins: s.wins + 1, game_wins: s.game_wins + gw2, game_losses: s.game_losses + gw1, opponents: [p1 | s.opponents]}
+          %{
+            s
+            | wins: s.wins + 1,
+              game_wins: s.game_wins + gw2,
+              game_losses: s.game_losses + gw1,
+              opponents: [p1 | s.opponents]
+          }
         end)
         |> update_player(p1, fn s ->
-          %{s | losses: s.losses + 1, game_wins: s.game_wins + gw1, game_losses: s.game_losses + gw2, opponents: [p2 | s.opponents]}
+          %{
+            s
+            | losses: s.losses + 1,
+              game_wins: s.game_wins + gw1,
+              game_losses: s.game_losses + gw2,
+              opponents: [p2 | s.opponents]
+          }
         end)
 
       "draw" ->
         acc
         |> update_player(p1, fn s ->
-          %{s | draws: s.draws + 1, game_wins: s.game_wins + gw1, game_losses: s.game_losses + gw2, opponents: [p2 | s.opponents]}
+          %{
+            s
+            | draws: s.draws + 1,
+              game_wins: s.game_wins + gw1,
+              game_losses: s.game_losses + gw2,
+              opponents: [p2 | s.opponents]
+          }
         end)
         |> update_player(p2, fn s ->
-          %{s | draws: s.draws + 1, game_wins: s.game_wins + gw2, game_losses: s.game_losses + gw1, opponents: [p1 | s.opponents]}
+          %{
+            s
+            | draws: s.draws + 1,
+              game_wins: s.game_wins + gw2,
+              game_losses: s.game_losses + gw1,
+              opponents: [p1 | s.opponents]
+          }
         end)
 
       "double_loss" ->

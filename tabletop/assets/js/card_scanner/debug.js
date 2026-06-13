@@ -15,8 +15,6 @@ let _debugPanel = null
 const HASH_KIND_COLORS = {
   art: "#8cf",
   art_flipped: "#c8f",
-  art_left: "#fa6",
-  art_right: "#fc6",
   full: "#9d9",
 }
 
@@ -87,14 +85,11 @@ export function showDebugPanel(result) {
   // Deskewed card capture — what OpenCV produced.
   if (result.cardCanvas) {
     const angle = result.angle ? ` ${Math.abs(result.angle).toFixed(1)}°` : ""
-    const layout = result.layout ? ` (${result.layout})` : ""
+    const rotated = result.originalLayout && result.originalLayout !== result.layout
+      ? ` ↻ from ${result.originalLayout}`
+      : ""
+    const layout = result.layout ? ` (${result.layout}${rotated})` : ""
     addPreview(row, result.cardCanvas, `Deskewed card${layout}${angle}`, { maxWidth: 180, maxHeight: 240 })
-  }
-
-  // Title-bar capture — the region fed to OCR (vertical layout only).
-  if (result.titleCanvas) {
-    const ocrText = result.text ? ` "${result.text.slice(0, 40)}"` : ""
-    addPreview(row, result.titleCanvas, `Title (OCR)${ocrText}`, { maxWidth: 220, maxHeight: 60 })
   }
 
   // One preview per pHash region.
@@ -119,7 +114,10 @@ export function showDebugPanel(result) {
   let html = `<div style="font-weight: 600; margin-bottom: 3px; opacity: 0.8;">Detection signals</div>`
 
   if (result.layout) {
-    html += `<div style="margin-left: 8px;"><span style="color:#8cf">●</span> Layout: <b>${result.layout}</b></div>`
+    const rotated = result.originalLayout && result.originalLayout !== result.layout
+      ? ` (rotated from ${result.originalLayout})`
+      : ""
+    html += `<div style="margin-left: 8px;"><span style="color:#8cf">●</span> Layout: <b>${result.layout}</b>${rotated}</div>`
   }
 
   if (result.orientation) {
@@ -149,17 +147,22 @@ export function showDebugPanel(result) {
 }
 
 /**
- * Draw a quadrilateral outline over the detected card corners.
- * quad: array of 4 {x, y} points in the detect-region's canvas pixel space.
- * detectRegion: {sx, sy} offset of the detect region in canvas pixels.
+ * Draw a rounded-corner outline over the detected card quad. Shown for every
+ * scan (not gated on debug mode) — gives the player visual confirmation of
+ * what region was recognised, including any expansion from retry attempts.
+ *
+ *   quad: 4 {x, y} points in the detect-region's canvas pixel space (the
+ *         post-expansion source corners — i.e. the actual region warped).
+ *   detectRegion: {sx, sy} offset of the detect region in canvas pixels.
  */
-export function showCardQuad(canvasRect, quad, detectRegion, scaleX, scaleY, isFlipped) {
+export function drawCardBorder(canvasRect, quad, detectRegion, scaleX, scaleY, isFlipped) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
   svg.style.cssText = `
     position: fixed;
     left: ${canvasRect.left}px; top: ${canvasRect.top}px;
     width: ${canvasRect.width}px; height: ${canvasRect.height}px;
     pointer-events: none; z-index: 9998; overflow: visible;
+    transition: opacity 1s ease-out;
   `
 
   const points = quad.map(({ x, y }) => {
@@ -169,33 +172,51 @@ export function showCardQuad(canvasRect, quad, detectRegion, scaleX, scaleY, isF
       cx = canvasRect.width - cx
       cy = canvasRect.height - cy
     }
-    return `${cx},${cy}`
-  }).join(" ")
+    return { x: cx, y: cy }
+  })
 
-  const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon")
-  poly.setAttribute("points", points)
-  poly.setAttribute("fill", "none")
-  poly.setAttribute("stroke", "oklch(0.85 0.20 145)")
-  poly.setAttribute("stroke-width", "2")
-  poly.setAttribute("stroke-linejoin", "round")
-  svg.appendChild(poly)
-
-  const label = document.createElementNS("http://www.w3.org/2000/svg", "text")
-  const firstPt = quad[0]
-  let lx = (firstPt.x + detectRegion.sx) / scaleX
-  const ly = (firstPt.y + detectRegion.sy) / scaleY - 6
-  if (isFlipped) lx = canvasRect.width - lx
-  label.setAttribute("x", lx)
-  label.setAttribute("y", ly)
-  label.setAttribute("fill", "oklch(0.85 0.20 145)")
-  label.setAttribute("font-size", "10")
-  label.setAttribute("font-weight", "600")
-  label.setAttribute("font-family", "monospace")
-  label.textContent = "Card"
-  svg.appendChild(label)
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path")
+  path.setAttribute("d", roundedQuadPath(points, 12))
+  path.setAttribute("fill", "none")
+  path.setAttribute("stroke", "oklch(0.85 0.20 145)")
+  path.setAttribute("stroke-width", "2")
+  path.setAttribute("stroke-linejoin", "round")
+  svg.appendChild(path)
 
   document.body.appendChild(svg)
   return svg
+}
+
+// Build an SVG `d` attribute that traces the four-corner `quad` with rounded
+// corners of approximately `radius` px (clamped to half the shorter adjacent
+// edge so adjacent corners can't overlap). Each corner is replaced by a
+// quadratic Bezier between two points placed `radius` along each adjacent edge.
+function roundedQuadPath(quad, radius) {
+  const corners = quad.map((cur, i) => {
+    const prev = quad[(i + 3) % 4]
+    const next = quad[(i + 1) % 4]
+    const vIn = { x: prev.x - cur.x, y: prev.y - cur.y }
+    const vOut = { x: next.x - cur.x, y: next.y - cur.y }
+    const lenIn = Math.hypot(vIn.x, vIn.y) || 1
+    const lenOut = Math.hypot(vOut.x, vOut.y) || 1
+    const rIn = Math.min(radius, lenIn / 2)
+    const rOut = Math.min(radius, lenOut / 2)
+    return {
+      cur,
+      pIn: { x: cur.x + (vIn.x / lenIn) * rIn, y: cur.y + (vIn.y / lenIn) * rIn },
+      pOut: { x: cur.x + (vOut.x / lenOut) * rOut, y: cur.y + (vOut.y / lenOut) * rOut },
+    }
+  })
+
+  const fmt = (n) => n.toFixed(1)
+  let d = `M ${fmt(corners[0].pIn.x)} ${fmt(corners[0].pIn.y)}`
+  for (let i = 0; i < 4; i++) {
+    const c = corners[i]
+    d += ` Q ${fmt(c.cur.x)} ${fmt(c.cur.y)} ${fmt(c.pOut.x)} ${fmt(c.pOut.y)}`
+    const next = corners[(i + 1) % 4]
+    d += ` L ${fmt(next.pIn.x)} ${fmt(next.pIn.y)}`
+  }
+  return d + " Z"
 }
 
 export function showBoundingBox(_container, canvasRect, cssX, cssY, cssW, cssH, isFlipped, color, label) {

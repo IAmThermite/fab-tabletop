@@ -5,18 +5,17 @@ defmodule TabletopWeb.Plugs.SecurityHeaders do
 
   Source-list notes:
     * `script-src` allows `https://cdn.jsdelivr.net` because the card scanner
-      lazily loads tesseract.js (`assets/js/card_scanner/ocr.js`) and OpenCV.js
-      (`assets/js/card_scanner/scanner_worker.js`) from that CDN.
-    * `'wasm-unsafe-eval'` is required by OpenCV.js + tesseract.js (WASM).
+      worker (`assets/js/card_scanner/scanner_worker.js`) lazily loads OpenCV.js
+      from that CDN via `importScripts`.
+    * `'wasm-unsafe-eval'` is required by OpenCV.js (WASM).
+    * `connect-src` allows `https:` because OpenCV.js fetches `opencv_js.wasm`
+      from the CDN at runtime (`wss:` covers the LiveView / WebRTC sockets).
     * `worker-src 'self' blob:` — tesseract.js spawns its worker from a Blob URL.
     * `style-src` / `font-src` allow Google Fonts (`fonts.googleapis.com` serves
       the stylesheet, `fonts.gstatic.com` serves the woff2 files) — see the
       `<link>` in `root.html.heex`.
     * `img-src` allows the legendstory S3 bucket (card images) and `data:`
-      / `blob:` URLs used by canvas captures and tesseract.
-    * `connect-src` is intentionally permissive (`wss:` and `https:`) because
-      tesseract fetches `tesseract-core.wasm` and language traineddata from
-      external CDNs at runtime; tightening this would need the exact set.
+      / `blob:` URLs used by canvas captures.
     * COEP is intentionally omitted — the card-image S3 bucket does not send
       `Cross-Origin-Resource-Policy`, so `require-corp` would break every card.
   """

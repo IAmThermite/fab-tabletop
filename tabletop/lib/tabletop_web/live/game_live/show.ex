@@ -3,6 +3,7 @@ defmodule TabletopWeb.GameLive.Show do
 
   use TabletopWeb, :live_view
   use TabletopWeb.CardLookup
+  use TabletopWeb.GameControls
 
   alias Tabletop.Games
   alias Tabletop.Games.LeaveTimer
@@ -68,90 +69,6 @@ defmodule TabletopWeb.GameLive.Show do
 
   def handle_event("peer_disconnected", _params, socket) do
     {:noreply, assign(socket, :peer_connected, false)}
-  end
-
-  def handle_event("toggle_damage", %{"type" => type}, socket) do
-    dispatch(socket, {:toggle_damage, validate_damage_type(type)})
-  end
-
-  def handle_event("change_damage", %{"type" => type, "delta" => delta}, socket) do
-    dispatch(
-      socket,
-      {:change_damage, validate_damage_type(type), String.to_integer(delta)}
-    )
-  end
-
-  def handle_event("toggle_goagain", _params, socket) do
-    dispatch(socket, {:toggle_goagain})
-  end
-
-  def handle_event("toggle_effect", %{"type" => type, "category" => category}, socket) do
-    dispatch(socket, {:toggle_effect, category, type})
-  end
-
-  def handle_event(
-        "change_effect_count",
-        %{"type" => type, "category" => category, "delta" => delta},
-        socket
-      ) do
-    dispatch(socket, {:change_effect_count, category, type, String.to_integer(delta)})
-  end
-
-  def handle_event("change_life", %{"delta" => delta}, socket) do
-    dispatch(socket, {:change_life, String.to_integer(delta)})
-  end
-
-  def handle_event("reset_chain", _params, socket) do
-    dispatch(socket, {:reset_chain})
-  end
-
-  def handle_event(
-        "move_tile",
-        %{"tile_id" => tile_id, "x" => x, "y" => y, "owner" => owner},
-        socket
-      ) do
-    target_user_id =
-      case owner do
-        "my" -> socket.assigns.user_id
-        "opponent" -> opponent_user_id(socket.assigns)
-      end
-
-    dispatch(socket, {:move_tile, target_user_id, tile_id, to_float(x), to_float(y)})
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "abilities"}, socket) do
-    {:noreply, assign(socket, :abilities_open, !socket.assigns.abilities_open)}
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "on_hits"}, socket) do
-    new_open = !socket.assigns.on_hits_open
-
-    socket =
-      socket
-      |> assign(:on_hits_open, new_open)
-      |> assign(:create_token_open, new_open && socket.assigns.create_token_open)
-
-    {:noreply, socket}
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "create_token"}, socket) do
-    {:noreply, assign(socket, :create_token_open, !socket.assigns.create_token_open)}
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "create_proxy_token"}, socket) do
-    {:noreply, assign(socket, :create_proxy_token_open, !socket.assigns.create_proxy_token_open)}
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "proxy_tokens_panel"}, socket) do
-    {:noreply, assign(socket, :proxy_tokens_expanded, !socket.assigns.proxy_tokens_expanded)}
-  end
-
-  def handle_event("add_proxy_token", %{"type" => name}, socket) do
-    dispatch(socket, {:add_proxy_token, name})
-  end
-
-  def handle_event("remove_proxy_token", %{"type" => name}, socket) do
-    dispatch(socket, {:remove_proxy_token, name})
   end
 
   def handle_event("toggle_preview", _params, socket) do
@@ -222,6 +139,21 @@ defmodule TabletopWeb.GameLive.Show do
     {:noreply, socket}
   end
 
+  # Callback for `TabletopWeb.GameControls`: apply an action authoritatively via
+  # the game session. `move_tile` arrives with a raw owner ("my"/"opponent")
+  # which we resolve to the target user so either player's tiles can be dragged.
+  def apply_game_action(socket, {:move_tile, owner, tile_id, x, y}) do
+    target_user_id =
+      case owner do
+        "my" -> socket.assigns.user_id
+        "opponent" -> opponent_user_id(socket.assigns)
+      end
+
+    dispatch(socket, {:move_tile, target_user_id, tile_id, x, y})
+  end
+
+  def apply_game_action(socket, action), do: dispatch(socket, action)
+
   defp dispatch(socket, action) do
     case GameSession.apply_action(socket.assigns.game.id, socket.assigns.user_id, action) do
       :ok ->
@@ -256,19 +188,6 @@ defmodule TabletopWeb.GameLive.Show do
 
   defp opponent_user_id(%{user_id: user_id, user1_id: user1_id, user2_id: user2_id}) do
     if user_id == user1_id, do: user2_id, else: user1_id
-  end
-
-  defp validate_damage_type("physical"), do: :physical
-  defp validate_damage_type("arcane"), do: :arcane
-
-  defp to_float(val) when is_float(val), do: val
-  defp to_float(val) when is_integer(val), do: val * 1.0
-
-  defp to_float(val) when is_binary(val) do
-    case Float.parse(val) do
-      {f, _} -> f
-      :error -> 0.0
-    end
   end
 
   @impl true

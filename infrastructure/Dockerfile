@@ -28,6 +28,10 @@ RUN mix deps.compile
 
 # Copy application code
 COPY tabletop/priv priv
+# Bundle the precomputed card data set (from the flesh-and-blood-cards submodule)
+# into priv so `Tabletop.Release.import_cards` can seed the DB in prod. Requires
+# the submodule to be checked out in the build context (git submodule update --init).
+COPY vendor/flesh-and-blood-cards/json/english/card.json priv/cards/card.json
 COPY tabletop/lib lib
 COPY tabletop/assets assets
 COPY tabletop/rel rel
@@ -47,7 +51,7 @@ RUN mix release
 FROM ${RUNNER_IMAGE}
 
 RUN apt-get update -y && \
-    apt-get install -y libstdc++6 openssl libncurses6 locales ca-certificates imagemagick \
+    apt-get install -y libstdc++6 openssl libncurses6 locales ca-certificates \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 # Set the locale

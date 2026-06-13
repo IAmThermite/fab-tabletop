@@ -1,6 +1,7 @@
 defmodule TabletopWeb.CameraSetupLive do
   use TabletopWeb, :live_view
   use TabletopWeb.CardLookup
+  use TabletopWeb.GameControls
 
   alias Tabletop.Fab.GameState
   alias Tabletop.Games
@@ -173,7 +174,7 @@ defmodule TabletopWeb.CameraSetupLive do
     </Layouts.game>
 
     <script :type={ColocatedHook} name=".CameraSetup">
-      import { setupCardLookup, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
+      import { setupCardLookup, preloadScanner } from "@/js/card_scanner/liveview_hook.js"
       import { isDebugEnabled, setDebugEnabled } from "@/js/card_scanner/debug.js"
       import CameraRelayReceiver from "@/js/camera_relay_receiver.js"
 
@@ -396,9 +397,9 @@ defmodule TabletopWeb.CameraSetupLive do
 
           start()
 
-          // Card lookup — click on canvas to OCR card name
+          // Card lookup — click on canvas to identify the card via pHash
           const gameArea = document.getElementById("game-area")
-          preloadTesseract()
+          preloadScanner()
           setupCardLookup(this, canvasEl, gameArea)
 
           // --- Phone Camera Relay ---
@@ -552,85 +553,11 @@ defmodule TabletopWeb.CameraSetupLive do
     end
   end
 
-  def handle_event("toggle_damage", %{"type" => type}, socket) do
-    apply_action(socket, GameState.toggle_damage(my(socket), validate_damage_type(type)))
-  end
-
-  def handle_event("change_damage", %{"type" => type, "delta" => delta}, socket) do
-    apply_action(
-      socket,
-      GameState.change_damage(my(socket), validate_damage_type(type), String.to_integer(delta))
-    )
-  end
-
-  def handle_event("toggle_goagain", _params, socket) do
-    apply_action(socket, GameState.toggle_goagain(my(socket)))
-  end
-
-  def handle_event("toggle_effect", %{"type" => type, "category" => category}, socket) do
-    apply_action(socket, GameState.toggle_effect(my(socket), category, type))
-  end
-
-  def handle_event(
-        "change_effect_count",
-        %{"type" => type, "category" => category, "delta" => delta},
-        socket
-      ) do
-    apply_action(
-      socket,
-      GameState.change_effect_count(my(socket), category, type, String.to_integer(delta))
-    )
-  end
-
-  def handle_event("change_life", %{"delta" => delta}, socket) do
-    apply_action(socket, GameState.change_life(my(socket), String.to_integer(delta)))
-  end
-
-  def handle_event("reset_chain", _params, socket) do
-    apply_action(socket, GameState.reset_chain(my(socket)))
-  end
-
-  def handle_event(
-        "move_tile",
-        %{"tile_id" => tile_id, "x" => x, "y" => y, "owner" => _owner},
-        socket
-      ) do
-    apply_action(socket, GameState.move_tile(my(socket), tile_id, to_float(x), to_float(y)))
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "abilities"}, socket) do
-    {:noreply, assign(socket, :abilities_open, !socket.assigns.abilities_open)}
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "on_hits"}, socket) do
-    new_open = !socket.assigns.on_hits_open
-
-    socket =
-      socket
-      |> assign(:on_hits_open, new_open)
-      |> assign(:create_token_open, new_open && socket.assigns.create_token_open)
-
-    {:noreply, socket}
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "create_token"}, socket) do
-    {:noreply, assign(socket, :create_token_open, !socket.assigns.create_token_open)}
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "create_proxy_token"}, socket) do
-    {:noreply, assign(socket, :create_proxy_token_open, !socket.assigns.create_proxy_token_open)}
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "proxy_tokens_panel"}, socket) do
-    {:noreply, assign(socket, :proxy_tokens_expanded, !socket.assigns.proxy_tokens_expanded)}
-  end
-
-  def handle_event("add_proxy_token", %{"type" => name}, socket) do
-    apply_action(socket, GameState.add_proxy_token(my(socket), name))
-  end
-
-  def handle_event("remove_proxy_token", %{"type" => name}, socket) do
-    apply_action(socket, GameState.remove_proxy_token(my(socket), name))
+  # Callback for `TabletopWeb.GameControls`: apply the action to this page's
+  # local preview state. There is only one player on the setup screen, so
+  # `move_tile`'s owner is irrelevant (`GameState.transform/2` ignores it).
+  def apply_game_action(socket, action) do
+    apply_action(socket, GameState.transform(my(socket), action))
   end
 
   defp my(socket), do: socket.assigns.game_state.my
@@ -648,18 +575,5 @@ defmodule TabletopWeb.CameraSetupLive do
 
   defp new_preview_state do
     %{my: GameState.default_player(), opponent: GameState.default_player()}
-  end
-
-  defp validate_damage_type("physical"), do: :physical
-  defp validate_damage_type("arcane"), do: :arcane
-
-  defp to_float(val) when is_float(val), do: val
-  defp to_float(val) when is_integer(val), do: val * 1.0
-
-  defp to_float(val) when is_binary(val) do
-    case Float.parse(val) do
-      {f, _} -> f
-      :error -> 0.0
-    end
   end
 end

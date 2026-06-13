@@ -434,7 +434,7 @@ export default class WebRTCManager {
         this.canvasEl.style.width = displayW + "px"
         this.canvasEl.style.height = displayH + "px"
 
-        // Set buffer to native video resolution for sharp OCR captures
+        // Set buffer to native video resolution for sharp card captures
         if (this.canvasEl.width !== vw || this.canvasEl.height !== vh) {
           this.canvasEl.width = vw
           this.canvasEl.height = vh

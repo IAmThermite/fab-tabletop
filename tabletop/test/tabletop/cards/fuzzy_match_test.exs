@@ -22,8 +22,7 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
       face_id: attrs[:face_id],
       set_code: attrs[:set_code] || "TST",
       art_type: "regular",
-      orientation: "vertical",
-      layout_position: 10,
+      orientation: attrs[:orientation] || "vertical",
       is_canonical: true,
       image_url: attrs[:image_url] || "https://example.com/#{attrs[:face_id]}.webp",
       image_phash: attrs[:image_phash],
@@ -179,42 +178,35 @@ defmodule Tabletop.Cards.FuzzyMatchTest do
              "Expected Near Card to rank before Far Card, got: #{inspect(names)}"
     end
 
-    test "horizontal cards: matches via either half (4-way LEAST)" do
-      # A horizontal card has two stored hashes; the player can hold the card
-      # either way up, so the captured halves may correspond to either stored
-      # half. The query should match regardless of order.
-      {:ok, card} =
-        %Card{}
-        |> Card.changeset(%{
-          name: "Split Card",
-          external_card_id: "split-1",
-          pitch: 3
-        })
-        |> Repo.insert()
+    test "horizontal cards match via art/full like vertical cards" do
+      # Horizontal cards are rotated to portrait by the scanner and stored the
+      # same way as vertical cards (single `image_phash` + `image_phash_full`).
+      # There are no left/right halves; the 180° flip is absorbed by sending
+      # both `art` and `art_flipped`.
+      art_hash = 0x0F0F0F0F0F0F0F0F
+      full_hash = 0x33333333_33333333
 
-      %CardPrint{}
-      |> CardPrint.changeset(%{
-        card_id: card.id,
-        face_id: "SPLIT001",
-        set_code: "TST",
-        art_type: "regular",
+      insert_card_with_print(%{
+        name: "Landscape Card",
+        external_card_id: "landscape-1",
+        face_id: "LAND001",
         orientation: "horizontal",
-        layout_position: 10,
-        is_canonical: true,
-        image_url: "https://example.com/split.webp",
-        image_phash_left: 1_111_111_111_111_111,
-        image_phash_right: 2_222_222_222_222_222
+        image_phash: art_hash,
+        image_phash_full: full_hash
       })
-      |> Repo.insert!()
 
-      # Player held card flipped: their captured "left" matches stored "right".
-      results =
-        Cards.find_by_p_hash_similarity(%{
-          art_left: 2_222_222_222_222_222,
-          art_right: 1_111_111_111_111_111
-        })
+      # Matches via the art arm.
+      assert Cards.find_by_p_hash_similarity(%{art: art_hash})
+             |> Enum.map(& &1.card.name) == ["Landscape Card"]
 
-      assert Enum.map(results, & &1.card.name) == ["Split Card"]
+      # Player held the card the other way up — the flipped art still resolves
+      # it via the art_flipped arm (matched against the same stored image_phash).
+      assert Cards.find_by_p_hash_similarity(%{art_flipped: art_hash})
+             |> Enum.map(& &1.card.name) == ["Landscape Card"]
+
+      # And the whole-card arm resolves it too.
+      assert Cards.find_by_p_hash_similarity(%{full: full_hash})
+             |> Enum.map(& &1.card.name) == ["Landscape Card"]
     end
   end
 

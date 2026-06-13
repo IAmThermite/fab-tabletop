@@ -159,35 +159,10 @@ defmodule Tabletop.Games.GameSession do
   defp side_for(%{user2_id: id}, id) when not is_nil(id), do: {:ok, :user2}
   defp side_for(_, _), do: {:error, :unknown_user}
 
-  defp dispatch({:move_tile, _target, tile_id, x, y}, player),
-    do: GameState.move_tile(player, tile_id, x, y)
-
-  defp dispatch({:toggle_damage, type}, player), do: GameState.toggle_damage(player, type)
-
-  defp dispatch({:change_damage, type, delta}, player),
-    do: GameState.change_damage(player, type, delta)
-
-  defp dispatch({:toggle_goagain}, player), do: GameState.toggle_goagain(player)
-
-  defp dispatch({:toggle_effect, category, name}, player),
-    do: GameState.toggle_effect(player, category, name)
-
-  defp dispatch({:change_effect_count, category, name, delta}, player),
-    do: GameState.change_effect_count(player, category, name, delta)
-
-  defp dispatch({:add_proxy_token, name}, player),
-    do: GameState.add_proxy_token(player, name)
-
-  defp dispatch({:remove_proxy_token, name}, player),
-    do: GameState.remove_proxy_token(player, name)
-
-  defp dispatch({:change_life, delta}, player), do: GameState.change_life(player, delta)
-  defp dispatch({:reset_chain}, player), do: GameState.reset_chain(player)
-
-  defp dispatch({:set_media, kind, value}, player),
-    do: GameState.set_media(player, kind, value)
-
-  defp dispatch(_, _), do: {:error, :unknown_action}
+  # The action → transform mapping lives in `GameState.transform/2` so it is
+  # shared with the camera-setup preview; here we just resolve the target side
+  # (above) and apply.
+  defp dispatch(action, player), do: GameState.transform(player, action)
 
   defp broadcast_update(game_id, target_side, delta, actor_user_id) do
     Phoenix.PubSub.broadcast(

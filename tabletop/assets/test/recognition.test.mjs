@@ -68,16 +68,6 @@ function leastDistance(computed, stored) {
         recordPairing(kind, "image_phash",
           Number(hammingDistance(v, BigInt(stored.image_phash))))
       }
-    } else if (kind === "art_left" || kind === "art_right") {
-      // 4-way cross-product: client {left, right} × stored {left, right}
-      if (stored.image_phash_left != null) {
-        recordPairing(kind, "image_phash_left",
-          Number(hammingDistance(v, BigInt(stored.image_phash_left))))
-      }
-      if (stored.image_phash_right != null) {
-        recordPairing(kind, "image_phash_right",
-          Number(hammingDistance(v, BigInt(stored.image_phash_right))))
-      }
     } else if (kind === "full") {
       if (stored.image_phash_full != null) {
         recordPairing(kind, "image_phash_full",

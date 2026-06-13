@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Flesh and Blood Tabletop — a Phoenix LiveView web app letting two FaB players meet online and play via webcam. The Elixir app lives in [tabletop/](tabletop/); [infrastructure/](infrastructure/) holds the Fly.io Dockerfile and TURN config.
 
-Toolchain pins live in [.tool-versions](.tool-versions): Elixir 1.19.5 / Erlang 28.3.1 / Node 24.11.1. Image processing requires `imagemagick` and OpenCV (via `:evision`) at runtime.
+Toolchain pins live in [.tool-versions](.tool-versions): Elixir 1.19.5 / Erlang 28.3.1 / Node 24.11.1. There is no server-side image processing: card pHashes are imported precomputed (see Card importer) and the scanner's OpenCV runs in-browser (`opencv.js`), so no `imagemagick`/`:evision` is needed at runtime.
 
 ## Commands
 
@@ -52,14 +52,14 @@ Per active game, a single [Tabletop.Games.GameSession](tabletop/lib/tabletop/gam
 
 The cards data model is intentionally split into two tables — match the right one to the right job or queries get awkward. Flesh and Blood cards have multiple prints for one card, as denoted by their `set_code` and `print`. We split these out based on the rules in [Tabletop.Cards.Importer](tabletop/lib/tabletop/cards/importer.ex).
 
-- **[Card](tabletop/lib/tabletop/cards/card.ex)** — the *gameplay* entity. Identified by `external_card_id`; carries `name`, `pitch`, and two derived fields `normalized_name` + `tokens` that the `Card.changeset/2` populates via `OcrNormalizer` on every name change. These two are what the OCR fuzzy matcher hits (Postgres `similarity` + token-array overlap + `dmetaphone`).
-- **[CardPrint](tabletop/lib/tabletop/cards/card_print.ex)** — a *physical printing/face*. `belongs_to :card`, identified by `face_id` (unique). Holds `set_code`, `art_type`, `orientation`, `layout_position`, `image_url`, the detected `art_bbox`, and up to four pHashes (`image_phash`, `image_phash_left`, `image_phash_right`, `image_phash_full`). Foil/regular pairs collapse to one print (regular preferred) — see importer dedup.
+- **[Card](tabletop/lib/tabletop/cards/card.ex)** — the *gameplay* entity. Identified by `external_card_id`; carries `name`, `pitch`, and two derived fields `normalized_name` + `tokens` that the `Card.changeset/2` populates via `OcrNormalizer` on every name change. These two back the **manual name-search** matcher (Postgres `similarity` + token-array overlap + `dmetaphone`); `normalized_name` is also the pitch-variant grouping key. (Webcam OCR was removed — scanning is pHash-only.)
+- **[CardPrint](tabletop/lib/tabletop/cards/card_print.ex)** — a *physical printing/face*. `belongs_to :card`, identified by `face_id` (unique). Holds `set_code`, `art_type`, `orientation`, `image_url`, and two pHashes (`image_phash` for the art crop, `image_phash_full` for the whole card). Foil/regular pairs collapse to one print (regular preferred) — see importer dedup.
 
 Each card has 1..N prints. `is_canonical` marks one print per card as the display default (regular front face at the standard layout position).
 
 **Lookup rules — keep these straight:**
-- **pHash match** (the in-game scanner) queries `card_prints` via `Cards.find_by_p_hash_similarity/1`. Result is up to 5 `%CardPrint{}` rows preloaded with `:card`. The query OR-s across seven arms (art / art_flipped / art_left × image_phash_left|right / art_right × image_phash_left|right / full); horizontal cards get a 4-way left/right cross-check so the player's 180° flip is absorbed without storing a flipped copy.
-- **OCR / text match** (fallback) queries `cards` via `Cards.fuzzy_match_name/1` and returns 5 `%Card{}` rows with `card_prints` preloaded *filtered to canonical-only*, so the LiveView can show one image per card without paging through every printing.
+- **pHash match** (the in-game scanner) queries `card_prints` via `Cards.find_by_p_hash_similarity/1`. Result is up to 5 `%CardPrint{}` rows preloaded with `:card`. The query OR-s across three arms (`art` and `art_flipped` vs `image_phash`, `full` vs `image_phash_full`) with per-kind Hamming thresholds. Horizontal cards are rotated to portrait by the scanner and matched exactly like vertical cards; the `art`/`art_flipped` pair absorbs the player's 180° flip without storing a flipped copy.
+- **Name search** (the manual `search_card` box, *not* OCR) queries `cards` via `Cards.fuzzy_match_name/1` and returns 5 `%Card{}` rows with `card_prints` preloaded *filtered to canonical-only*, so the LiveView can show one image per card without paging through every printing.
 - **Pitch variants** — `Cards.find_pitch_variants/2` groups by `normalized_name`, returns one `Card` per distinct pitch, each preloaded with a canonical print biased toward `preferred_set_code`. Use this when surfacing the "this card exists at red/yellow/blue" alternates.
 - `Card.canonical_print/2` is the right helper for "pick one print to show" when you already have a card in hand — it requires `card_prints` to be preloaded and returns `nil` otherwise (callers keep their own `card_print` as a fallback).
 
@@ -69,23 +69,25 @@ The importer always inserts the `Card` first, then upserts prints under it keyed
 
 Happens **in the browser** in a Web Worker, not in Elixir. Pipeline lives in [tabletop/assets/js/card_scanner/](tabletop/assets/js/card_scanner/) and is bundled by the `scanner_worker` esbuild target:
 
-1. OpenCV (in-browser) finds the card bounding box; predetermined offsets locate art and title regions.
-2. A 64-bit pHash of the art is computed ([p_hash.js](tabletop/assets/js/card_scanner/p_hash.js)); tesseract.js OCR runs on the title ([ocr.js](tabletop/assets/js/card_scanner/ocr.js)).
-3. The hash + OCR text are sent to the LiveView, which matches against `card_prints` (pHash, with per-kind Hamming thresholds — see comments in [Tabletop.Cards](tabletop/lib/tabletop/cards.ex)) and falls back to fuzzy text match on `cards` using Postgres `similarity` + `dmetaphone`.
+1. OpenCV (in-browser) finds the card bounding box and deskews it; a horizontal capture is rotated to portrait so everything downstream is treated as vertical. Predetermined offsets locate the art region.
+2. A 64-bit pHash of the art (and its 180°-flipped variant) plus a whole-card pHash are computed ([p_hash.js](tabletop/assets/js/card_scanner/p_hash.js)). There is no OCR — recognition is pHash-only.
+3. The hashes are sent to the LiveView, which matches against `card_prints` (pHash, with per-kind Hamming thresholds — see comments in [Tabletop.Cards](tabletop/lib/tabletop/cards.ex)). `open_card` replies `{matched: boolean}`; on a miss the client retries a few times, each time growing the deskewed capture region (`REGION_EXPAND_STEP`) so sleeves/borders matter less. If it still misses, nothing opens; the player can type the name into the search box, which fuzzy-matches `cards` via `similarity` + `dmetaphone`.
 
-The Elixir-side server-only equivalents — [Tabletop.Cards.ArtBboxDetector](tabletop/lib/tabletop/cards/art_bbox_detector.ex), [PHash](tabletop/lib/tabletop/cards/p_hash.ex), [OcrNormalizer](tabletop/lib/tabletop/cards/ocr_normalizer.ex) — are used by the importer below when ingesting card data.
+The Elixir-side server equivalents — [PHash](tabletop/lib/tabletop/cards/p_hash.ex) (the reference hash implementation; now used only by tests and `hamming_distance/2` for the live match display, since import hashes are precomputed) and [OcrNormalizer](tabletop/lib/tabletop/cards/ocr_normalizer.ex) (name normalization for search, despite the legacy name) — back the match/search paths. The importer below ingests precomputed pHashes, so it no longer crops or hashes images.
 
 ### Card importer
 
-[Tabletop.Cards.Importer](tabletop/lib/tabletop/cards/importer.ex) pulls the card database from cardvault (fabtcg). It's a deliberate **three-stage offline pipeline**, not a live sync — runs ad hoc from `iex` (see [scripts/smoke_importer.exs](tabletop/scripts/smoke_importer.exs) for a sample invocation):
+[Tabletop.Cards.Importer](tabletop/lib/tabletop/cards/importer.ex) loads the card database from the **flesh-and-blood-cards** data set, vendored as a git submodule at `vendor/flesh-and-blood-cards` (tracking branch `feature/card-art-hashes`; switch to `main` once merged). That repo ships **precomputed pHashes** (`phash_art`, `phash_full`) generated with an algorithm byte-for-byte identical to ours, so the importer does **no image downloading or hashing** — it reads `json/english/card.json`, transforms each card + printings, and inserts directly. Runs ad hoc from `iex` (`Tabletop.Cards.Importer.import_all()`); see [scripts/smoke_importer.exs](tabletop/scripts/smoke_importer.exs) for a fixture-driven sample.
 
-1. **`fetch_raw_card_list/2`** — pages the cardvault advanced-search endpoint into `priv/cards/raw/api.cardvault.fabtcg.com-<n>.json` (clears the dir first).
-2. **`import_and_generate/1`** — for each raw page, fetches per-card detail, picks one face per `(set_code, art_type, layout_position)` (regular finish preferred over foil), detects the art bbox with OpenCV, computes pHashes (full-art + per-half for double-face/oriented layouts), and writes a snapshot to `priv/cards/generated/cards-<n>.json`. Two `Task.async_stream` stages (`@fetch_concurrency` 10, `@phash_concurrency` 15) gate concurrency. If `insert: true` (default) it also writes rows immediately.
-3. **`import_from_generated_data/0`** — replays the JSON snapshots into Postgres. **Idempotent**: skips cards whose `external_card_id` is already present and prints by `face_id`. This is the path to use when re-hydrating a fresh DB without re-downloading every image.
+- **`import_all/1`** — reads the source JSON (decoded with plain string keys, *not* `:atoms!`), transforms, inserts. **Idempotent** on `cards.external_card_id` and `card_prints.face_id`.
+- **Source path** resolves via `source_path/0`: a release bundles the file into `priv/cards/card.json` (copied from the submodule by the [Dockerfile](infrastructure/Dockerfile)); dev falls back to the submodule working tree. Override with the `:card_source_path` app env or `import_all(source: ...)`.
 
-Two non-obvious bits worth knowing before changing it:
-- The snapshot JSON is decoded with `Jason.decode(..., keys: :atoms!)`, which only converts to *already-loaded* atoms. Every key referenced is intentionally present in `Card`, `CardPrint`, or `ArtBboxDetector` so they're loaded at compile time — adding a new field requires referencing the atom somewhere in those modules first, or the importer will crash on existing snapshots.
-- pHash shape varies by face: a normal face gets `image_phash` + `image_phash_full`; a face whose bbox detector returns `halves: [left, right | _]` gets `image_phash_left` + `image_phash_right` + `image_phash_full` (no single `image_phash`). The Hamming-distance match in [Tabletop.Cards](tabletop/lib/tabletop/cards.ex) expects to OR across these arms — keep that contract if you add new hash kinds.
+Mapping rules worth knowing before changing it:
+- **`face_id` ← printing `unique_id`** (globally unique). The shorter `id` (e.g. `"MST131"`) is *not* image-unique across editions/foilings — don't key on it.
+- **Foiling dedup is by image identity**: printings sharing a `phash_full` collapse to one print (standard `"S"` preferred); a cold-foil print whose image genuinely differs survives as its own print. Exactly one print per card is marked `is_canonical` (regular art, standard foiling, earliest in source order).
+- **`art_type`**: `[] → "regular"`, contains `"FA" → "full_art"`, else `"alternate"`. Only drives display + canonical selection — full-art prints still match because the source hashes them on the same regular art rect the scanner uses.
+- **Drop rules**: imageless printings are dropped (changeset requires `image_url`); a card with no imaged prints is skipped; horizontal prints have no `phash_art` so `image_phash` is `nil` (full arm still matches). `image_phash` (art) + `image_phash_full` (whole card) remain the two match arms in [Tabletop.Cards](tabletop/lib/tabletop/cards.ex) — keep that contract.
+- **Bump card data**: `git submodule update --remote vendor/flesh-and-blood-cards`, commit the moved gitlink, then re-run `import_all/1`. CI/deploy must `git submodule update --init` before the Docker build.
 
 ### Routing & auth
 

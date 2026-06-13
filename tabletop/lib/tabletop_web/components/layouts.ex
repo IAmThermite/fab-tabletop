@@ -284,7 +284,6 @@ defmodule TabletopWeb.Layouts do
 
       <button
         class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="system"
       >
         <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
@@ -292,7 +291,6 @@ defmodule TabletopWeb.Layouts do
 
       <button
         class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="cupcake"
       >
         <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
@@ -300,7 +298,6 @@ defmodule TabletopWeb.Layouts do
 
       <button
         class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="halloween"
       >
         <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />

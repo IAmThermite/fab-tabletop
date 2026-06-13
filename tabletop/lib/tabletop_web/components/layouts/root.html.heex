@@ -17,7 +17,7 @@
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
-    <script>
+    <script nonce={@csp_nonce}>
       (() => {
         const setTheme = (theme) => {
           if (theme === "system") {
@@ -33,7 +33,14 @@
         }
         window.addEventListener("storage", (e) => e.key === "phx:theme" && setTheme(e.newValue || "system"));
         
-        window.addEventListener("phx:set-theme", (e) => setTheme(e.target.dataset.phxTheme));
+        // Native delegated click handler rather than a LiveView JS.dispatch command:
+        // the theme toggle also renders on dead views (e.g. /about) where LiveSocket
+        // never connects, so a phx-click would be inert there. closest() handles
+        // clicks that land on the button's inner icon.
+        document.addEventListener("click", (e) => {
+          const button = e.target.closest("[data-phx-theme]");
+          if (button) setTheme(button.dataset.phxTheme);
+        });
       })();
     </script>
   </head>

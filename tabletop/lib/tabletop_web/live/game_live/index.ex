@@ -194,6 +194,15 @@ defmodule TabletopWeb.GameLive.Index do
               :if={@current_scope}
               class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4"
             >
+              <button
+                :if={@last_game}
+                type="button"
+                phx-click="quick_match"
+                class="btn btn-sm btn-outline w-full mb-4"
+              >
+                ⚡ Quick match — reuse last game
+              </button>
+
               <.form
                 for={@form}
                 id="create-game-form"
@@ -256,23 +265,111 @@ defmodule TabletopWeb.GameLive.Index do
             </p>
           </div>
 
-          <%!-- Open games --%>
+          <%!-- Live activity --%>
           <div>
-            <h2 class="text-2xl font-bold mb-4">Open games</h2>
+            <h2 class="text-2xl font-bold mb-4">Live activity</h2>
 
-            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
-              <div class="flex items-baseline gap-2">
-                <span class="text-3xl font-bold">{@open_games_count}</span>
-                <span class="text-zinc-600 dark:text-zinc-400">
-                  {if @open_games_count == 1,
-                    do: "game waiting for an opponent",
-                    else: "games waiting for an opponent"}
-                </span>
+            <div class="space-y-4">
+              <%!-- Open games, broken down by format --%>
+              <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
+                <div class="flex items-baseline gap-2">
+                  <span class="text-3xl font-bold">{@activity.open_total}</span>
+                  <span class="text-zinc-600 dark:text-zinc-400">
+                    {if @activity.open_total == 1,
+                      do: "game waiting for an opponent",
+                      else: "games waiting for an opponent"}
+                  </span>
+                </div>
+
+                <div :if={@activity.open_total > 0} class="mt-3 space-y-1.5">
+                  <div
+                    :for={{label, format} <- Game.format_options()}
+                    :if={Map.get(@activity.open_by_format, format, 0) > 0}
+                    class="flex items-center justify-between text-sm"
+                  >
+                    <span class="text-zinc-600 dark:text-zinc-400">{label}</span>
+                    <span class="badge badge-sm badge-neutral">
+                      {Map.get(@activity.open_by_format, format, 0)}
+                    </span>
+                  </div>
+                </div>
+
+                <p :if={@activity.open_total == 0} class="mt-3 text-zinc-600 dark:text-zinc-400">
+                  Create or join a game of Flesh and Blood to get started.
+                  Set up your hero, share your decklist, and battle your opponent with live video chat.
+                </p>
               </div>
-              <p class="mt-3 text-zinc-600 dark:text-zinc-400">
-                Create or join a game of Flesh and Blood to get started.
-                Set up your hero, share your decklist, and battle your opponent with live video chat.
-              </p>
+
+              <%!-- Players in game / games in progress --%>
+              <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
+                <div class="grid grid-cols-2 gap-4 text-center">
+                  <div>
+                    <div class="text-3xl font-bold">{@activity.active_games}</div>
+                    <div class="text-sm text-zinc-600 dark:text-zinc-400">
+                      {if @activity.active_games == 1,
+                        do: "game in progress",
+                        else: "games in progress"}
+                    </div>
+                  </div>
+                  <div>
+                    <div class="flex items-center justify-center gap-2">
+                      <span
+                        :if={@activity.active_players > 0}
+                        class="inline-block w-2 h-2 rounded-full bg-success animate-pulse"
+                      />
+                      <span class="text-3xl font-bold">{@activity.active_players}</span>
+                    </div>
+                    <div class="text-sm text-zinc-600 dark:text-zinc-400">
+                      {if @activity.active_players == 1,
+                        do: "player in a game",
+                        else: "players in a game"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <%!-- Popular heroes by format, last 7 days --%>
+              <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
+                <h3 class="font-semibold mb-3">
+                  Popular heroes <span class="text-xs font-normal text-zinc-500">· last 7 days</span>
+                </h3>
+
+                <div :if={@popular_heroes_any?} class="space-y-3">
+                  <div
+                    :for={{label, format} <- Game.format_options()}
+                    :if={Map.get(@activity.popular_heroes, format, []) != []}
+                  >
+                    <div class="text-xs uppercase tracking-wide text-zinc-500 mb-1.5">
+                      {label}
+                    </div>
+                    <div class="space-y-1.5">
+                      <div
+                        :for={{hero, count} <- Map.get(@activity.popular_heroes, format, [])}
+                        class="flex items-center gap-2"
+                      >
+                        <img
+                          :if={Heroes.known?(hero)}
+                          src={Heroes.icon_path(hero)}
+                          alt={Heroes.name(hero)}
+                          class="w-6 h-6 rounded-full bg-base-200 shrink-0"
+                        />
+                        <span class="text-sm truncate">{Heroes.name(hero) || hero}</span>
+                        <span class="ml-auto text-xs text-zinc-500">{count}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <p :if={!@popular_heroes_any?} class="text-sm text-zinc-500">
+                  No heroes chosen yet this week.
+                </p>
+              </div>
+
+              <%!-- Tournaments land here once events ship --%>
+              <div class="border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg p-4 text-center">
+                <div class="text-sm font-semibold text-zinc-600 dark:text-zinc-400">Tournaments</div>
+                <div class="text-xs text-zinc-500 mt-1">Coming soon</div>
+              </div>
             </div>
           </div>
         </div>
@@ -337,7 +434,9 @@ defmodule TabletopWeb.GameLive.Index do
       |> assign(:language_filter, MapSet.new())
       |> assign_form(scope)
       |> assign_current_game(scope)
+      |> assign_last_game(scope)
       |> assign_games()
+      |> assign_activity()
 
     {:ok, socket}
   end
@@ -372,6 +471,33 @@ defmodule TabletopWeb.GameLive.Index do
      socket
      |> assign(:hero_options, hero_options)
      |> assign(form: to_form(changeset, action: :validate))}
+  end
+
+  # Seed the create form from the user's last game so they can rematch with one
+  # extra click. We only fill the form — the user still presses Start to create.
+  def handle_event("quick_match", _params, socket) do
+    case socket.assigns.last_game do
+      nil ->
+        {:noreply, socket}
+
+      last ->
+        scope = socket.assigns.current_scope
+
+        game = %Game{
+          user_id: scope.user.id,
+          format: last.format,
+          language: last.language,
+          title: last.title,
+          hero: last.hero,
+          decklist: last.decklist
+        }
+
+        {:noreply,
+         socket
+         |> assign(:game, game)
+         |> assign(:hero_options, Heroes.options_for(game.format))
+         |> assign(:form, to_form(Games.change_game(scope, game)))}
+    end
   end
 
   def handle_event("create", %{"game" => game_params}, socket) do
@@ -489,7 +615,9 @@ defmodule TabletopWeb.GameLive.Index do
     {:noreply,
      socket
      |> assign_current_game(socket.assigns.current_scope)
-     |> assign_games()}
+     |> assign_last_game(socket.assigns.current_scope)
+     |> assign_games()
+     |> assign_activity()}
   end
 
   defp assign_current_game(socket, %Scope{} = scope) do
@@ -498,6 +626,10 @@ defmodule TabletopWeb.GameLive.Index do
 
   defp assign_current_game(socket, nil) do
     assign(socket, :current_game, nil)
+  end
+
+  defp assign_last_game(socket, scope) do
+    assign(socket, :last_game, Games.get_last_created_game(scope))
   end
 
   defp assign_games(socket) do
@@ -522,8 +654,18 @@ defmodule TabletopWeb.GameLive.Index do
 
     socket
     |> assign(:grouped_games, grouped)
-    |> assign(:open_games_count, length(all_games))
     |> assign(:any_games?, games != [])
+  end
+
+  defp assign_activity(socket) do
+    activity = Games.activity_stats()
+
+    popular_heroes_any? =
+      Enum.any?(activity.popular_heroes, fn {_format, heroes} -> heroes != [] end)
+
+    socket
+    |> assign(:activity, activity)
+    |> assign(:popular_heroes_any?, popular_heroes_any?)
   end
 
   defp present?(value), do: is_binary(value) and String.trim(value) != ""

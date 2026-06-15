@@ -152,21 +152,27 @@ defmodule TabletopWeb.Layouts do
 
     ~H"""
     <footer class="border-t border-base-300 bg-base-200/40">
-      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm">
-        <span class="font-display font-bold text-base-content/70">FaB Tabletop</span>
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 space-y-4 text-sm">
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <span class="font-display font-bold text-base-content/70">FaB Tabletop</span>
 
-        <nav class="flex items-center gap-4 text-base-content/70">
-          <.link navigate={~p"/about"} class="link link-hover">About</.link>
-          <a href={@discord_url} target="_blank" rel="noopener noreferrer" class="link link-hover">
-            Discord
-          </a>
-          <a href={@github_url} target="_blank" rel="noopener noreferrer" class="link link-hover">
-            GitHub
-          </a>
-          <a href={@patreon_url} target="_blank" rel="noopener noreferrer" class="link link-hover">
-            Patreon
-          </a>
-        </nav>
+          <nav class="flex items-center gap-4 text-base-content/70">
+            <.link navigate={~p"/about"} class="link link-hover">About</.link>
+            <a href={@discord_url} target="_blank" rel="noopener noreferrer" class="link link-hover">
+              Discord
+            </a>
+            <a href={@github_url} target="_blank" rel="noopener noreferrer" class="link link-hover">
+              GitHub
+            </a>
+            <a href={@patreon_url} target="_blank" rel="noopener noreferrer" class="link link-hover">
+              Patreon
+            </a>
+          </nav>
+        </div>
+
+        <p class="text-xs leading-relaxed text-base-content/50 text-center sm:text-left">
+          FaB Tabletop is an unofficial, fan-made project and is not affiliated with, endorsed by, or sponsored by Legend Story Studios. All Flesh and Blood cards, logos, and artwork are the property of Legend Story Studios.
+        </p>
       </div>
     </footer>
     """

@@ -10,6 +10,7 @@ erl_crash.dump
 *.beam
 /config/*.secret.exs
 .elixir_ls/
+.DS_Store
 
 # Claude Code worktrees (CLAUDE.md / settings.json under .claude/ stay tracked)
 /.claude/worktrees/

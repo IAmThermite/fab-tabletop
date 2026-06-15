@@ -424,6 +424,52 @@ defmodule Tabletop.GamesTest do
     end
   end
 
+  describe "get_last_created_game/1" do
+    import Tabletop.AccountsFixtures, only: [user_scope_fixture: 0]
+    import Tabletop.GamesFixtures
+
+    test "returns the user's created game" do
+      scope = user_scope_fixture()
+      game = game_fixture(scope)
+
+      assert Games.get_last_created_game(scope).id == game.id
+    end
+
+    test "ignores games the user only joined" do
+      creator = user_scope_fixture()
+      joiner = user_scope_fixture()
+      game = game_fixture(creator)
+      {:ok, _} = Games.join_game(joiner, game)
+
+      assert is_nil(Games.get_last_created_game(joiner))
+      assert Games.get_last_created_game(creator).id == game.id
+    end
+
+    test "returns the most recent created game when several exist" do
+      scope = user_scope_fixture()
+      old = game_fixture(scope)
+      {:ok, _} = Games.terminate_game(scope, old)
+
+      # Backdate the finished game so ordering is unambiguous, then create a new one.
+      old
+      |> Ecto.Changeset.change(inserted_at: ~U[2020-01-01 00:00:00Z])
+      |> Tabletop.Repo.update!()
+
+      new = game_fixture(scope)
+
+      assert Games.get_last_created_game(scope).id == new.id
+    end
+
+    test "returns nil for a user with no games" do
+      scope = user_scope_fixture()
+      assert is_nil(Games.get_last_created_game(scope))
+    end
+
+    test "returns nil for nil scope" do
+      assert is_nil(Games.get_last_created_game(nil))
+    end
+  end
+
   describe "list_joinable_games/2" do
     import Tabletop.AccountsFixtures, only: [user_scope_fixture: 0]
     import Tabletop.GamesFixtures
@@ -466,6 +512,82 @@ defmodule Tabletop.GamesTest do
 
       joinable = Games.list_joinable_games(scope2)
       assert Enum.any?(joinable, &(&1.id == game.id))
+    end
+  end
+
+  describe "activity_stats/1" do
+    import Tabletop.AccountsFixtures, only: [user_scope_fixture: 0]
+    import Tabletop.GamesFixtures
+
+    test "counts open games grouped by format with a matching total" do
+      game_fixture(user_scope_fixture(), %{format: :classic_constructed})
+      game_fixture(user_scope_fixture(), %{format: :classic_constructed})
+      game_fixture(user_scope_fixture(), %{format: :blitz})
+
+      stats = Games.activity_stats()
+
+      assert stats.open_by_format == %{classic_constructed: 2, blitz: 1}
+      assert stats.open_total == 3
+    end
+
+    test "excludes private and reserved games from the open counts" do
+      game_fixture(user_scope_fixture(), %{format: :classic_constructed})
+      game_fixture(user_scope_fixture(), %{format: :classic_constructed, private: true})
+
+      reserved_owner = user_scope_fixture()
+      reserver = user_scope_fixture()
+      reserved = game_fixture(reserved_owner, %{format: :blitz})
+      {:ok, _} = Games.reserve_join(reserver, reserved)
+
+      stats = Games.activity_stats()
+
+      assert stats.open_by_format == %{classic_constructed: 1}
+      assert stats.open_total == 1
+    end
+
+    test "counts active games and the players seated in them" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1)
+      {:ok, _} = Games.join_game(scope2, game)
+
+      stats = Games.activity_stats()
+
+      assert stats.active_games == 1
+      assert stats.active_players == 2
+      # An active game no longer waits for an opponent.
+      assert stats.open_total == 0
+    end
+
+    test "ranks popular heroes per format, most popular first, ignoring blank heroes" do
+      [hero1, hero2 | _] = Tabletop.Heroes.legal_for(:classic_constructed)
+
+      game_fixture(user_scope_fixture(), %{format: :classic_constructed, hero: hero1.slug})
+      game_fixture(user_scope_fixture(), %{format: :classic_constructed, hero: hero1.slug})
+      game_fixture(user_scope_fixture(), %{format: :classic_constructed, hero: hero2.slug})
+      game_fixture(user_scope_fixture(), %{format: :classic_constructed})
+
+      stats = Games.activity_stats()
+
+      assert stats.popular_heroes[:classic_constructed] == [
+               {hero1.slug, 2},
+               {hero2.slug, 1}
+             ]
+    end
+
+    test "excludes games created outside the window" do
+      [hero | _] = Tabletop.Heroes.legal_for(:classic_constructed)
+      game = game_fixture(user_scope_fixture(), %{format: :classic_constructed, hero: hero.slug})
+
+      old = DateTime.add(DateTime.utc_now(), -8 * 24 * 60 * 60, :second)
+
+      game
+      |> Ecto.Changeset.change(inserted_at: DateTime.truncate(old, :second))
+      |> Tabletop.Repo.update!()
+
+      stats = Games.activity_stats()
+
+      assert Map.get(stats.popular_heroes, :classic_constructed, []) == []
     end
   end
 end

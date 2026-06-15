@@ -101,7 +101,7 @@ defmodule TabletopWeb.GameLiveTest do
 
       assert html =~ "Games to join"
       assert html =~ "Create Game"
-      assert html =~ "Open games"
+      assert html =~ "Live activity"
     end
 
     test "shows hero and decklist on a joinable game row", %{conn: conn} do
@@ -249,6 +249,39 @@ defmodule TabletopWeb.GameLiveTest do
 
       assert html =~ "French Game"
       refute html =~ "English Game"
+    end
+
+    test "quick match is hidden until the user has a previous game", %{conn: conn} do
+      {:ok, _live, html} = live(conn, ~p"/")
+      refute html =~ "Quick match"
+    end
+
+    test "quick match seeds the create form from the last game", %{conn: conn, scope: scope} do
+      hero = hd(Tabletop.Heroes.legal_for(:classic_constructed))
+
+      game =
+        game_fixture(scope, %{
+          title: "My Rematch Deck",
+          format: :classic_constructed,
+          hero: hero.slug,
+          decklist: "https://fabrary.com/decks/abc"
+        })
+
+      {:ok, _} = Tabletop.Games.terminate_game(scope, game)
+
+      {:ok, live_view, html} = live(conn, ~p"/")
+      assert html =~ "Quick match"
+
+      filled =
+        live_view
+        |> element("button", "Quick match")
+        |> render_click()
+
+      assert filled =~ "My Rematch Deck"
+      assert filled =~ "https://fabrary.com/decks/abc"
+      # The hero preview only renders for the selected hero, so its icon path
+      # confirms the hero field was seeded too.
+      assert filled =~ Tabletop.Heroes.icon_path(hero.slug)
     end
   end
 

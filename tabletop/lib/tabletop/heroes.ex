@@ -3,9 +3,10 @@ defmodule Tabletop.Heroes do
   The selectable hero roster and per-format legality.
 
   The data is baked in from `priv/heroes.json` at compile time — there is no
-  runtime fetch and no database table. Regenerate the JSON and avatars with
-  `mix fab.import_heroes` (see `Tabletop.Heroes.Importer`) whenever the roster
-  or legality changes.
+  runtime fetch and no database table. The roster is maintained by hand: edit
+  `priv/heroes.json` and drop a matching avatar at
+  `priv/static/images/heroes/<slug>.png` whenever the roster or legality
+  changes.
 
   Heroes back the format-filtered hero dropdown on the create-game form and the
   avatars shown on game tiles. A `Game.hero` stores a hero `slug`; everything

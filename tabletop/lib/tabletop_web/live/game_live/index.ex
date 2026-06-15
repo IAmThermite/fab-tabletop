@@ -75,7 +75,7 @@ defmodule TabletopWeb.GameLive.Index do
                 :if={@current_scope}
                 type="button"
                 phx-click="open_join_private"
-                class="btn btn-sm btn-outline"
+                class="btn btn-sm btn-success"
               >
                 Join private
               </button>
@@ -180,7 +180,7 @@ defmodule TabletopWeb.GameLive.Index do
                 </div>
               </details>
 
-              <p :if={!@any_games?} class="text-sm text-zinc-500 py-1">
+              <p :if={!@any_games?} class="text-lg text-zinc-500 py-1">
                 No open games right now — create one to get started.
               </p>
             </div>
@@ -243,8 +243,8 @@ defmodule TabletopWeb.GameLive.Index do
                   class="toggle"
                   label="Private game (won't appear in the public list)"
                 />
-                <div class="flex justify-center pt-4">
-                  <.button variant="primary" phx-disable-with="Starting...">
+                <div class="pt-4">
+                  <.button class="btn btn-primary w-full" phx-disable-with="Starting...">
                     Start
                   </.button>
                 </div>

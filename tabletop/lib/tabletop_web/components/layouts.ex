@@ -69,14 +69,6 @@ defmodule TabletopWeb.Layouts do
         </div>
 
         <div class="flex items-center gap-1">
-          <.link
-            :if={@current_game}
-            navigate={~p"/games/#{@current_game}/pre-join"}
-            class="btn btn-primary btn-sm"
-          >
-            <.icon name="hero-play" class="size-4" /> Resume game
-          </.link>
-
           <.link navigate={~p"/about"} class="btn btn-ghost btn-sm">About</.link>
 
           <a

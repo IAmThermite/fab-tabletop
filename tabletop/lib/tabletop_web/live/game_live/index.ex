@@ -13,6 +13,81 @@ defmodule TabletopWeb.GameLive.Index do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-7xl">
       <div id="game-index" phx-hook=".GameIndex">
+        <%!-- Anonymous intro / marketing header. A native <details> drives the
+             collapse: open by default for logged-out visitors, collapsed for
+             logged-in users (who can reopen it from the chevron toggle). The
+             user's manual toggle sticks because `open` is rendered from
+             @current_scope, which doesn't change mid-session. --%>
+        <details
+          id="intro-header"
+          open={!@current_scope}
+          class="group mb-6 overflow-hidden rounded-box border border-base-300 bg-gradient-to-b from-base-200/60 to-base-100"
+        >
+          <summary class="flex cursor-pointer list-none select-none items-center justify-between gap-3 p-4">
+            <span class="font-display text-lg font-bold sm:text-xl">
+              Play Flesh and Blood online, face to face
+            </span>
+            <span
+              class="btn btn-ghost btn-sm btn-square shrink-0"
+              aria-label="Show or hide the intro"
+              title="Show or hide the intro"
+            >
+              <.icon
+                name="hero-chevron-down"
+                class="size-5 transition-transform duration-200 group-open:rotate-180"
+              />
+            </span>
+          </summary>
+
+          <div class="space-y-5 px-4 pb-5">
+            <%!-- One-liner + call to action --%>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p class="max-w-2xl text-base text-base-content/70">
+                Play over live webcam/phone and play a real game of Flesh and Blood —
+                with built-in life tracking, combat-chain mangement, and card scanning.
+                No download, no install, just open your browser and play.
+              </p>
+              <div class="flex shrink-0 gap-2">
+                <.link
+                  :if={!@current_scope}
+                  navigate={~p"/users/register"}
+                  class="btn btn-success"
+                >
+                  Get started — it's free
+                </.link>
+                <.link navigate={~p"/about"} class="btn btn-warning">
+                  How to play
+                </.link>
+              </div>
+            </div>
+
+            <%!-- Four screenshots in a row (two-up on mobile). Drop real captures
+                 into priv/static/images/home/ and set each :src in
+                 intro_screenshots/0; until then these render as labelled
+                 placeholders. --%>
+            <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <figure
+                :for={shot <- @intro_screenshots}
+                class="overflow-hidden rounded-box border border-base-300 bg-base-200"
+              >
+                <img
+                  :if={shot.src}
+                  src={shot.src}
+                  alt={shot.alt}
+                  class="aspect-video w-full object-cover"
+                />
+                <div
+                  :if={!shot.src}
+                  class="flex aspect-video flex-col items-center justify-center gap-1.5 p-2 text-center"
+                >
+                  <.icon name="hero-photo" class="size-6 text-base-content/30" />
+                  <span class="text-xs text-base-content/40">{shot.caption}</span>
+                </div>
+              </figure>
+            </div>
+          </div>
+        </details>
+
         <.notice_banner
           id="camera-setup-banner"
           phx-update="ignore"
@@ -86,7 +161,12 @@ defmodule TabletopWeb.GameLive.Index do
               to join a game.
             </p>
 
-            <%!-- Language filter (multi-select; no selection = show all) --%>
+            <%!-- Language filter (multi-select; no selection = show all).
+                 Hidden for now — not happy with the display/UX yet, revisit
+                 later. The :language_filter assign and the toggle/clear event
+                 handlers are left intact so re-enabling is just un-commenting
+                 the block below. --%>
+            <%!--
             <div class="flex flex-wrap items-center gap-2 mb-4">
               <span class="text-sm text-zinc-500">Language:</span>
               <button
@@ -114,6 +194,7 @@ defmodule TabletopWeb.GameLive.Index do
                 Clear
               </button>
             </div>
+            --%>
 
             <div class="space-y-3">
               <details
@@ -216,12 +297,19 @@ defmodule TabletopWeb.GameLive.Index do
                   label="Format"
                   options={Game.format_options()}
                 />
+                <%!-- Language selector hidden for now (matches the hidden lobby
+                     filter — revisit display/UX later). The value still submits
+                     via the hidden input so created games keep the user's
+                     preferred language / the default. --%>
+                <.input field={@form[:language]} type="hidden" />
+                <%!--
                 <.input
                   field={@form[:language]}
                   type="select"
                   label="Language"
                   options={Languages.options()}
                 />
+                --%>
                 <.input field={@form[:title]} type="text" label="Game Title" />
                 <div>
                   <.input
@@ -430,6 +518,7 @@ defmodule TabletopWeb.GameLive.Index do
     socket =
       socket
       |> assign(:page_title, "Games")
+      |> assign(:intro_screenshots, intro_screenshots())
       |> assign(:show_join_private, false)
       |> assign(:language_filter, MapSet.new())
       |> assign_form(scope)
@@ -666,6 +755,19 @@ defmodule TabletopWeb.GameLive.Index do
     socket
     |> assign(:activity, activity)
     |> assign(:popular_heroes_any?, popular_heroes_any?)
+  end
+
+  # Screenshots shown in the anonymous intro header. `src` is nil until real
+  # captures land in priv/static/images/home/ — set each one to its
+  # `~p"/images/home/<file>"` path (e.g. `~p"/images/home/lobby.png"`) to swap
+  # the placeholder for the image.
+  defp intro_screenshots do
+    [
+      %{src: nil, alt: "Lobby — browse and create games", caption: "The lobby"},
+      %{src: nil, alt: "Live webcam play against your opponent", caption: "Webcam play"},
+      %{src: nil, alt: "Life and combat-chain tracking", caption: "Built-in trackers"},
+      %{src: nil, alt: "Scan a card to look it up", caption: "Card scanning"}
+    ]
   end
 
   defp present?(value), do: is_binary(value) and String.trim(value) != ""

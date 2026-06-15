@@ -23,12 +23,18 @@ defmodule TabletopWeb.GameLive.Form do
           label="Format"
           options={Game.format_options()}
         />
+        <%!-- Language selector hidden for now (matches the lobby — revisit
+             display/UX later). The value still submits via the hidden input so
+             saving keeps the game's existing language. --%>
+        <.input field={@form[:language]} type="hidden" />
+        <%!--
         <.input
           field={@form[:language]}
           type="select"
           label="Language"
           options={Tabletop.Languages.options()}
         />
+        --%>
         <.input field={@form[:hero]} type="text" label="Hero" />
         <.input
           field={@form[:decklist]}

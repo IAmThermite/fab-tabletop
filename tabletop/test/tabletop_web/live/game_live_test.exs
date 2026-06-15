@@ -210,6 +210,10 @@ defmodule TabletopWeb.GameLiveTest do
       assert to == ~p"/games/#{game}/pre-join"
     end
 
+    # Skipped while the language selector is commented out of the create form
+    # (GameLive.Index) — games now take the user's preferred / default language.
+    # Re-enable together with the selector.
+    @tag :skip
     test "creates a game with the selected language", %{conn: conn, scope: scope} do
       {:ok, live_view, _html} = live(conn, ~p"/")
 
@@ -232,6 +236,9 @@ defmodule TabletopWeb.GameLiveTest do
       assert html =~ "· German"
     end
 
+    # Skipped while the language-filter UI is commented out in the lobby
+    # (GameLive.Index). Re-enable together with the filter controls.
+    @tag :skip
     test "language filter narrows the joinable list", %{conn: conn} do
       en_scope = user_scope_fixture()
       game_fixture(en_scope, %{title: "English Game", language: :eng})

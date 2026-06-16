@@ -66,7 +66,6 @@ defmodule TabletopWeb.TournamentLive.FormTest do
       tournament: %{
         "name" => "Minutes Test",
         "format" => "classic_constructed",
-        "max_players" => "8",
         "swiss_rounds" => "3",
         "top_cut_size" => "0",
         "round_duration_minutes" => "40"

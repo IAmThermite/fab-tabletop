@@ -147,7 +147,7 @@ defmodule TabletopWeb.TournamentLive.Form do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-3xl">
       <.header>
         {@page_title}
         <:subtitle>
@@ -155,16 +155,25 @@ defmodule TabletopWeb.TournamentLive.Form do
         </:subtitle>
       </.header>
 
-      <.form for={@form} id="tournament-form" phx-change="validate" phx-submit="save">
-        <.input field={@form[:name]} type="text" label="Name" />
+      <.form
+        for={@form}
+        id="tournament-form"
+        phx-change="validate"
+        phx-submit="save"
+        class="space-y-4"
+      >
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <.input field={@form[:name]} type="text" label="Name" />
+          <.input
+            field={@form[:format]}
+            type="select"
+            label="Format"
+            options={Tournament.format_options()}
+          />
+          <.starts_at_input field={@form[:starts_at]} />
+        </div>
+
         <.input field={@form[:description]} type="textarea" label="Description" />
-        <.input
-          field={@form[:format]}
-          type="select"
-          label="Format"
-          options={Tournament.format_options()}
-        />
-        <.input field={@form[:max_players]} type="number" label="Max players" min="2" />
 
         <fieldset class="fieldset">
           <label class="fieldset-label">Presets</label>
@@ -190,21 +199,33 @@ defmodule TabletopWeb.TournamentLive.Form do
           </p>
         </fieldset>
 
-        <.input field={@form[:swiss_rounds]} type="number" label="Swiss rounds" min="1" max="12" />
-        <.input
-          field={@form[:top_cut_size]}
-          type="select"
-          label="Top cut"
-          options={Tournament.cut_size_options()}
-        />
-        <.input
-          field={@form[:round_duration_minutes]}
-          type="number"
-          label="Round duration (minutes)"
-          min="1"
-        />
-        <.starts_at_input field={@form[:starts_at]} />
-        <footer>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <.input
+            field={@form[:swiss_rounds]}
+            type="number"
+            label="Swiss rounds"
+            min="1"
+            max="12"
+          />
+          <.input
+            field={@form[:top_cut_size]}
+            type="select"
+            label="Top cut"
+            options={Tournament.cut_size_options()}
+          />
+          <.input
+            field={@form[:round_duration_minutes]}
+            type="number"
+            label="Round duration (minutes)"
+            min="1"
+          />
+        </div>
+
+        <%!-- max_players is preset-driven (see the presets help text); kept as a
+              hidden carrier so presets and the default round-trip on save. --%>
+        <.input field={@form[:max_players]} type="hidden" />
+
+        <footer class="flex gap-2 mt-2">
           <.button phx-disable-with="Saving..." variant="primary">Save</.button>
           <.button navigate={~p"/tournaments"}>Cancel</.button>
         </footer>

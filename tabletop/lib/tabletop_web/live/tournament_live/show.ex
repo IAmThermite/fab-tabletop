@@ -472,9 +472,25 @@ defmodule TabletopWeb.TournamentLive.Show do
             <th>#</th>
             <th>Player</th>
             <th>Points</th>
-            <th>OMW%</th>
-            <th>GW%</th>
-            <th>OGW%</th>
+            <th>W/D/L</th>
+            <th>
+              <.stat_header
+                label="OMW%"
+                tip="Opponents' Match-Win % — strength of schedule: the average match-win rate of everyone you've played, floored at 33%."
+              />
+            </th>
+            <th>
+              <.stat_header
+                label="GW%"
+                tip="Game-Win % — your share of individual games won across all matches."
+              />
+            </th>
+            <th>
+              <.stat_header
+                label="OGW%"
+                tip="Opponents' Game-Win % — the average game-win rate of everyone you've played, floored at 33%."
+              />
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -482,6 +498,7 @@ defmodule TabletopWeb.TournamentLive.Show do
             <td>{row.rank}</td>
             <td>{row.user && row.user.name}</td>
             <td>{row.match_points}</td>
+            <td>{row.wins}/{row.draws}/{row.losses}</td>
             <td>{pct(row.omw)}</td>
             <td>{pct(row.gw)}</td>
             <td>{pct(row.ogw)}</td>
@@ -493,6 +510,20 @@ defmodule TabletopWeb.TournamentLive.Show do
   end
 
   defp pct(f), do: :erlang.float_to_binary(f * 100.0, decimals: 1) <> "%"
+
+  attr :label, :string, required: true
+  attr :tip, :string, required: true
+
+  defp stat_header(assigns) do
+    ~H"""
+    <span
+      class="tooltip tooltip-bottom cursor-help underline decoration-dotted underline-offset-2"
+      data-tip={@tip}
+    >
+      {@label}
+    </span>
+    """
+  end
 
   attr :registrations, :list, required: true
   attr :tournament, :any, required: true

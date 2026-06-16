@@ -27,7 +27,17 @@ defmodule Tabletop.Tournaments.Pairing.Standings do
       omw = mean_opponent(p, by_id, &match_win_pct(&1, scoring))
       ogw = mean_opponent(p, by_id, &game_win_pct/1)
 
-      %{id: p.id, match_points: mp, mw: mw, omw: omw, gw: gw, ogw: ogw}
+      %{
+        id: p.id,
+        match_points: mp,
+        wins: p.wins,
+        draws: p.draws,
+        losses: p.losses,
+        mw: mw,
+        omw: omw,
+        gw: gw,
+        ogw: ogw
+      }
     end)
     |> Enum.sort_by(fn r -> {-r.match_points, -r.omw, -r.gw, -r.ogw, seed_of(by_id[r.id])} end)
     |> Enum.with_index(1)

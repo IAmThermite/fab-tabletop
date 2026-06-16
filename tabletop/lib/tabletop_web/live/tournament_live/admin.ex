@@ -15,9 +15,9 @@ defmodule TabletopWeb.TournamentLive.Admin do
     {:noreply, load(socket, id)}
   end
 
-  # Fired once the check-in minimum has elapsed, so the "Start tournament"
-  # button can enable itself without waiting for another tournament update.
-  def handle_info(:check_in_ready, socket) do
+  # Fired once a start time gate (check-in minimum or scheduled start) passes,
+  # so the "Start tournament" button can enable without another tournament update.
+  def handle_info(:start_gate_ready, socket) do
     {:noreply, load(socket, socket.assigns.tournament.id)}
   end
 
@@ -34,6 +34,9 @@ defmodule TabletopWeb.TournamentLive.Admin do
         round_id -> Tournaments.list_matches_for_round(round_id)
       end
 
+    start_time_reached = Tournaments.start_time_reached?(t)
+    check_in_min_elapsed = Tournaments.check_in_min_elapsed?(t)
+
     socket
     |> assign(:page_title, "Admin · " <> t.name)
     |> assign(:tournament, t)
@@ -43,27 +46,51 @@ defmodule TabletopWeb.TournamentLive.Admin do
     |> assign(:completed_rounds, Tournaments.completed_round_count(t))
     |> assign(:active_count, length(active))
     |> assign(:checked_in_count, checked_in)
-    |> assign(:can_start, t.status == :check_in and Tournaments.check_in_min_elapsed?(t))
+    |> assign(:start_time_reached, start_time_reached)
+    |> assign(:check_in_min_elapsed, check_in_min_elapsed)
+    |> assign(
+      :can_start,
+      t.status == :check_in and check_in_min_elapsed and start_time_reached
+    )
     |> assign(:check_in_start_at, Tournaments.check_in_start_allowed_at(t))
     |> assign(:check_in_min_minutes, div(Tournaments.check_in_min_seconds(), 60))
-    |> maybe_schedule_check_in_ready(t)
+    |> maybe_schedule_start_ready(t)
   end
 
-  # While the check-in window is still maturing, wake this LiveView up exactly
-  # when the minimum elapses so the start button can enable. Re-scheduling on
-  # each load cancels the prior timer to avoid pile-up.
-  defp maybe_schedule_check_in_ready(socket, t) do
-    if socket.assigns[:check_in_timer], do: Process.cancel_timer(socket.assigns.check_in_timer)
+  # While the tournament is in check-in, wake this LiveView up when the next
+  # time gate (check-in minimum or scheduled start) passes, so the start button
+  # can enable itself. Re-scheduling on each load cancels the prior timer to
+  # avoid pile-up; on wake we reload and schedule the following gate, if any.
+  defp maybe_schedule_start_ready(socket, t) do
+    if socket.assigns[:start_gate_timer],
+      do: Process.cancel_timer(socket.assigns.start_gate_timer)
 
     ref =
-      if connected?(socket) and t.status == :check_in and
-           not Tournaments.check_in_min_elapsed?(t) do
-        allowed_at = Tournaments.check_in_start_allowed_at(t)
-        ms = DateTime.diff(allowed_at, DateTime.utc_now(), :millisecond)
-        Process.send_after(self(), :check_in_ready, max(ms, 0) + 250)
+      if connected?(socket) and t.status == :check_in do
+        case next_start_gate_at(t) do
+          nil ->
+            nil
+
+          at ->
+            ms = DateTime.diff(at, DateTime.utc_now(), :millisecond)
+            Process.send_after(self(), :start_gate_ready, max(ms, 0) + 250)
+        end
       end
 
-    assign(socket, :check_in_timer, ref)
+    assign(socket, :start_gate_timer, ref)
+  end
+
+  # The soonest future time gate that could change whether start is allowed.
+  defp next_start_gate_at(t) do
+    now = DateTime.utc_now()
+
+    [Tournaments.check_in_start_allowed_at(t), t.starts_at]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.filter(&(DateTime.compare(&1, now) == :gt))
+    |> case do
+      [] -> nil
+      times -> Enum.min(times, DateTime)
+    end
   end
 
   @impl true
@@ -166,6 +193,9 @@ defmodule TabletopWeb.TournamentLive.Admin do
   defp human_error(:check_in_too_soon),
     do: "Check-in must stay open for at least 5 minutes before starting."
 
+  defp human_error(:before_start_time),
+    do: "The tournament's scheduled start time hasn't passed yet."
+
   defp human_error(:round_incomplete), do: "Round is not fully confirmed yet."
   defp human_error(:wrong_status), do: "Can't do that in the current tournament status."
   defp human_error(:swiss_complete), do: "All swiss rounds completed — generate the top cut next."
@@ -204,6 +234,8 @@ defmodule TabletopWeb.TournamentLive.Admin do
         active_count={@active_count}
         checked_in_count={@checked_in_count}
         can_start={@can_start}
+        check_in_min_elapsed={@check_in_min_elapsed}
+        start_time_reached={@start_time_reached}
         check_in_start_at={@check_in_start_at}
         check_in_min_minutes={@check_in_min_minutes}
       />
@@ -283,6 +315,8 @@ defmodule TabletopWeb.TournamentLive.Admin do
   attr :active_count, :integer, required: true
   attr :checked_in_count, :integer, required: true
   attr :can_start, :boolean, required: true
+  attr :check_in_min_elapsed, :boolean, required: true
+  attr :start_time_reached, :boolean, required: true
   attr :check_in_start_at, :any, required: true
   attr :check_in_min_minutes, :integer, required: true
 
@@ -339,9 +373,14 @@ defmodule TabletopWeb.TournamentLive.Admin do
           Need at least 2 checked-in players to start.
         </p>
 
-        <p :if={not @can_start and @check_in_start_at} class="text-sm opacity-70">
-          Check-in must stay open for {@check_in_min_minutes} minutes — start available
+        <p :if={not @check_in_min_elapsed and @check_in_start_at} class="text-sm opacity-70">
+          Check-in must stay open for {@check_in_min_minutes} minutes — available
           <.local_datetime id="check-in-start-at" at={@check_in_start_at} countdown />
+        </p>
+
+        <p :if={not @start_time_reached and @tournament.starts_at} class="text-sm opacity-70">
+          Scheduled start hasn't arrived — start available
+          <.local_datetime id="scheduled-start-at" at={@tournament.starts_at} countdown />
         </p>
       </div>
 

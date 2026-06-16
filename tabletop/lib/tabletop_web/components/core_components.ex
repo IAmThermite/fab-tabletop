@@ -122,6 +122,40 @@ defmodule TabletopWeb.CoreComponents do
   end
 
   @doc """
+  Renders persistent, clickable banners for a player's outstanding actions
+  (check in, play your match, …). Items come from
+  `Tabletop.Tournaments.player_action_items/1` (maps with `:type`, `:message`,
+  and `:path`). Renders nothing when there's nothing to act on.
+
+  ## Examples
+
+      <.notification_banners items={@notification_items} />
+  """
+  attr(:items, :list, default: [])
+
+  def notification_banners(assigns) do
+    ~H"""
+    <div :if={@items != []} class="space-y-2 mb-4">
+      <.link
+        :for={item <- @items}
+        navigate={item.path}
+        class="flex items-center justify-between gap-3 border-2 border-primary rounded-lg p-3 bg-primary/10 hover:bg-primary/20"
+      >
+        <div class="flex items-center gap-2">
+          <.icon name={notification_icon(item.type)} class="size-5 shrink-0 text-primary" />
+          <span class="font-medium">{item.message}</span>
+        </div>
+        <.icon name="hero-arrow-right" class="size-4 shrink-0 opacity-60" />
+      </.link>
+    </div>
+    """
+  end
+
+  defp notification_icon(:check_in), do: "hero-clipboard-document-check"
+  defp notification_icon(:match), do: "hero-play"
+  defp notification_icon(_), do: "hero-bell"
+
+  @doc """
   Renders an input with label and error messages.
 
   A `Phoenix.HTML.FormField` may be passed as argument,

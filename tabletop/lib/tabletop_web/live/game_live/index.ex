@@ -10,6 +10,7 @@ defmodule TabletopWeb.GameLive.Index do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-7xl">
+      <.notification_banners items={@notification_items} />
       <div id="game-index" phx-hook=".GameIndex">
         <div
           id="camera-setup-banner"

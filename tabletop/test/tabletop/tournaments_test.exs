@@ -231,6 +231,31 @@ defmodule Tabletop.TournamentsTest do
     assert t.status == :swiss
   end
 
+  test "start is gated on the scheduled start time", %{admin_scope: admin} do
+    t = tournament_fixture(scope: admin, params: %{"starts_at" => "2099-01-01T00:00:00Z"})
+    {:ok, t} = Tournaments.open_registration(admin, t)
+
+    scopes =
+      for _ <- 1..2 do
+        s = Scope.for_user(user_fixture())
+        {:ok, _} = Tournaments.register(s, t.id, %{"decklist_url" => valid_fabrary_url()})
+        s
+      end
+
+    {:ok, t} = Tournaments.open_check_in(admin, t)
+    for s <- scopes, do: {:ok, _} = Tournaments.check_in(s, t.id)
+
+    # Check-in is satisfied but the scheduled start hasn't arrived.
+    assert {:error, :before_start_time} = Tournaments.start_tournament(admin, t)
+
+    # Once the scheduled start passes, it can begin.
+    past = DateTime.add(DateTime.utc_now(), -60, :second)
+    {:ok, t} = t |> Ecto.Changeset.change(starts_at: past) |> Tabletop.Repo.update()
+
+    assert {:ok, t} = Tournaments.start_tournament(admin, t)
+    assert t.status == :swiss
+  end
+
   test "check_in is rejected outside the check-in phase", %{admin_scope: admin} do
     t = tournament_fixture(scope: admin)
     {:ok, _} = Tournaments.open_registration(admin, t)
@@ -238,5 +263,54 @@ defmodule Tabletop.TournamentsTest do
     {:ok, _} = Tournaments.register(s, t.id, %{"decklist_url" => valid_fabrary_url()})
 
     assert {:error, :check_in_closed} = Tournaments.check_in(s, t.id)
+  end
+
+  test "player_action_items surfaces check-in then match prompts", %{admin_scope: admin} do
+    t = tournament_fixture(scope: admin)
+    {:ok, t} = Tournaments.open_registration(admin, t)
+
+    [s1, s2] =
+      for _ <- 1..2 do
+        s = Scope.for_user(user_fixture())
+        {:ok, _} = Tournaments.register(s, t.id, %{"decklist_url" => valid_fabrary_url()})
+        s
+      end
+
+    assert Tournaments.player_action_items(nil) == []
+    assert Tournaments.player_action_items(s1.user.id) == []
+
+    {:ok, t} = Tournaments.open_check_in(admin, t)
+    assert [%{type: :check_in, tournament_id: tid}] = Tournaments.player_action_items(s1.user.id)
+    assert tid == t.id
+
+    for s <- [s1, s2], do: {:ok, _} = Tournaments.check_in(s, t.id)
+    # Once checked in, the check-in prompt clears.
+    assert Tournaments.player_action_items(s1.user.id) == []
+
+    {:ok, _} = Tournaments.start_tournament(admin, t)
+    assert [%{type: :match, path: "/games/" <> _}] = Tournaments.player_action_items(s1.user.id)
+  end
+
+  test "players receive notifications for check-in and new matches", %{admin_scope: admin} do
+    t = tournament_fixture(scope: admin)
+    {:ok, t} = Tournaments.open_registration(admin, t)
+
+    [s1, s2] =
+      for _ <- 1..2 do
+        s = Scope.for_user(user_fixture())
+        {:ok, _} = Tournaments.register(s, t.id, %{"decklist_url" => valid_fabrary_url()})
+        s
+      end
+
+    Tournaments.subscribe_user_notifications(s1.user.id)
+
+    {:ok, t} = Tournaments.open_check_in(admin, t)
+    assert_receive {:user_notification, %{type: :check_in, tournament_id: tid}}
+    assert tid == t.id
+
+    for s <- [s1, s2], do: {:ok, _} = Tournaments.check_in(s, t.id)
+    {:ok, _} = Tournaments.start_tournament(admin, t)
+
+    assert_receive {:user_notification, %{type: :match, tournament_id: ^tid}}
   end
 end

@@ -32,6 +32,8 @@ defmodule TabletopWeb.TournamentLive.Index do
         </:actions>
       </.header>
 
+      <.notification_banners items={@notification_items} />
+
       <div :if={@tournaments == []} class="text-center py-12 opacity-60">
         No tournaments yet.
       </div>

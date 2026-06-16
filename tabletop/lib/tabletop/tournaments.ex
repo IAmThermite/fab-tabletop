@@ -57,6 +57,16 @@ defmodule Tabletop.Tournaments do
     end
   end
 
+  @doc """
+  True once the tournament's scheduled start time has passed. Tournaments with
+  no `starts_at` set carry no scheduled gate and are always ready.
+  """
+  def start_time_reached?(%Tournament{starts_at: nil}), do: true
+
+  def start_time_reached?(%Tournament{starts_at: starts_at}) do
+    DateTime.compare(DateTime.utc_now(), starts_at) != :lt
+  end
+
   # ─────────── PubSub ───────────
 
   def subscribe_tournaments do
@@ -67,6 +77,17 @@ defmodule Tabletop.Tournaments do
     Phoenix.PubSub.subscribe(Tabletop.PubSub, "tournament:#{id}")
   end
 
+  @doc """
+  Subscribes the caller to a single user's notification stream. Messages are
+  `{:user_notification, payload}` where `payload` is the map built by the
+  `notify_*` helpers (`:type`, `:tournament_id`, `:tournament_name`,
+  `:message`, `:path`). Used by the web layer to raise toasts on whatever page
+  the player happens to be on.
+  """
+  def subscribe_user_notifications(user_id) when is_binary(user_id) do
+    Phoenix.PubSub.subscribe(Tabletop.PubSub, user_notifications_topic(user_id))
+  end
+
   defp broadcast_list do
     Phoenix.PubSub.broadcast(Tabletop.PubSub, "tournaments", {:tournaments_updated})
   end
@@ -74,6 +95,18 @@ defmodule Tabletop.Tournaments do
   defp broadcast_one(id) do
     Phoenix.PubSub.broadcast(Tabletop.PubSub, "tournament:#{id}", {:tournament_updated, id})
   end
+
+  defp notify_user(nil, _payload), do: :ok
+
+  defp notify_user(user_id, payload) do
+    Phoenix.PubSub.broadcast(
+      Tabletop.PubSub,
+      user_notifications_topic(user_id),
+      {:user_notification, payload}
+    )
+  end
+
+  defp user_notifications_topic(user_id), do: "user_notifications:#{user_id}"
 
   # ─────────── Reads ───────────
 
@@ -200,6 +233,69 @@ defmodule Tabletop.Tournaments do
     )
     |> Repo.all()
   end
+
+  @doc """
+  Returns the outstanding things a player needs to act on across all
+  tournaments, for rendering persistent banners. Each item is a map with
+  `:type`, `:tournament_id`, `:tournament_name`, `:message`, and `:path`.
+
+  Two kinds are surfaced:
+
+    * `:check_in` — the player is registered for a tournament whose check-in is
+      open and they haven't checked in yet.
+    * `:match` — the player has an unfinished match in the current round.
+  """
+  def player_action_items(nil), do: []
+
+  def player_action_items(user_id) when is_binary(user_id) do
+    check_in_action_items(user_id) ++ match_action_items(user_id)
+  end
+
+  defp check_in_action_items(user_id) do
+    from(r in TournamentRegistration,
+      join: t in Tournament,
+      on: t.id == r.tournament_id,
+      where:
+        r.user_id == ^user_id and is_nil(r.dropped_at) and is_nil(r.checked_in_at) and
+          t.status == :check_in,
+      select: %{tournament_id: t.id, tournament_name: t.name}
+    )
+    |> Repo.all()
+    |> Enum.map(fn row ->
+      %{
+        type: :check_in,
+        tournament_id: row.tournament_id,
+        tournament_name: row.tournament_name,
+        message: "Check-in is open for #{row.tournament_name} — check in to play.",
+        path: "/tournaments/#{row.tournament_id}"
+      }
+    end)
+  end
+
+  defp match_action_items(user_id) do
+    from(m in TournamentMatch,
+      join: t in Tournament,
+      on: t.id == m.tournament_id,
+      where:
+        t.status in [:swiss, :cut] and m.round_id == t.current_round_id and
+          is_nil(m.confirmed_result) and not is_nil(m.player2_id) and
+          (m.player1_id == ^user_id or m.player2_id == ^user_id),
+      select: %{tournament_id: t.id, tournament_name: t.name, game_id: m.game_id}
+    )
+    |> Repo.all()
+    |> Enum.map(fn row ->
+      %{
+        type: :match,
+        tournament_id: row.tournament_id,
+        tournament_name: row.tournament_name,
+        message: "Your match in #{row.tournament_name} is ready.",
+        path: match_path(row.game_id, row.tournament_id)
+      }
+    end)
+  end
+
+  defp match_path(nil, tournament_id), do: "/tournaments/#{tournament_id}"
+  defp match_path(game_id, _tournament_id), do: "/games/#{game_id}"
 
   # ─────────── Player actions ───────────
 
@@ -412,11 +508,11 @@ defmodule Tabletop.Tournaments do
         {:error, :not_enough_players}
 
       true ->
-        do_open_check_in(t)
+        do_open_check_in(t, active)
     end
   end
 
-  defp do_open_check_in(%Tournament{} = t) do
+  defp do_open_check_in(%Tournament{} = t, active) do
     Repo.transaction(fn ->
       from(r in TournamentRegistration, where: r.tournament_id == ^t.id)
       |> Repo.update_all(set: [checked_in_at: nil])
@@ -432,6 +528,7 @@ defmodule Tabletop.Tournaments do
       {:ok, t} ->
         broadcast_list()
         broadcast_one(t.id)
+        notify_check_in_open(t, active)
         {:ok, t}
 
       error ->
@@ -448,6 +545,9 @@ defmodule Tabletop.Tournaments do
     cond do
       t.status != :check_in ->
         {:error, :wrong_status}
+
+      not start_time_reached?(t) ->
+        {:error, :before_start_time}
 
       not check_in_min_elapsed?(t) ->
         {:error, :check_in_too_soon}
@@ -485,6 +585,7 @@ defmodule Tabletop.Tournaments do
           {:ok, t} ->
             broadcast_list()
             broadcast_one(t.id)
+            notify_new_round(t, t.current_round_id)
             {:ok, t}
 
           error ->
@@ -520,6 +621,7 @@ defmodule Tabletop.Tournaments do
         |> case do
           {:ok, t} ->
             broadcast_one(t.id)
+            notify_new_round(t, t.current_round_id)
             {:ok, t}
 
           error ->
@@ -611,6 +713,7 @@ defmodule Tabletop.Tournaments do
         |> case do
           {:ok, t} ->
             broadcast_one(t.id)
+            notify_new_round(t, t.current_round_id)
             {:ok, t}
 
           error ->
@@ -710,6 +813,7 @@ defmodule Tabletop.Tournaments do
             |> Repo.update()
             |> tap(fn _ -> broadcast_list() end)
             |> tap(fn _ -> broadcast_one(t.id) end)
+            |> tap(fn _ -> notify_finished(t, champion_id) end)
 
           {:next, pairings} ->
             Repo.transaction(fn ->
@@ -727,6 +831,7 @@ defmodule Tabletop.Tournaments do
             |> case do
               {:ok, t} ->
                 broadcast_one(t.id)
+                notify_new_round(t, t.current_round_id)
                 {:ok, t}
 
               error ->
@@ -739,6 +844,86 @@ defmodule Tabletop.Tournaments do
   defp pairings_to_seeded_ids(pairings) do
     # `Bracket.advance` already preserves winner order; flatten to list of ids.
     Enum.flat_map(pairings, fn {a, b} -> [a, b] end)
+  end
+
+  # ─────────── Player notifications ───────────
+
+  # Tell every still-registered player the check-in window has opened.
+  defp notify_check_in_open(%Tournament{} = t, registrations) do
+    Enum.each(registrations, fn reg ->
+      notify_user(reg.user_id, %{
+        type: :check_in,
+        tournament_id: t.id,
+        tournament_name: t.name,
+        message: "Check-in is open for #{t.name} — check in to play.",
+        path: "/tournaments/#{t.id}"
+      })
+    end)
+  end
+
+  # Tell each player their pairing for a freshly generated round (or their bye).
+  defp notify_new_round(%Tournament{} = t, round_id) do
+    round = Repo.get!(TournamentRound, round_id)
+
+    round_id
+    |> list_matches_for_round()
+    |> Enum.each(fn m ->
+      if is_nil(m.player2_id) do
+        notify_user(m.player1_id, %{
+          type: :bye,
+          tournament_id: t.id,
+          tournament_name: t.name,
+          message: "#{t.name}: you have a bye in #{round_short_label(round)}.",
+          path: "/tournaments/#{t.id}"
+        })
+      else
+        notify_user(m.player1_id, match_ready_payload(t, round, m, m.player2))
+        notify_user(m.player2_id, match_ready_payload(t, round, m, m.player1))
+      end
+    end)
+  end
+
+  defp match_ready_payload(%Tournament{} = t, round, m, opponent) do
+    opp = (opponent && opponent.name) || "your opponent"
+
+    %{
+      type: :match,
+      tournament_id: t.id,
+      tournament_name: t.name,
+      message: "#{t.name}: your #{round_short_label(round)} match vs #{opp} is ready.",
+      path: match_path(m.game_id, t.id)
+    }
+  end
+
+  # Tell every active player the tournament is over (and the winner they are).
+  defp notify_finished(%Tournament{} = t, winner_id) do
+    winner_name =
+      case winner_id && Repo.get(Tabletop.Accounts.User, winner_id) do
+        %{name: name} -> name
+        _ -> nil
+      end
+
+    from(r in TournamentRegistration,
+      where: r.tournament_id == ^t.id and is_nil(r.dropped_at),
+      select: r.user_id
+    )
+    |> Repo.all()
+    |> Enum.each(fn uid ->
+      message =
+        cond do
+          uid == winner_id -> "You won #{t.name}! 🏆"
+          winner_name -> "#{t.name} has finished — #{winner_name} is the champion."
+          true -> "#{t.name} has finished."
+        end
+
+      notify_user(uid, %{
+        type: :finished,
+        tournament_id: t.id,
+        tournament_name: t.name,
+        message: message,
+        path: "/tournaments/#{t.id}"
+      })
+    end)
   end
 
   def confirm_match(%Scope{user: user} = scope, match_id) do
@@ -934,6 +1119,7 @@ defmodule Tabletop.Tournaments do
       {:ok, t} ->
         broadcast_list()
         broadcast_one(t.id)
+        notify_finished(t, winner_id)
         {:ok, t}
 
       error ->

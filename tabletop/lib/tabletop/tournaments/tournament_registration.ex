@@ -11,6 +11,7 @@ defmodule Tabletop.Tournaments.TournamentRegistration do
     field :decklist_url, :string
     field :seed, :integer
     field :dropped_at, :utc_datetime_usec
+    field :checked_in_at, :utc_datetime_usec
 
     belongs_to :tournament, Tabletop.Tournaments.Tournament, type: Ecto.UUID
     belongs_to :user, Tabletop.Accounts.User, type: Ecto.UUID
@@ -30,6 +31,6 @@ defmodule Tabletop.Tournaments.TournamentRegistration do
 
   def admin_changeset(reg, attrs) do
     reg
-    |> cast(attrs, [:seed, :dropped_at])
+    |> cast(attrs, [:seed, :dropped_at, :checked_in_at])
   end
 end

@@ -15,9 +15,18 @@ defmodule TabletopWeb.TournamentLive.Admin do
     {:noreply, load(socket, id)}
   end
 
+  # Fired once the check-in minimum has elapsed, so the "Start tournament"
+  # button can enable itself without waiting for another tournament update.
+  def handle_info(:check_in_ready, socket) do
+    {:noreply, load(socket, socket.assigns.tournament.id)}
+  end
+
   defp load(socket, id) do
     t = Tournaments.get_tournament!(id)
     registrations = Tournaments.list_registrations(id)
+
+    active = Enum.reject(registrations, & &1.dropped_at)
+    checked_in = Enum.count(active, & &1.checked_in_at)
 
     current_matches =
       case t.current_round_id do
@@ -32,12 +41,41 @@ defmodule TabletopWeb.TournamentLive.Admin do
     |> assign(:current_matches, current_matches)
     |> assign(:round_complete, Tournaments.current_round_complete?(t))
     |> assign(:completed_rounds, Tournaments.completed_round_count(t))
+    |> assign(:active_count, length(active))
+    |> assign(:checked_in_count, checked_in)
+    |> assign(:can_start, t.status == :check_in and Tournaments.check_in_min_elapsed?(t))
+    |> assign(:check_in_start_at, Tournaments.check_in_start_allowed_at(t))
+    |> assign(:check_in_min_minutes, div(Tournaments.check_in_min_seconds(), 60))
+    |> maybe_schedule_check_in_ready(t)
+  end
+
+  # While the check-in window is still maturing, wake this LiveView up exactly
+  # when the minimum elapses so the start button can enable. Re-scheduling on
+  # each load cancels the prior timer to avoid pile-up.
+  defp maybe_schedule_check_in_ready(socket, t) do
+    if socket.assigns[:check_in_timer], do: Process.cancel_timer(socket.assigns.check_in_timer)
+
+    ref =
+      if connected?(socket) and t.status == :check_in and
+           not Tournaments.check_in_min_elapsed?(t) do
+        allowed_at = Tournaments.check_in_start_allowed_at(t)
+        ms = DateTime.diff(allowed_at, DateTime.utc_now(), :millisecond)
+        Process.send_after(self(), :check_in_ready, max(ms, 0) + 250)
+      end
+
+    assign(socket, :check_in_timer, ref)
   end
 
   @impl true
   def handle_event("open_registration", _, socket) do
     with_result(socket, fn ->
       Tournaments.open_registration(socket.assigns.current_scope, socket.assigns.tournament)
+    end)
+  end
+
+  def handle_event("open_check_in", _, socket) do
+    with_result(socket, fn ->
+      Tournaments.open_check_in(socket.assigns.current_scope, socket.assigns.tournament)
     end)
   end
 
@@ -123,7 +161,11 @@ defmodule TabletopWeb.TournamentLive.Admin do
     end
   end
 
-  defp human_error(:not_enough_players), do: "Need at least 2 registered players to start."
+  defp human_error(:not_enough_players), do: "Need at least 2 checked-in players to start."
+
+  defp human_error(:check_in_too_soon),
+    do: "Check-in must stay open for at least 5 minutes before starting."
+
   defp human_error(:round_incomplete), do: "Round is not fully confirmed yet."
   defp human_error(:wrong_status), do: "Can't do that in the current tournament status."
   defp human_error(:swiss_complete), do: "All swiss rounds completed — generate the top cut next."
@@ -138,7 +180,17 @@ defmodule TabletopWeb.TournamentLive.Admin do
     <Layouts.app flash={@flash} current_scope={@current_scope}>
       <.header>
         Admin · {@tournament.name}
-        <:subtitle>{Tournament.format_name(@tournament)} · {@tournament.status}</:subtitle>
+        <:subtitle>
+          {Tournament.format_name(@tournament)} · {@tournament.status}
+          <span :if={@tournament.starts_at}>
+            · starts
+            <.local_datetime
+              id="tournament-starts-at"
+              at={@tournament.starts_at}
+              countdown={@tournament.status in [:draft, :registration]}
+            />
+          </span>
+        </:subtitle>
         <:actions>
           <.button navigate={~p"/tournaments/#{@tournament}/edit"}>Edit</.button>
           <.button navigate={~p"/tournaments/#{@tournament}"}>View</.button>
@@ -149,6 +201,11 @@ defmodule TabletopWeb.TournamentLive.Admin do
         tournament={@tournament}
         round_complete={@round_complete}
         completed_rounds={@completed_rounds}
+        active_count={@active_count}
+        checked_in_count={@checked_in_count}
+        can_start={@can_start}
+        check_in_start_at={@check_in_start_at}
+        check_in_min_minutes={@check_in_min_minutes}
       />
 
       <.round_panel :if={@current_matches != []} matches={@current_matches} tournament={@tournament} />
@@ -172,10 +229,25 @@ defmodule TabletopWeb.TournamentLive.Admin do
                 deck
               </a>
               <span :if={r.dropped_at} class="badge badge-ghost ml-2">dropped</span>
+              <span
+                :if={@tournament.status == :check_in and is_nil(r.dropped_at) and r.checked_in_at}
+                class="badge badge-success ml-2"
+              >
+                checked in
+              </span>
+              <span
+                :if={
+                  @tournament.status == :check_in and is_nil(r.dropped_at) and is_nil(r.checked_in_at)
+                }
+                class="badge badge-warning ml-2"
+              >
+                not checked in
+              </span>
             </div>
             <div>
               <.button
                 :if={@tournament.status in [:draft, :registration]}
+                variant="danger"
                 phx-click="remove_player"
                 phx-value-user_id={r.user_id}
                 data-confirm="Remove this player from the tournament?"
@@ -184,6 +256,7 @@ defmodule TabletopWeb.TournamentLive.Admin do
               </.button>
               <.button
                 :if={@tournament.status not in [:draft, :registration] and is_nil(r.dropped_at)}
+                variant="danger"
                 phx-click="drop_player"
                 phx-value-user_id={r.user_id}
                 data-confirm="Drop this player?"
@@ -196,7 +269,7 @@ defmodule TabletopWeb.TournamentLive.Admin do
       </section>
 
       <section class="my-6">
-        <.button phx-click="cancel" data-confirm="Cancel this tournament?">
+        <.button variant="danger" phx-click="cancel" data-confirm="Cancel this tournament?">
           Cancel tournament
         </.button>
       </section>
@@ -207,6 +280,11 @@ defmodule TabletopWeb.TournamentLive.Admin do
   attr :tournament, :any, required: true
   attr :round_complete, :boolean, required: true
   attr :completed_rounds, :integer, required: true
+  attr :active_count, :integer, required: true
+  attr :checked_in_count, :integer, required: true
+  attr :can_start, :boolean, required: true
+  attr :check_in_start_at, :any, required: true
+  attr :check_in_min_minutes, :integer, required: true
 
   defp phase_controls(assigns) do
     ~H"""
@@ -217,10 +295,54 @@ defmodule TabletopWeb.TournamentLive.Admin do
         <.button variant="primary" phx-click="open_registration">Open registration</.button>
       </div>
 
-      <div :if={@tournament.status == :registration}>
-        <.button variant="primary" phx-click="start" data-confirm="Start the tournament?">
-          Start tournament
+      <div :if={@tournament.status == :registration} class="space-y-2">
+        <.button
+          variant="primary"
+          phx-click="open_check_in"
+          disabled={@active_count < 2}
+          data-confirm="Open check-in? Sign-ups will close and players must check in to play."
+        >
+          Open check-in
         </.button>
+        <p :if={@active_count < 2} class="text-sm opacity-70">
+          Need at least 2 registered players to open check-in.
+        </p>
+      </div>
+
+      <div :if={@tournament.status == :check_in} class="space-y-3">
+        <p class="text-sm">
+          <strong>{@checked_in_count}</strong>
+          of {@active_count} players checked in.
+          <span :if={@active_count - @checked_in_count > 0} class="text-warning">
+            {@active_count - @checked_in_count} not checked in — they'll be dropped on start.
+          </span>
+        </p>
+
+        <div class="flex gap-2 flex-wrap items-center">
+          <.button
+            variant="primary"
+            phx-click="start"
+            disabled={not @can_start or @checked_in_count < 2}
+            data-confirm="Start the tournament? Players who haven't checked in will be dropped."
+          >
+            Start tournament
+          </.button>
+          <.button
+            phx-click="open_registration"
+            data-confirm="Reopen registration? This closes check-in and clears check-ins."
+          >
+            Reopen registration
+          </.button>
+        </div>
+
+        <p :if={@checked_in_count < 2} class="text-sm opacity-70">
+          Need at least 2 checked-in players to start.
+        </p>
+
+        <p :if={not @can_start and @check_in_start_at} class="text-sm opacity-70">
+          Check-in must stay open for {@check_in_min_minutes} minutes — start available
+          <.local_datetime id="check-in-start-at" at={@check_in_start_at} countdown />
+        </p>
       </div>
 
       <div :if={@tournament.status == :swiss} class="flex gap-2 flex-wrap">
@@ -309,7 +431,7 @@ defmodule TabletopWeb.TournamentLive.Admin do
             </span>
             <.button
               :if={
-                is_nil(m.confirmed_result) and m.player1_reported &&
+                (is_nil(m.confirmed_result) and m.player1_reported) &&
                   m.player1_reported == m.player2_reported
               }
               variant="primary"
@@ -331,7 +453,9 @@ defmodule TabletopWeb.TournamentLive.Admin do
   defp override_menu(assigns) do
     ~H"""
     <details class="dropdown dropdown-end">
-      <summary class="btn btn-sm">{if @match.confirmed_result, do: "Change", else: "Override"}</summary>
+      <summary class="btn btn-sm">
+        {if @match.confirmed_result, do: "Change", else: "Override"}
+      </summary>
       <ul class="menu dropdown-content bg-base-100 rounded-box shadow z-10 w-40">
         <li>
           <button phx-click="override_match" phx-value-id={@match.id} phx-value-result="p1_win">

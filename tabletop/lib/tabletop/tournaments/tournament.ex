@@ -10,7 +10,7 @@ defmodule Tabletop.Tournaments.Tournament do
     living_legend: "Living Legend"
   }
 
-  @statuses [:draft, :registration, :swiss, :cut, :finished, :cancelled]
+  @statuses [:draft, :registration, :check_in, :swiss, :cut, :finished, :cancelled]
   @cut_sizes [0, 4, 8, 16]
 
   # Default round durations in seconds per format.
@@ -33,6 +33,9 @@ defmodule Tabletop.Tournaments.Tournament do
     # `round_duration_seconds` from it.
     field :round_duration_minutes, :integer, virtual: true
     field :starts_at, :utc_datetime_usec
+    # When the admin opened the check-in window. Drives the 5-minute minimum
+    # that must elapse before the tournament can be started.
+    field :check_in_opened_at, :utc_datetime_usec
 
     belongs_to :created_by, Tabletop.Accounts.User, type: Ecto.UUID
     belongs_to :winner, Tabletop.Accounts.User, type: Ecto.UUID
@@ -148,7 +151,7 @@ defmodule Tabletop.Tournaments.Tournament do
 
   def status_changeset(tournament, attrs) do
     tournament
-    |> cast(attrs, [:status, :current_round_id, :winner_id])
+    |> cast(attrs, [:status, :current_round_id, :winner_id, :check_in_opened_at])
     |> validate_inclusion(:status, @statuses)
   end
 

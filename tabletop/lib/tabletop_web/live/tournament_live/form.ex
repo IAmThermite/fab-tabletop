@@ -203,7 +203,7 @@ defmodule TabletopWeb.TournamentLive.Form do
           label="Round duration (minutes)"
           min="1"
         />
-        <.input field={@form[:starts_at]} type="datetime-local" label="Starts at" />
+        <.starts_at_input field={@form[:starts_at]} />
         <footer>
           <.button phx-disable-with="Saving..." variant="primary">Save</.button>
           <.button navigate={~p"/tournaments"}>Cancel</.button>
@@ -212,4 +212,87 @@ defmodule TabletopWeb.TournamentLive.Form do
     </Layouts.app>
     """
   end
+
+  # `starts_at` is persisted as UTC, but a plain `datetime-local` input is
+  # timezone-naive: the browser would submit a wall-clock string that Ecto then
+  # reads as UTC, silently storing the admin's local time as if it were UTC.
+  #
+  # To keep the stored value honest we split the field in two: a hidden input
+  # carries the UTC ISO string the form actually submits, while the visible
+  # `datetime-local` input shows/edits the admin's *local* time. The colocated
+  # hook converts local -> UTC on input and UTC -> local on render, so DST for
+  # the chosen date is handled by the browser.
+  attr :field, Phoenix.HTML.FormField, required: true
+
+  defp starts_at_input(assigns) do
+    errors =
+      if Phoenix.Component.used_input?(assigns.field),
+        do: Enum.map(assigns.field.errors, &translate_error/1),
+        else: []
+
+    assigns = assign(assigns, :errors, errors)
+
+    ~H"""
+    <div class="fieldset mb-2">
+      <label>
+        <span class="label mb-1">Starts at (your local time)</span>
+        <div id="starts-at-field" phx-hook=".StartsAtLocal" data-utc={starts_at_utc(@field)}>
+          <input
+            type="hidden"
+            id={@field.id}
+            name={@field.name}
+            value={starts_at_utc(@field)}
+            data-utc-input
+          />
+          <input
+            type="datetime-local"
+            id="starts-at-local"
+            phx-update="ignore"
+            data-local-input
+            class={["w-full input", @errors != [] && "input-error"]}
+          />
+        </div>
+      </label>
+      <p :for={msg <- @errors} class="mt-1.5 text-sm text-error">{msg}</p>
+    </div>
+
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".StartsAtLocal">
+      export default {
+        mounted() {
+          this.local().addEventListener("input", () => this.toUtc());
+          this.toLocal();
+        },
+        updated() { this.toLocal(); },
+        hidden() { return this.el.querySelector("[data-utc-input]"); },
+        local() { return this.el.querySelector("[data-local-input]"); },
+        toLocal() {
+          const utc = this.hidden().value;
+          const local = this.local();
+          if (!utc) { local.value = ""; return; }
+          const d = new Date(utc);
+          if (isNaN(d.getTime())) return;
+          const p = (n) => String(n).padStart(2, "0");
+          local.value =
+            `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+            `T${p(d.getHours())}:${p(d.getMinutes())}`;
+        },
+        toUtc() {
+          const v = this.local().value;
+          const hidden = this.hidden();
+          hidden.value = v ? new Date(v).toISOString() : "";
+          hidden.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      }
+    </script>
+    """
+  end
+
+  # The hidden carrier value must be a UTC ISO8601 string. After a successful
+  # cast the form value is a %DateTime{}; on a round-trip it's the raw UTC ISO
+  # string the hook already produced.
+  defp starts_at_utc(%{value: %DateTime{} = dt}),
+    do: dt |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+
+  defp starts_at_utc(%{value: value}) when is_binary(value), do: value
+  defp starts_at_utc(_), do: ""
 end

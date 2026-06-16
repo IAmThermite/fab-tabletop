@@ -26,6 +26,37 @@ defmodule Tabletop.Tournaments do
   alias Tabletop.Tournaments.Pairing
   alias Tabletop.Tournaments.Pairing.{Bracket, Standings, Swiss}
 
+  # Check-in must stay open at least this long before the tournament can start.
+  # Overridable via app env (the test suite sets it to 0 to skip the wait).
+  @default_check_in_min_seconds 300
+
+  @doc """
+  Number of seconds check-in must remain open before the tournament can start.
+  """
+  def check_in_min_seconds do
+    Application.get_env(:tabletop, :check_in_min_seconds, @default_check_in_min_seconds)
+  end
+
+  @doc """
+  The earliest moment a tournament in check-in may be started, or `nil` if
+  check-in has not been opened.
+  """
+  def check_in_start_allowed_at(%Tournament{check_in_opened_at: nil}), do: nil
+
+  def check_in_start_allowed_at(%Tournament{check_in_opened_at: opened_at}) do
+    DateTime.add(opened_at, check_in_min_seconds(), :second)
+  end
+
+  @doc """
+  True once the check-in window has been open for at least the required minimum.
+  """
+  def check_in_min_elapsed?(%Tournament{} = t) do
+    case check_in_start_allowed_at(t) do
+      nil -> false
+      allowed_at -> DateTime.compare(DateTime.utc_now(), allowed_at) != :lt
+    end
+  end
+
   # ─────────── PubSub ───────────
 
   def subscribe_tournaments do
@@ -54,12 +85,13 @@ defmodule Tabletop.Tournaments do
   end
 
   defp status_order(:registration), do: 0
-  defp status_order(:swiss), do: 1
-  defp status_order(:cut), do: 2
-  defp status_order(:draft), do: 3
-  defp status_order(:finished), do: 4
-  defp status_order(:cancelled), do: 5
-  defp status_order(_), do: 6
+  defp status_order(:check_in), do: 1
+  defp status_order(:swiss), do: 2
+  defp status_order(:cut), do: 3
+  defp status_order(:draft), do: 4
+  defp status_order(:finished), do: 5
+  defp status_order(:cancelled), do: 6
+  defp status_order(_), do: 7
 
   defp with_player_count(%Tournament{} = t) do
     count =
@@ -235,6 +267,45 @@ defmodule Tabletop.Tournaments do
   end
 
   @doc """
+  A registered player checks in during the check-in window. Idempotent — a
+  second call leaves the original timestamp in place.
+  """
+  def check_in(%Scope{user: user}, tournament_id) do
+    t = get_tournament!(tournament_id)
+
+    cond do
+      t.status != :check_in ->
+        {:error, :check_in_closed}
+
+      true ->
+        case get_registration(tournament_id, user.id) do
+          nil ->
+            {:error, :not_registered}
+
+          %TournamentRegistration{dropped_at: dropped} when not is_nil(dropped) ->
+            {:error, :dropped}
+
+          %TournamentRegistration{checked_in_at: checked_in} = reg
+          when not is_nil(checked_in) ->
+            {:ok, reg}
+
+          reg ->
+            reg
+            |> Ecto.Changeset.change(checked_in_at: DateTime.utc_now())
+            |> Repo.update()
+            |> case do
+              {:ok, reg} ->
+                broadcast_one(tournament_id)
+                {:ok, reg}
+
+              error ->
+                error
+            end
+        end
+    end
+  end
+
+  @doc """
   A player reports the result of their current match.
 
   `which` is `:p1` or `:p2`, `result` is one of `"p1_win" | "p2_win" | "draw"`.
@@ -318,42 +389,107 @@ defmodule Tabletop.Tournaments do
 
   def open_registration(%Scope{} = scope, %Tournament{} = t) do
     ensure_admin!(scope)
-    update_status(t, :registration)
+    # Reopening registration (e.g. from check-in) resets the check-in window.
+    update_status(t, :registration, %{check_in_opened_at: nil})
+  end
+
+  @doc """
+  Opens the check-in window. Players must check in before the admin starts the
+  tournament; anyone who hasn't is dropped at start. Registration is closed for
+  the duration (sign-ups are only accepted in `:registration`). Opening check-in
+  clears any prior check-in marks so each window starts fresh.
+  """
+  def open_check_in(%Scope{} = scope, %Tournament{} = t) do
+    ensure_admin!(scope)
+
+    active = list_registrations(t.id) |> Enum.reject(& &1.dropped_at)
+
+    cond do
+      t.status != :registration ->
+        {:error, :wrong_status}
+
+      length(active) < 2 ->
+        {:error, :not_enough_players}
+
+      true ->
+        do_open_check_in(t)
+    end
+  end
+
+  defp do_open_check_in(%Tournament{} = t) do
+    Repo.transaction(fn ->
+      from(r in TournamentRegistration, where: r.tournament_id == ^t.id)
+      |> Repo.update_all(set: [checked_in_at: nil])
+
+      t
+      |> Tournament.status_changeset(%{
+        status: :check_in,
+        check_in_opened_at: DateTime.utc_now()
+      })
+      |> Repo.update!()
+    end)
+    |> case do
+      {:ok, t} ->
+        broadcast_list()
+        broadcast_one(t.id)
+        {:ok, t}
+
+      error ->
+        error
+    end
   end
 
   def start_tournament(%Scope{} = scope, %Tournament{} = t) do
     ensure_admin!(scope)
 
     regs = list_registrations(t.id) |> Enum.reject(& &1.dropped_at)
+    {checked_in, not_checked_in} = Enum.split_with(regs, & &1.checked_in_at)
 
-    if length(regs) < 2 do
-      {:error, :not_enough_players}
-    else
-      Repo.transaction(fn ->
-        regs
-        |> Enum.with_index(1)
-        |> Enum.each(fn {reg, idx} ->
-          reg
-          |> Ecto.Changeset.change(seed: idx)
+    cond do
+      t.status != :check_in ->
+        {:error, :wrong_status}
+
+      not check_in_min_elapsed?(t) ->
+        {:error, :check_in_too_soon}
+
+      length(checked_in) < 2 ->
+        {:error, :not_enough_players}
+
+      true ->
+        Repo.transaction(fn ->
+          now = DateTime.utc_now()
+
+          # Players who never checked in are dropped before pairing.
+          Enum.each(not_checked_in, fn reg ->
+            reg
+            |> Ecto.Changeset.change(dropped_at: now)
+            |> Repo.update!()
+          end)
+
+          checked_in
+          |> Enum.with_index(1)
+          |> Enum.each(fn {reg, idx} ->
+            reg
+            |> Ecto.Changeset.change(seed: idx)
+            |> Repo.update!()
+          end)
+
+          t = t |> Ecto.Changeset.change(status: :swiss) |> Repo.update!()
+          {:ok, round} = do_generate_swiss_round(t, 1)
+
+          t
+          |> Ecto.Changeset.change(current_round_id: round.id)
           |> Repo.update!()
         end)
+        |> case do
+          {:ok, t} ->
+            broadcast_list()
+            broadcast_one(t.id)
+            {:ok, t}
 
-        t = t |> Ecto.Changeset.change(status: :swiss) |> Repo.update!()
-        {:ok, round} = do_generate_swiss_round(t, 1)
-
-        t
-        |> Ecto.Changeset.change(current_round_id: round.id)
-        |> Repo.update!()
-      end)
-      |> case do
-        {:ok, t} ->
-          broadcast_list()
-          broadcast_one(t.id)
-          {:ok, t}
-
-        error ->
-          error
-      end
+          error ->
+            error
+        end
     end
   end
 
@@ -807,9 +943,9 @@ defmodule Tabletop.Tournaments do
 
   # ─────────── Helpers ───────────
 
-  defp update_status(%Tournament{} = t, status) do
+  defp update_status(%Tournament{} = t, status, extra \\ %{}) do
     t
-    |> Tournament.status_changeset(%{status: status})
+    |> Tournament.status_changeset(Map.put(extra, :status, status))
     |> Repo.update()
     |> case do
       {:ok, t} ->

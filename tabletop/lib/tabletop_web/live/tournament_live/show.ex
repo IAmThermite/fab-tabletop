@@ -98,6 +98,19 @@ defmodule TabletopWeb.TournamentLive.Show do
     end
   end
 
+  def handle_event("check_in", _params, socket) do
+    case Tournaments.check_in(socket.assigns.current_scope, socket.assigns.tournament.id) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "You're checked in!")
+         |> load(socket.assigns.tournament.id)}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Couldn't check in.")}
+    end
+  end
+
   def handle_event("report", %{"match_id" => match_id, "result" => result}, socket) do
     case Tournaments.report_result(socket.assigns.current_scope, match_id, result) do
       {:ok, _} ->
@@ -128,6 +141,18 @@ defmodule TabletopWeb.TournamentLive.Show do
         </:actions>
       </.header>
 
+      <p
+        :if={@tournament.starts_at && @tournament.status not in [:finished, :cancelled]}
+        class="mb-4 text-sm"
+      >
+        <span class="opacity-70">Starts</span>
+        <.local_datetime
+          id="tournament-starts-at"
+          at={@tournament.starts_at}
+          countdown={@tournament.status in [:draft, :registration]}
+        />
+      </p>
+
       <p :if={@tournament.description} class="mb-4">{@tournament.description}</p>
 
       <.my_match
@@ -136,8 +161,23 @@ defmodule TabletopWeb.TournamentLive.Show do
         current_user_id={user_id(@current_scope)}
       />
 
+      <.check_in_panel
+        :if={
+          (@tournament.status == :check_in and @my_registration) &&
+            is_nil(@my_registration.dropped_at)
+        }
+        registration={@my_registration}
+      />
+
+      <p
+        :if={(@tournament.status == :check_in and @current_scope) && !@my_registration}
+        class="card bg-base-200 p-4 my-4 text-sm opacity-70"
+      >
+        Registration is closed — the organiser has opened check-in.
+      </p>
+
       <.register_panel
-        :if={@tournament.status == :registration and @current_scope && !@my_registration}
+        :if={(@tournament.status == :registration and @current_scope) && !@my_registration}
         form={@registration_form}
       />
 
@@ -291,8 +331,8 @@ defmodule TabletopWeb.TournamentLive.Show do
       </div>
       <div :if={@match.player2_id != nil}>
         <div>
-          Table {@match.table_number}: <strong>{@match.player1.name}</strong> vs
-          <strong>{@match.player2.name}</strong>
+          Table {@match.table_number}: <strong>{@match.player1.name}</strong>
+          vs <strong>{@match.player2.name}</strong>
         </div>
         <div :if={@match.game_id} class="my-2">
           <.button variant="primary" navigate={~p"/games/#{@match.game_id}"}>
@@ -379,6 +419,26 @@ defmodule TabletopWeb.TournamentLive.Show do
        do: r1 != r2
 
   defp reports_disagree?(_), do: false
+
+  attr :registration, :any, required: true
+
+  defp check_in_panel(assigns) do
+    ~H"""
+    <section class="card bg-base-200 p-4 my-4">
+      <h2 class="font-semibold text-lg mb-2">Check-in</h2>
+      <div :if={@registration.checked_in_at} class="text-success flex items-center gap-2">
+        <.icon name="hero-check-circle" class="size-5" /> You're checked in. Hang tight for the start.
+      </div>
+      <div :if={is_nil(@registration.checked_in_at)} class="space-y-3">
+        <p class="text-sm">
+          Check in to confirm you're playing. Players who don't check in before the organiser
+          starts the tournament are dropped.
+        </p>
+        <.button variant="primary" phx-click="check_in">Check in</.button>
+      </div>
+    </section>
+    """
+  end
 
   attr :form, :any, required: true
 
@@ -469,6 +529,7 @@ defmodule TabletopWeb.TournamentLive.Show do
 
   defp status_label(:draft), do: "Draft"
   defp status_label(:registration), do: "Registration open"
+  defp status_label(:check_in), do: "Check-in"
   defp status_label(:swiss), do: "Swiss"
   defp status_label(:cut), do: "Top cut"
   defp status_label(:finished), do: "Finished"

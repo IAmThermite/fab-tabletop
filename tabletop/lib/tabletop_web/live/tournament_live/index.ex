@@ -45,6 +45,14 @@ defmodule TabletopWeb.TournamentLive.Index do
                 <div class="text-sm opacity-70">
                   {Tournament.format_name(t)} · {t.active_player_count}/{t.max_players} players
                 </div>
+                <div :if={t.starts_at} class="text-sm opacity-70">
+                  Starts
+                  <.local_datetime
+                    id={"tournament-#{t.id}-starts-at"}
+                    at={t.starts_at}
+                    countdown={t.status in [:draft, :registration]}
+                  />
+                </div>
               </div>
               <span class={"badge #{status_class(t.status)}"}>{status_label(t.status)}</span>
             </div>
@@ -57,6 +65,7 @@ defmodule TabletopWeb.TournamentLive.Index do
 
   defp status_class(:draft), do: "badge-ghost"
   defp status_class(:registration), do: "badge-primary"
+  defp status_class(:check_in), do: "badge-accent"
   defp status_class(:swiss), do: "badge-info"
   defp status_class(:cut), do: "badge-warning"
   defp status_class(:finished), do: "badge-success"
@@ -64,6 +73,7 @@ defmodule TabletopWeb.TournamentLive.Index do
 
   defp status_label(:draft), do: "Draft"
   defp status_label(:registration), do: "Registration open"
+  defp status_label(:check_in), do: "Check-in"
   defp status_label(:swiss), do: "Swiss"
   defp status_label(:cut), do: "Top cut"
   defp status_label(:finished), do: "Finished"

@@ -29,9 +29,7 @@ defmodule Tabletop.Tournaments.Pairing.Standings do
 
       %{id: p.id, match_points: mp, mw: mw, omw: omw, gw: gw, ogw: ogw}
     end)
-    |> Enum.sort_by(
-      fn r -> {-r.match_points, -r.omw, -r.gw, -r.ogw, seed_of(by_id[r.id])} end
-    )
+    |> Enum.sort_by(fn r -> {-r.match_points, -r.omw, -r.gw, -r.ogw, seed_of(by_id[r.id])} end)
     |> Enum.with_index(1)
     |> Enum.map(fn {row, rank} -> Map.put(row, :rank, rank) end)
   end

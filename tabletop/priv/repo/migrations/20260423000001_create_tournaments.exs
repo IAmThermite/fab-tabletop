@@ -14,6 +14,7 @@ defmodule Tabletop.Repo.Migrations.CreateTournaments do
       add :starts_at, :utc_datetime_usec
       add :created_by_id, references(:users, type: :uuid, on_delete: :nilify_all)
       add :winner_id, references(:users, type: :uuid, on_delete: :nilify_all)
+      add :check_in_opened_at, :utc_datetime_usec
 
       timestamps(type: :utc_datetime)
     end
@@ -53,6 +54,7 @@ defmodule Tabletop.Repo.Migrations.CreateTournaments do
       add :decklist_url, :string
       add :seed, :integer
       add :dropped_at, :utc_datetime_usec
+      add :checked_in_at, :utc_datetime_usec
 
       timestamps(type: :utc_datetime)
     end

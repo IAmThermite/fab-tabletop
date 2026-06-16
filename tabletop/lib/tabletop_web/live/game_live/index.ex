@@ -21,7 +21,7 @@ defmodule TabletopWeb.GameLive.Index do
         <details
           id="intro-header"
           open={!@current_scope}
-          class="group mb-6 overflow-hidden rounded-box border border-base-300 bg-gradient-to-b from-base-200/60 to-base-100"
+          class="group mb-6 overflow-hidden rounded-box border border-zinc-200 dark:border-zinc-700 bg-gradient-to-b from-base-200/60 to-base-100"
         >
           <summary class="flex cursor-pointer list-none select-none items-center justify-between gap-3 p-4">
             <span class="font-display text-lg font-bold sm:text-xl">

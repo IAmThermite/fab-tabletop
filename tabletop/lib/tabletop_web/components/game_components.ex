@@ -1235,6 +1235,28 @@ defmodule TabletopWeb.GameComponents do
             <span class="label-text">Card scan debug overlay</span>
             <input id="debug-scan-toggle" type="checkbox" class="toggle" />
           </label>
+          <label class="flex items-center justify-between gap-3 cursor-pointer">
+            <span class="label-text">Effect volume</span>
+            <input
+              id="effect-volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              class="range range-sm flex-1 max-w-40"
+            />
+          </label>
+          <label class="flex items-center justify-between gap-3 cursor-pointer">
+            <span class="label-text">Opponent volume</span>
+            <input
+              id="opponent-volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              class="range range-sm flex-1 max-w-40"
+            />
+          </label>
 
           <div :if={@game_id} class="divider text-xs">Share game</div>
           <div :if={@game_id} class="space-y-1">

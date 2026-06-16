@@ -48,6 +48,43 @@
         <% end %>
       </button>
 
+      <%!-- Opponent volume: a speaker button whose slider expands in a popover
+            on hover, controlling local playback volume of the opponent's
+            stream. The popover is absolutely positioned so it never reflows the
+            bar (the title stays put). Wholly client-driven (slider value + icon
+            live in localStorage), so phx-update="ignore" keeps a LiveView patch
+            from resetting it. --%>
+      <div
+        id="opponent-volume-control"
+        phx-update="ignore"
+        class="group relative"
+        title="Opponent volume"
+      >
+        <button
+          id="opponent-volume-icon"
+          type="button"
+          class="btn btn-circle btn-sm"
+          title="Mute opponent"
+        >
+          <span id="opp-vol-on-icon"><.icon name="hero-speaker-wave" class="size-5" /></span>
+          <span id="opp-vol-off-icon" class="hidden">
+            <.icon name="hero-speaker-x-mark" class="size-5" />
+          </span>
+        </button>
+        <div class="pointer-events-none absolute left-1/2 top-full z-30 origin-top -translate-x-1/2 scale-95 pt-2 opacity-0 transition-all duration-150 group-hover:pointer-events-auto group-hover:scale-100 group-hover:opacity-100">
+          <div class="rounded-box bg-base-300 px-3 py-2 shadow">
+            <input
+              id="opponent-volume-bar"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              class="range range-xs w-28"
+            />
+          </div>
+        </div>
+      </div>
+
       <div class="flex-1 text-center font-semibold truncate">
         {@game.title}
       </div>
@@ -170,6 +207,7 @@
     import CameraRelayReceiver from "@/js/camera_relay_receiver.js"
     import { setupCardLookup, preloadScanner } from "@/js/card_scanner/liveview_hook.js"
     import { isDebugEnabled, setDebugEnabled } from "@/js/card_scanner/debug.js"
+    import { sounds } from "@/js/sounds.js"
 
     export default {
       mounted() {
@@ -191,6 +229,12 @@
         const settingsDialog = document.getElementById("settings-dialog")
         const flipToggle = document.getElementById("flip-opponent-toggle")
         const debugToggle = document.getElementById("debug-scan-toggle")
+        const effectVol = document.getElementById("effect-volume")
+        const oppVolBar = document.getElementById("opponent-volume-bar")
+        const oppVolDialog = document.getElementById("opponent-volume")
+        const oppVolIcon = document.getElementById("opponent-volume-icon")
+        const oppVolOnIcon = document.getElementById("opp-vol-on-icon")
+        const oppVolOffIcon = document.getElementById("opp-vol-off-icon")
 
         // Load flip preference from localStorage
         const FLIP_KEY = "tabletop:flip-opponent"
@@ -251,6 +295,11 @@
         }
         this._localPreviewFrameId = requestAnimationFrame(renderLocalPreview)
 
+        // Opponent presence state machine, driving the connection cues.
+        this._oppPresent = false
+        this._everConnected = false
+        this._dropTimer = null
+
         this.webrtc = new WebRTCManager({
           token,
           gameId,
@@ -281,8 +330,37 @@
             if (status === "connected") {
               this.pushEvent("peer_connected", {})
               preloadScanner()
+              if (this._dropTimer) {
+                clearTimeout(this._dropTimer)
+                this._dropTimer = null
+              }
+              if (!this._oppPresent) {
+                sounds.play(this._everConnected ? "opponent_reconnect" : "opponent_join")
+                this._oppPresent = true
+                this._everConnected = true
+              }
             } else if (status === "waiting" || status === "disconnected") {
               this.pushEvent("peer_disconnected", {})
+              if (status === "disconnected" && this._oppPresent) {
+                // An established connection dropped. Defer the cue briefly so a
+                // transient ICE blip that recovers immediately stays silent.
+                this._oppPresent = false
+                if (!this._dropTimer) {
+                  this._dropTimer = setTimeout(() => {
+                    this._dropTimer = null
+                    if (this.webrtc && this.webrtc._status === "disconnected") {
+                      sounds.play("opponent_dropped")
+                    }
+                  }, 1000)
+                }
+              } else if (status === "waiting") {
+                // Clean peer-left, not an accidental drop — no cue.
+                if (this._dropTimer) {
+                  clearTimeout(this._dropTimer)
+                  this._dropTimer = null
+                }
+                this._oppPresent = false
+              }
             }
           },
         })
@@ -302,10 +380,12 @@
             const newVal = !this.webrtc.cameraEnabled
             this.webrtc.setCameraEnabled(newVal)
             this.pushEvent("set_media", { kind: "camera", value: newVal })
+            sounds.play(newVal ? "camera_on" : "camera_off")
           } else if (btn.id === "toggle-mic") {
             const newVal = !this.webrtc.micEnabled
             this.webrtc.setMicEnabled(newVal)
             this.pushEvent("set_media", { kind: "mic", value: newVal })
+            sounds.play(newVal ? "mic_on" : "mic_off")
           }
         })
 
@@ -332,6 +412,69 @@
         debugToggle.addEventListener("change", () => {
           setDebugEnabled(debugToggle.checked)
         })
+
+        // Sound-effects volume lives in the settings dialog. Keep its slider
+        // aligned with the engine (and other surfaces) via onChange.
+        const syncEffectVol = ({ volume }) => {
+          if (effectVol) effectVol.value = volume
+        }
+        syncEffectVol({ volume: sounds.getVolume() })
+        this._soundUnsub = sounds.onChange(syncEffectVol)
+        if (effectVol) {
+          effectVol.addEventListener("input", () => {
+            sounds.setVolume(parseFloat(effectVol.value))
+            // Blip at the new effect volume so the player hears the level.
+            sounds.play("volume_blip", { dedupeKey: "effect_vol_blip" })
+          })
+        }
+
+        // Opponent volume — the game-bar hover slider and the settings-dialog
+        // slider both set the local playback volume of the opponent's stream
+        // (remote <video>). Both are kept in sync and persisted per device.
+        const OPP_VOL_KEY = "tabletop:opponent-volume"
+        const readOppVol = () => {
+          const v = parseFloat(localStorage.getItem(OPP_VOL_KEY))
+          return Number.isNaN(v) ? 1 : Math.min(1, Math.max(0, v))
+        }
+        this._oppLastVol = readOppVol() || 1
+
+        const syncOppVolUI = (v) => {
+          if (oppVolBar) oppVolBar.value = v
+          if (oppVolDialog) oppVolDialog.value = v
+          if (oppVolOnIcon) oppVolOnIcon.classList.toggle("hidden", v === 0)
+          if (oppVolOffIcon) oppVolOffIcon.classList.toggle("hidden", v !== 0)
+        }
+        const setOppVol = (v) => {
+          const clamped = Math.min(1, Math.max(0, v))
+          localStorage.setItem(OPP_VOL_KEY, String(clamped))
+          if (remoteVideoEl) {
+            remoteVideoEl.volume = clamped
+            remoteVideoEl.muted = clamped === 0
+          }
+          if (clamped > 0) this._oppLastVol = clamped
+          syncOppVolUI(clamped)
+        }
+        setOppVol(readOppVol())
+
+        // Set volume and blip at that level so the player hears how loud the
+        // opponent will be (the blip is scaled to the opponent volume).
+        const setOppVolFromInput = (v) => {
+          setOppVol(v)
+          sounds.play("volume_blip", { volume: v, dedupeKey: "opp_vol_blip" })
+        }
+
+        if (oppVolBar) {
+          oppVolBar.addEventListener("input", () => setOppVolFromInput(parseFloat(oppVolBar.value)))
+        }
+        if (oppVolDialog) {
+          oppVolDialog.addEventListener("input", () => setOppVolFromInput(parseFloat(oppVolDialog.value)))
+        }
+        if (oppVolIcon) {
+          // Click the speaker to mute/unmute (restores the last audible level).
+          oppVolIcon.addEventListener("click", () => {
+            setOppVolFromInput(readOppVol() === 0 ? this._oppLastVol || 1 : 0)
+          })
+        }
 
         // --- Phone Camera Relay ---
         const relayUserId = this.el.dataset.relayUserId
@@ -482,6 +625,12 @@
       },
 
       destroyed() {
+        if (this._dropTimer) {
+          clearTimeout(this._dropTimer)
+        }
+        if (this._soundUnsub) {
+          this._soundUnsub()
+        }
         if (this._localPreviewFrameId) {
           cancelAnimationFrame(this._localPreviewFrameId)
         }
@@ -497,6 +646,21 @@
         if (this.webrtc) {
           this.webrtc.disconnect()
         }
+      },
+    }
+  </script>
+
+  <div id="game-sounds" phx-hook=".Sounds"></div>
+
+  <script :type={ColocatedHook} name=".Sounds">
+    import { sounds } from "@/js/sounds.js"
+
+    export default {
+      mounted() {
+        // Opportunistically unlock audio (mount follows navigation gestures),
+        // then play server-pushed cues for the two players in this game.
+        sounds.unlock()
+        this.handleEvent("play_sound", ({ cue, opts }) => sounds.play(cue, opts || {}))
       },
     }
   </script>

@@ -99,6 +99,7 @@ Mapping rules worth knowing before changing it:
 - Don't move ephemeral game state into Ecto — sessions are intentionally in-memory; persistence is limited to `Game` metadata.
 - When adding a new `GameSession` action, both `dispatch/2` (in `game_session.ex`) and the corresponding `GameState` transform must be added; broadcasts go out automatically via `broadcast_update/4`.
 - Don't add any Elixir `@spec` documentation, but be sure to document other functions where necessary.
+- **Client-managed DOM needs `phx-update="ignore"`.** Any element whose state is driven by JavaScript — a colocated hook, `localStorage`, or a JS-set `class`/`checked`/`value` — that sits inside a LiveView-rendered region will be reset to its static server markup on the next re-render, silently desyncing the visible UI from the real (client-side) state. The server can't render the truth because it doesn't know the client state, so mark the element (or a stable-`id` wrapper) `phx-update="ignore"` and let the hook own it after the initial render. Examples in the game show page: `#opponent-volume-control` (hover slider + mute icon, client-driven), `#connection-status`, the user-settings `#sound-settings` block, and the whole `#settings-dialog` (flip/debug toggles + effect & opponent volume sliders). Symptom when it's missing: a control "resets itself" on the UI while the underlying behaviour stays correct.
 
 # Important instructions
 

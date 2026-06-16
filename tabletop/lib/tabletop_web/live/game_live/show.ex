@@ -14,11 +14,33 @@ defmodule TabletopWeb.GameLive.Show do
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     scope = socket.assigns.current_scope
-    # get_game!/2 is participant-scoped — raises Ecto.NoResultsError (→ 404)
-    # for non-participants or unknown ids, so we never assign metadata for a
-    # game the user isn't in.
-    game = Games.get_game!(scope, id)
 
+    # get_game/2 is participant-scoped — it returns {:error, :not_found} both for
+    # unknown games and for a user who isn't a participant *yet*.
+    case Games.get_game(scope, id) do
+      {:ok, game} ->
+        mount_game(socket, game, scope)
+
+      {:error, :not_found} ->
+        # If the game exists, route the would-be joiner through pre-join so they
+        # can join properly instead of dead-ending here with a 404. Possession
+        # of the UUID is the invitation (same model as pre-join's own lookup).
+        # This also recovers anyone whose stale `camera-confirmed` flag skipped
+        # them past the join onto this page as a non-participant.
+        case Games.fetch_game(id) do
+          {:ok, _game} ->
+            {:ok, redirect(socket, to: ~p"/games/#{id}/pre-join")}
+
+          {:error, :not_found} ->
+            {:ok,
+             socket
+             |> put_flash(:error, "Game not found.")
+             |> redirect(to: ~p"/")}
+        end
+    end
+  end
+
+  defp mount_game(socket, game, scope) do
     user_id = scope.user.id
 
     if connected?(socket) do
@@ -94,16 +116,25 @@ defmodule TabletopWeb.GameLive.Show do
 
   @impl true
   def handle_info({:game_update, "game_ended", _sender_id}, socket) do
+    # Play the end cue now, then defer the redirect so the sound isn't cut off
+    # when the LiveView is torn down by navigation.
+    Process.send_after(self(), :navigate_home, 800)
+
     {:noreply,
      socket
      |> put_flash(:info, "The game has ended.")
-     |> push_navigate(to: ~p"/")}
+     |> push_event("play_sound", %{cue: "game_ended"})}
   end
 
-  def handle_info({:game_update, side, _delta, _sender_id}, socket)
+  def handle_info(:navigate_home, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/")}
+  end
+
+  def handle_info({:game_update, side, delta, actor_user_id}, socket)
       when side in [:user1, :user2] do
     state = GameSession.get_state(socket.assigns.game.id)
-    {:noreply, assign_session_state(socket, state)}
+    socket = assign_session_state(socket, state)
+    {:noreply, maybe_play_cue(socket, delta, actor_user_id)}
   end
 
   def handle_info({:session_reset, state}, socket) do
@@ -138,6 +169,28 @@ defmodule TabletopWeb.GameLive.Show do
       when type in [:created, :updated, :deleted] do
     {:noreply, socket}
   end
+
+  # Emit an audio cue to this client for a state delta. Media toggles only play
+  # for the *opponent's* action — the actor already hears an instant local blip
+  # from the .GameVideo hook, so the actor's own server cue is suppressed.
+  defp maybe_play_cue(socket, {:media_changed, kind, value}, actor_user_id) do
+    if actor_user_id == socket.assigns.user_id do
+      socket
+    else
+      case media_cue(kind, value) do
+        nil -> socket
+        cue -> push_event(socket, "play_sound", %{cue: cue})
+      end
+    end
+  end
+
+  defp maybe_play_cue(socket, _delta, _actor_user_id), do: socket
+
+  defp media_cue(:mic, true), do: "mic_on"
+  defp media_cue(:mic, false), do: "mic_off"
+  defp media_cue(:camera, true), do: "camera_on"
+  defp media_cue(:camera, false), do: "camera_off"
+  defp media_cue(_kind, _value), do: nil
 
   # Callback for `TabletopWeb.GameControls`: apply an action authoritatively via
   # the game session. `move_tile` arrives with a raw owner ("my"/"opponent")

@@ -83,6 +83,59 @@ defmodule TabletopWeb.UserLive.Settings do
           Save Preferences
         </.button>
       </.form>
+
+      <%!-- Client-managed (localStorage) toggle — phx-update="ignore" so a
+            form re-render on this page can't reset the checkbox. Opponent
+            volume isn't here: it's game-screen-only (set in the game's bar /
+            settings dialog). --%>
+      <div
+        id="sound-settings"
+        phx-hook=".SoundSettings"
+        phx-update="ignore"
+        class="mt-8 space-y-3"
+      >
+        <label class="flex items-center justify-between gap-3 cursor-pointer">
+          <span class="label-text">Effect volume</span>
+          <input
+            id="settings-effect-volume"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            class="range range-sm flex-1 max-w-xs"
+          />
+        </label>
+        <p class="text-sm text-zinc-500">
+          Volume of chimes for opponent connect/disconnect, game end, and mute toggles. Set to
+          zero to silence them. Saved on this device.
+        </p>
+      </div>
+
+      <script :type={ColocatedHook} name=".SoundSettings">
+        import { sounds } from "@/js/sounds.js"
+
+        export default {
+          mounted() {
+            const volume = this.el.querySelector("#settings-effect-volume")
+
+            // Keep the slider in sync with the engine (and other surfaces).
+            const sync = ({ volume: vol }) => {
+              volume.value = vol
+            }
+            sync({ volume: sounds.getVolume() })
+            this._unsub = sounds.onChange(sync)
+
+            volume.addEventListener("input", () => {
+              sounds.setVolume(parseFloat(volume.value))
+              // Blip at the new volume so the player hears the level.
+              sounds.play("volume_blip", { dedupeKey: "effect_vol_blip" })
+            })
+          },
+          destroyed() {
+            if (this._unsub) this._unsub()
+          },
+        }
+      </script>
     </Layouts.app>
     """
   end

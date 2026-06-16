@@ -126,7 +126,7 @@ defmodule TabletopWeb.Layouts do
         </div>
       </header>
 
-      <main class="flex-1 px-3 sm:px-6 lg:px-8 pt-6 sm:pt-8">
+      <main class="flex-1 px-3 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-10 sm:pb-12">
         <div class={["mx-auto space-y-4", @max_width]}>
           {render_slot(@inner_block)}
         </div>

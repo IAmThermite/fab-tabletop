@@ -16,7 +16,7 @@ defmodule Tabletop.Fab.GameState do
     life: 40,
     physical: %{active: false, damage: 0},
     arcane: %{active: false, damage: 0},
-    amp: %{active: false, count: 0},
+    amp: %{active: false, value: 0},
     goagain: false,
     effects: %{},
     effect_counts: %{},
@@ -133,8 +133,8 @@ defmodule Tabletop.Fab.GameState do
   end
 
   def change_amp(player, delta) when is_integer(delta) do
-    new_val = max(0, player.amp.count + delta)
-    new_player = %{player | amp: %{player.amp | count: new_val}}
+    new_val = max(0, player.amp.value + delta)
+    new_player = %{player | amp: %{player.amp | value: new_val}}
     {:ok, new_player, {:amp_changed, new_val}}
   end
 
@@ -171,7 +171,8 @@ defmodule Tabletop.Fab.GameState do
         {:error, :unknown_counter}
 
       counter ->
-        new_count = max(0, counter.count + delta)
+        # can be negative
+        new_count = counter.count + delta
         new_counters = Map.put(counters, id, %{counter | count: new_count})
         new_player = %{player | custom_counters: new_counters}
         {:ok, new_player, {:custom_counter_changed, id, new_count}}

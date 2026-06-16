@@ -23,7 +23,7 @@ defmodule Tabletop.Fab.GameStateTest do
 
     test "returns default state with amp off and no custom counters" do
       player = GameState.default_player()
-      assert player.amp == %{active: false, count: 0}
+      assert player.amp == %{active: false, value: 0}
       assert player.custom_counters == %{}
     end
 
@@ -202,14 +202,14 @@ defmodule Tabletop.Fab.GameStateTest do
       assert {:ok, new_player, {:amp_changed, 1}} =
                GameState.change_amp(GameState.default_player(), 1)
 
-      assert new_player.amp.count == 1
+      assert new_player.amp.value == 1
     end
 
     test "clamps the count at 0" do
       assert {:ok, new_player, {:amp_changed, 0}} =
                GameState.change_amp(GameState.default_player(), -5)
 
-      assert new_player.amp.count == 0
+      assert new_player.amp.value == 0
     end
   end
 
@@ -251,7 +251,7 @@ defmodule Tabletop.Fab.GameStateTest do
   end
 
   describe "change_custom_counter/3" do
-    test "increments and clamps at 0" do
+    test "increments and decrements" do
       {:ok, player, {:custom_counter_added, id, _}} =
         GameState.add_custom_counter(GameState.default_player(), "X")
 
@@ -260,10 +260,10 @@ defmodule Tabletop.Fab.GameStateTest do
 
       assert player.custom_counters[id].count == 1
 
-      {:ok, player, {:custom_counter_changed, ^id, 0}} =
+      {:ok, player, {:custom_counter_changed, ^id, -4}} =
         GameState.change_custom_counter(player, id, -5)
 
-      assert player.custom_counters[id].count == 0
+      assert player.custom_counters[id].count == -4
     end
 
     test "returns error for an unknown counter" do
@@ -367,7 +367,7 @@ defmodule Tabletop.Fab.GameStateTest do
       assert new_player.arcane.damage == 0
       assert new_player.goagain == false
       assert new_player.effects == %{}
-      assert new_player.amp == %{active: false, count: 0}
+      assert new_player.amp == %{active: false, value: 0}
       assert new_player.custom_counters == %{}
       assert new_player.tile_positions == %{}
     end

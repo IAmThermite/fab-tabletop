@@ -14,11 +14,33 @@ defmodule TabletopWeb.GameLive.Show do
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     scope = socket.assigns.current_scope
-    # get_game!/2 is participant-scoped — raises Ecto.NoResultsError (→ 404)
-    # for non-participants or unknown ids, so we never assign metadata for a
-    # game the user isn't in.
-    game = Games.get_game!(scope, id)
 
+    # get_game/2 is participant-scoped — it returns {:error, :not_found} both for
+    # unknown games and for a user who isn't a participant *yet*.
+    case Games.get_game(scope, id) do
+      {:ok, game} ->
+        mount_game(socket, game, scope)
+
+      {:error, :not_found} ->
+        # If the game exists, route the would-be joiner through pre-join so they
+        # can join properly instead of dead-ending here with a 404. Possession
+        # of the UUID is the invitation (same model as pre-join's own lookup).
+        # This also recovers anyone whose stale `camera-confirmed` flag skipped
+        # them past the join onto this page as a non-participant.
+        case Games.fetch_game(id) do
+          {:ok, _game} ->
+            {:ok, redirect(socket, to: ~p"/games/#{id}/pre-join")}
+
+          {:error, :not_found} ->
+            {:ok,
+             socket
+             |> put_flash(:error, "Game not found.")
+             |> redirect(to: ~p"/")}
+        end
+    end
+  end
+
+  defp mount_game(socket, game, scope) do
     user_id = scope.user.id
 
     if connected?(socket) do

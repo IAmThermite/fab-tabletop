@@ -181,6 +181,14 @@ defmodule TabletopWeb.CameraSetupLive do
       export default {
         mounted() {
           const el = this.el
+
+          // Mark this game's camera confirmed only once the server confirms the
+          // user is a participant — never optimistically on click — so a failed
+          // join can't set the flag and trap the user out of the join flow.
+          this.handleEvent("camera_confirmed", ({ game_id }) => {
+            localStorage.setItem(`tabletop:camera-confirmed:${game_id}`, "true")
+          })
+
           const videoEl = document.getElementById("test-local-video")
           const canvasEl = document.getElementById("test-canvas")
           const noCameraEl = document.getElementById("test-no-camera")
@@ -383,10 +391,10 @@ defmodule TabletopWeb.CameraSetupLive do
 
             const gameId = el.dataset.gameId
             if (gameId) {
-              // When invoked from a game's pre-join flow, jump straight into
-              // the game (joining if needed) instead of bouncing back through
-              // pre-join.
-              localStorage.setItem(`tabletop:camera-confirmed:${gameId}`, "true")
+              // When invoked from a game's pre-join flow, join (if needed) and
+              // jump straight into the game instead of bouncing back through
+              // pre-join. The `camera-confirmed` flag is set by the server's
+              // "camera_confirmed" event only on a confirmed join, not here.
               localStorage.setItem("tabletop:camera-source", this._usingPhone ? "phone" : "webcam")
               this.pushEvent("save_and_join", {})
             } else {
@@ -523,13 +531,17 @@ defmodule TabletopWeb.CameraSetupLive do
     with %{user: %{id: _}} <- scope,
          {:ok, game} <- fetch_game_for_setup(scope, game_id) do
       if Games.user_part_of_game?(scope, game) do
-        {:noreply, push_navigate(socket, to: ~p"/games/#{game}")}
+        {:noreply,
+         socket
+         |> push_event("camera_confirmed", %{game_id: game.id})
+         |> push_navigate(to: ~p"/games/#{game}")}
       else
         case Games.join_game(scope, game) do
           {:ok, game} ->
             {:noreply,
              socket
              |> put_flash(:info, "Joined game successfully")
+             |> push_event("camera_confirmed", %{game_id: game.id})
              |> push_navigate(to: ~p"/games/#{game}")}
 
           {:error, :already_in_game} ->
@@ -563,7 +575,13 @@ defmodule TabletopWeb.CameraSetupLive do
   defp my(socket), do: socket.assigns.game_state.my
 
   defp fetch_game_for_setup(_scope, nil), do: {:error, :not_found}
-  defp fetch_game_for_setup(scope, id), do: Games.get_game(scope, id)
+
+  # Unscoped lookup: a user reaching camera setup from the join flow is not yet
+  # a participant (they're about to join via `save_and_join`), so the
+  # participant-scoped `Games.get_game/2` would reject them and the join branch
+  # would be unreachable. Possession of the UUID is the invitation — same
+  # rationale as `GameLive.PreJoin.mount/3`.
+  defp fetch_game_for_setup(_scope, id), do: Games.fetch_game(id)
 
   defp apply_action(socket, {:ok, new_player, _broadcast_msg}) do
     {:noreply, assign(socket, :game_state, %{socket.assigns.game_state | my: new_player})}

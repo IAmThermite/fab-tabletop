@@ -18,6 +18,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
         data-game-id={@game.id}
         data-user-token={@user_token}
         data-camera-relay-token={@camera_relay_token}
+        data-skip-allowed={to_string(@mode == :creator)}
         class="flex flex-col h-full"
       >
         <%!-- Share-code prompt (one-time, after creating a private game) --%>
@@ -199,6 +200,14 @@ defmodule TabletopWeb.GameLive.PreJoin do
 
           console.log("[PreJoin] mounted, gameId:", gameId)
 
+          // Mark this game's camera confirmed only once the server confirms the
+          // user is a participant (creator, or a successful join) — never
+          // optimistically on click — so a failed join can't set the flag and
+          // make this screen skip itself (and the join) on the next visit.
+          this.handleEvent("camera_confirmed", ({ game_id }) => {
+            localStorage.setItem(`tabletop:camera-confirmed:${game_id}`, "true")
+          })
+
           // Require camera setup before pre-join
           if (localStorage.getItem("tabletop:camera-setup-done") !== "true") {
             console.log("[PreJoin] camera setup not done, redirecting")
@@ -206,8 +215,14 @@ defmodule TabletopWeb.GameLive.PreJoin do
             return
           }
 
-          // Skip pre-join if camera already confirmed for this game
-          if (localStorage.getItem(`tabletop:camera-confirmed:${gameId}`) === "true") {
+          // Skip pre-join only for a user already in the game who has confirmed
+          // their camera for it. Never skip for a not-yet-joined user: skipping
+          // bypasses the join (which happens on "Continue") and would dead-end
+          // them on the game page as a non-participant. `skipAllowed` is driven
+          // by the server (true only when the user is already a participant), so
+          // a stale `camera-confirmed` flag can't strand them.
+          const skipAllowed = el.dataset.skipAllowed === "true"
+          if (skipAllowed && localStorage.getItem(`tabletop:camera-confirmed:${gameId}`) === "true") {
             console.log("[PreJoin] already confirmed, skipping to game")
             window.location.href = `/games/${gameId}`
             return
@@ -404,11 +419,12 @@ defmodule TabletopWeb.GameLive.PreJoin do
             }
           })
 
-          // Store camera settings on continue so the game show page
-          // knows the user confirmed their camera and which source to use
+          // Store the chosen camera source on continue. The `camera-confirmed`
+          // flag is set by the server's "camera_confirmed" event only once it
+          // confirms participation, not here, so a failed join never marks the
+          // game confirmed.
           const continueBtn = document.getElementById("pre-join-continue-btn")
           continueBtn.addEventListener("click", () => {
-            localStorage.setItem(`tabletop:camera-confirmed:${gameId}`, "true")
             localStorage.setItem("tabletop:camera-source", usingPhone ? "phone" : "webcam")
           })
 
@@ -539,7 +555,12 @@ defmodule TabletopWeb.GameLive.PreJoin do
   def handle_event("continue", _params, socket) do
     case socket.assigns.mode do
       :creator ->
-        {:noreply, push_navigate(socket, to: ~p"/games/#{socket.assigns.game}")}
+        game = socket.assigns.game
+
+        {:noreply,
+         socket
+         |> push_event("camera_confirmed", %{game_id: game.id})
+         |> push_navigate(to: ~p"/games/#{game}")}
 
       :joiner ->
         case Games.join_game(socket.assigns.current_scope, socket.assigns.game) do
@@ -547,6 +568,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
             {:noreply,
              socket
              |> put_flash(:info, "Joined game successfully")
+             |> push_event("camera_confirmed", %{game_id: game.id})
              |> push_navigate(to: ~p"/games/#{game}")}
 
           {:error, :already_in_game} ->

@@ -170,6 +170,60 @@ defmodule TabletopWeb.GameLiveTest do
     end
   end
 
+  describe "Camera setup join" do
+    test "joins a not-yet-participant user as user2 via save_and_join", %{conn: conn, user: user} do
+      other_scope = user_scope_fixture()
+      game = game_fixture(other_scope, %{title: "Join Via Setup"})
+
+      {:ok, live_view, _html} = live(conn, ~p"/camera-setup?game_id=#{game.id}")
+
+      assert {:error, {:live_redirect, %{to: to}}} =
+               render_hook(live_view, "save_and_join", %{})
+
+      assert to == ~p"/games/#{game}"
+
+      updated = Tabletop.Repo.reload!(game)
+      assert updated.user2_id == user.id
+      assert updated.status == :active
+    end
+  end
+
+  describe "Show (non-participant recovery)" do
+    test "routes a non-participant to pre-join instead of 404", %{conn: conn} do
+      other_scope = user_scope_fixture()
+      game = game_fixture(other_scope, %{title: "Someone Else's Game"})
+
+      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/games/#{game}")
+      assert to == ~p"/games/#{game}/pre-join"
+    end
+
+    test "sends an unknown game to the lobby with a flash", %{conn: conn} do
+      unknown = Ecto.UUID.generate()
+
+      assert {:error, {:redirect, %{to: "/", flash: %{"error" => message}}}} =
+               live(conn, ~p"/games/#{unknown}")
+
+      assert message =~ "Game not found"
+    end
+  end
+
+  describe "Pre-join skip gate" do
+    test "disallows skipping for a not-yet-joined user", %{conn: conn} do
+      other_scope = user_scope_fixture()
+      game = game_fixture(other_scope, %{title: "Skip Gate Joiner"})
+
+      {:ok, _live, html} = live(conn, ~p"/games/#{game}/pre-join")
+      assert html =~ ~s(data-skip-allowed="false")
+    end
+
+    test "allows skipping for a participant (the creator)", %{conn: conn, scope: scope} do
+      game = game_fixture(scope, %{title: "Skip Gate Creator"})
+
+      {:ok, _live, html} = live(conn, ~p"/games/#{game}/pre-join")
+      assert html =~ ~s(data-skip-allowed="true")
+    end
+  end
+
   describe "Pre-join (unconfirmed user)" do
     test "redirects to index with flash when email not confirmed", %{conn: _conn} do
       conn =

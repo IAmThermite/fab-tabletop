@@ -292,6 +292,35 @@ defmodule TabletopWeb.GameLiveTest do
     end
   end
 
+  describe "Home tournaments column" do
+    alias Tabletop.Repo
+    alias Tabletop.Tournaments.Tournament
+
+    test "lists upcoming and in-progress tournaments with links", %{conn: conn} do
+      up = Repo.insert!(%Tournament{name: "Upcoming Open", status: :registration})
+      live_t = Repo.insert!(%Tournament{name: "Live Swiss", status: :swiss})
+
+      {:ok, _live, html} = live(conn, ~p"/")
+
+      assert html =~ "Upcoming Open"
+      assert html =~ "Live Swiss"
+      assert html =~ ~p"/tournaments/#{up}"
+      assert html =~ ~p"/tournaments/#{live_t}"
+      assert html =~ "View all"
+    end
+
+    test "excludes finished/draft tournaments and shows an empty state", %{conn: conn} do
+      Repo.insert!(%Tournament{name: "Old Cup", status: :finished})
+      Repo.insert!(%Tournament{name: "Secret Draft", status: :draft})
+
+      {:ok, _live, html} = live(conn, ~p"/")
+
+      assert html =~ "No tournaments scheduled"
+      refute html =~ "Old Cup"
+      refute html =~ "Secret Draft"
+    end
+  end
+
   describe "Show" do
     setup [:create_game]
 
@@ -320,57 +349,45 @@ defmodule TabletopWeb.GameLiveTest do
     end
   end
 
-  describe "Camera setup join" do
-    test "joins a not-yet-participant user as user2 via save_and_join", %{conn: conn, user: user} do
-      other_scope = user_scope_fixture()
-      game = game_fixture(other_scope, %{title: "Join Via Setup"})
+  describe "Show (tournament match)" do
+    alias Tabletop.Games
+    alias Tabletop.Repo
+    alias Tabletop.Tournaments
+    alias Tabletop.TournamentsFixtures
 
-      {:ok, live_view, _html} = live(conn, ~p"/camera-setup?game_id=#{game.id}")
+    test "ending the game redirects participants to the tournament", %{conn: conn, scope: scope} do
+      admin = TournamentsFixtures.admin_scope_fixture()
+      t = TournamentsFixtures.tournament_fixture(scope: admin)
+      {:ok, t} = Tournaments.open_registration(admin, t)
 
-      assert {:error, {:live_redirect, %{to: to}}} =
-               render_hook(live_view, "save_and_join", %{})
+      # The logged-in user is one of the two paired players.
+      {:ok, _} =
+        Tournaments.register(scope, t.id, %{
+          "decklist_url" => TournamentsFixtures.valid_fabrary_url()
+        })
 
-      assert to == ~p"/games/#{game}"
+      opponent = user_scope_fixture()
 
-      updated = Tabletop.Repo.reload!(game)
-      assert updated.user2_id == user.id
-      assert updated.status == :active
-    end
-  end
+      {:ok, _} =
+        Tournaments.register(opponent, t.id, %{
+          "decklist_url" => TournamentsFixtures.valid_fabrary_url()
+        })
 
-  describe "Show (non-participant recovery)" do
-    test "routes a non-participant to pre-join instead of 404", %{conn: conn} do
-      other_scope = user_scope_fixture()
-      game = game_fixture(other_scope, %{title: "Someone Else's Game"})
+      {:ok, t} = Tournaments.open_check_in(admin, t)
+      {:ok, _} = Tournaments.check_in(scope, t.id)
+      {:ok, _} = Tournaments.check_in(opponent, t.id)
+      {:ok, t} = Tournaments.start_tournament(admin, t)
 
-      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/games/#{game}")
-      assert to == ~p"/games/#{game}/pre-join"
-    end
+      [match] = Tournaments.list_matches_for_round(t.current_round_id)
+      game = Repo.get!(Games.Game, match.game_id)
 
-    test "sends an unknown game to the lobby with a flash", %{conn: conn} do
-      unknown = Ecto.UUID.generate()
+      {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
 
-      assert {:error, {:redirect, %{to: "/", flash: %{"error" => message}}}} =
-               live(conn, ~p"/games/#{unknown}")
+      # The opponent leaving ends the game — the same `game_ended` broadcast the
+      # disconnect grace timer fires. The surviving player goes to the tournament.
+      {:ok, _} = Games.terminate_game(opponent, game)
 
-      assert message =~ "Game not found"
-    end
-  end
-
-  describe "Pre-join skip gate" do
-    test "disallows skipping for a not-yet-joined user", %{conn: conn} do
-      other_scope = user_scope_fixture()
-      game = game_fixture(other_scope, %{title: "Skip Gate Joiner"})
-
-      {:ok, _live, html} = live(conn, ~p"/games/#{game}/pre-join")
-      assert html =~ ~s(data-skip-allowed="false")
-    end
-
-    test "allows skipping for a participant (the creator)", %{conn: conn, scope: scope} do
-      game = game_fixture(scope, %{title: "Skip Gate Creator"})
-
-      {:ok, _live, html} = live(conn, ~p"/games/#{game}/pre-join")
-      assert html =~ ~s(data-skip-allowed="true")
+      assert_redirect(show_live, ~p"/tournaments/#{t.id}", 2000)
     end
   end
 

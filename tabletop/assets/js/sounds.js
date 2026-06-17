@@ -63,6 +63,38 @@ const CUES = {
   // Short tick played while a volume slider moves, so the player hears the
   // resulting loudness. Throttled by debounce so a drag doesn't machine-gun.
   volume_blip: { notes: [{ freq: 660.0, t: 0, dur: 0.06 }], type: "sine", gain: 0.5, debounceMs: 200 },
+
+  // Tournament events (fired server-side via the user-notification stream, on
+  // whatever page the player is on — see TabletopWeb.UserNotifications).
+  tournament_check_in: {
+    notes: [{ freq: 523.25, t: 0, dur: 0.1 }, { freq: 659.25, t: 0.09, dur: 0.18 }],
+    type: "sine",
+    gain: 0.5,
+  },
+  tournament_match_ready: {
+    notes: [
+      { freq: 659.25, t: 0, dur: 0.1 },
+      { freq: 783.99, t: 0.09, dur: 0.1 },
+      { freq: 987.77, t: 0.18, dur: 0.2 },
+    ],
+    type: "sine",
+    gain: 0.5,
+  },
+  tournament_result: {
+    notes: [{ freq: 783.99, t: 0, dur: 0.08 }, { freq: 1046.5, t: 0.07, dur: 0.16 }],
+    type: "triangle",
+    gain: 0.45,
+  },
+  tournament_finished: {
+    notes: [
+      { freq: 523.25, t: 0, dur: 0.12 },
+      { freq: 659.25, t: 0.1, dur: 0.12 },
+      { freq: 783.99, t: 0.2, dur: 0.12 },
+      { freq: 1046.5, t: 0.3, dur: 0.3 },
+    ],
+    type: "sine",
+    gain: 0.55,
+  },
 }
 
 class SoundEngine {

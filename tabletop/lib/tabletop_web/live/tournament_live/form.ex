@@ -160,23 +160,29 @@ defmodule TabletopWeb.TournamentLive.Form do
         id="tournament-form"
         phx-change="validate"
         phx-submit="save"
-        class="space-y-4"
+        class="space-y-6"
       >
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <.input field={@form[:name]} type="text" label="Name" />
-          <.input
-            field={@form[:format]}
-            type="select"
-            label="Format"
-            options={Tournament.format_options()}
-          />
-          <.starts_at_input field={@form[:starts_at]} />
-        </div>
+        <section class="rounded-box border border-base-300 p-4 space-y-4">
+          <h2 class="font-display text-base font-bold">Basics</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <.input field={@form[:name]} type="text" label="Name" />
+            <.input
+              field={@form[:format]}
+              type="select"
+              label="Format"
+              options={Tournament.format_options()}
+            />
+            <.starts_at_input field={@form[:starts_at]} />
+          </div>
 
-        <.input field={@form[:description]} type="textarea" label="Description" />
+          <.input field={@form[:description]} type="textarea" label="Description" />
+        </section>
 
-        <fieldset class="fieldset">
-          <label class="fieldset-label">Presets</label>
+        <section class="rounded-box border border-base-300 p-4 space-y-2">
+          <h2 class="font-display text-base font-bold">Quick setup</h2>
+          <p class="text-sm text-base-content/60">
+            Apply a preset to fill rounds, top cut and max players — then tweak any field below.
+          </p>
           <div class="flex flex-wrap items-center gap-2">
             <button
               :for={preset <- Tournament.presets()}
@@ -194,38 +200,43 @@ defmodule TabletopWeb.TournamentLive.Form do
               Reset
             </button>
           </div>
-          <p class="label">
-            Fills rounds, top cut and max players. Tweak any field afterwards.
+        </section>
+
+        <section class="rounded-box border border-base-300 p-4 space-y-4">
+          <h2 class="font-display text-base font-bold">Structure</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <.input
+              field={@form[:swiss_rounds]}
+              type="number"
+              label="Swiss rounds"
+              min="1"
+              max="12"
+            />
+            <.input
+              field={@form[:top_cut_size]}
+              type="select"
+              label="Top cut"
+              options={Tournament.cut_size_options()}
+            />
+            <.input
+              field={@form[:max_players]}
+              type="number"
+              label="Max players"
+              min="2"
+            />
+            <.input
+              field={@form[:round_duration_minutes]}
+              type="number"
+              label="Round duration (minutes)"
+              min="1"
+            />
+          </div>
+          <p class="text-sm text-base-content/60">
+            Max players caps registrations. A preset fills it in, but you can override it here.
           </p>
-        </fieldset>
+        </section>
 
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <.input
-            field={@form[:swiss_rounds]}
-            type="number"
-            label="Swiss rounds"
-            min="1"
-            max="12"
-          />
-          <.input
-            field={@form[:top_cut_size]}
-            type="select"
-            label="Top cut"
-            options={Tournament.cut_size_options()}
-          />
-          <.input
-            field={@form[:round_duration_minutes]}
-            type="number"
-            label="Round duration (minutes)"
-            min="1"
-          />
-        </div>
-
-        <%!-- max_players is preset-driven (see the presets help text); kept as a
-              hidden carrier so presets and the default round-trip on save. --%>
-        <.input field={@form[:max_players]} type="hidden" />
-
-        <footer class="flex gap-2 mt-2">
+        <footer class="flex gap-2">
           <.button phx-disable-with="Saving..." variant="primary">Save</.button>
           <.button navigate={~p"/tournaments"}>Cancel</.button>
         </footer>

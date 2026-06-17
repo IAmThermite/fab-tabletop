@@ -30,16 +30,34 @@ defmodule TabletopWeb.UserNotifications do
     {:cont, socket}
   end
 
-  # A notification raises a toast and refreshes the banner list; everything else
-  # passes through untouched to the LiveView's own `handle_info`.
+  # A notification raises a toast, plays its audio cue, and refreshes the banner
+  # list; everything else passes through untouched to the LiveView's own
+  # `handle_info`.
   defp handle_notification({:user_notification, payload}, socket) do
     {:halt,
      socket
      |> put_flash(:info, payload.message)
-     |> assign(:notification_items, items_for(current_user_id(socket)))}
+     |> assign(:notification_items, items_for(current_user_id(socket)))
+     |> maybe_play_sound(payload)}
   end
 
   defp handle_notification(_message, socket), do: {:cont, socket}
+
+  # The `.NotificationSounds` hook (in the layout's flash group) catches this and
+  # plays the cue through the shared sound engine. Unknown types stay silent.
+  defp maybe_play_sound(socket, payload) do
+    case sound_for(payload[:type]) do
+      nil -> socket
+      cue -> push_event(socket, "play_notification_sound", %{cue: cue})
+    end
+  end
+
+  defp sound_for(:check_in), do: "tournament_check_in"
+  defp sound_for(:match), do: "tournament_match_ready"
+  defp sound_for(:bye), do: "tournament_match_ready"
+  defp sound_for(:result), do: "tournament_result"
+  defp sound_for(:finished), do: "tournament_finished"
+  defp sound_for(_), do: nil
 
   defp items_for(nil), do: []
   defp items_for(user_id), do: Tournaments.player_action_items(user_id)

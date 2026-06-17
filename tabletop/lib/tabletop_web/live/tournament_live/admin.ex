@@ -41,6 +41,7 @@ defmodule TabletopWeb.TournamentLive.Admin do
     |> assign(:page_title, "Admin · " <> t.name)
     |> assign(:tournament, t)
     |> assign(:registrations, registrations)
+    |> assign(:hero_by_user, Map.new(registrations, &{&1.user_id, &1.hero}))
     |> assign(:current_matches, current_matches)
     |> assign(:round_complete, Tournaments.current_round_complete?(t))
     |> assign(:completed_rounds, Tournaments.completed_round_count(t))
@@ -211,7 +212,8 @@ defmodule TabletopWeb.TournamentLive.Admin do
       <.header>
         Admin · {@tournament.name}
         <:subtitle>
-          {Tournament.format_name(@tournament)} · {@tournament.status}
+          {Tournament.format_name(@tournament)}
+          <.tournament_status_badge status={@tournament.status} class="ml-1 align-middle" />
           <span :if={@tournament.starts_at}>
             · starts
             <.local_datetime
@@ -227,8 +229,11 @@ defmodule TabletopWeb.TournamentLive.Admin do
         </:actions>
       </.header>
 
+      <.phase_stepper tournament={@tournament} class="my-4 overflow-x-auto" />
+
       <.phase_controls
         tournament={@tournament}
+        hero_by_user={@hero_by_user}
         round_complete={@round_complete}
         completed_rounds={@completed_rounds}
         active_count={@active_count}
@@ -240,41 +245,52 @@ defmodule TabletopWeb.TournamentLive.Admin do
         check_in_min_minutes={@check_in_min_minutes}
       />
 
-      <.round_panel :if={@current_matches != []} matches={@current_matches} tournament={@tournament} />
+      <.round_panel
+        :if={@current_matches != []}
+        matches={@current_matches}
+        tournament={@tournament}
+        hero_by_user={@hero_by_user}
+      />
 
       <section class="my-6">
-        <h2 class="font-semibold text-lg mb-2">
+        <h2 class="font-display text-lg font-bold mb-2">
           Registered players ({length(@registrations)})
         </h2>
-        <ul class="divide-y divide-base-300">
-          <li :for={r <- @registrations} class="py-2 flex justify-between items-center">
-            <div>
-              <strong>{r.user && r.user.name}</strong>
-              <span :if={r.hero} class="opacity-70 ml-2">{r.hero}</span>
-              <a
-                :if={r.decklist_url}
-                class="link ml-2 text-sm"
-                href={r.decklist_url}
-                target="_blank"
-                rel="noopener"
-              >
-                deck
-              </a>
-              <span :if={r.dropped_at} class="badge badge-ghost ml-2">dropped</span>
-              <span
-                :if={@tournament.status == :check_in and is_nil(r.dropped_at) and r.checked_in_at}
-                class="badge badge-success ml-2"
-              >
-                checked in
-              </span>
-              <span
-                :if={
-                  @tournament.status == :check_in and is_nil(r.dropped_at) and is_nil(r.checked_in_at)
-                }
-                class="badge badge-warning ml-2"
-              >
-                not checked in
-              </span>
+        <ul class="divide-y divide-base-300 rounded-box border border-base-300 px-3">
+          <li :for={r <- @registrations} class="py-2 flex justify-between items-center gap-3">
+            <div class="flex items-center gap-2 min-w-0">
+              <.hero_portrait hero={r.hero} class="size-8" />
+              <div class="min-w-0">
+                <strong>{r.user && r.user.name}</strong>
+                <span :if={hero_name(r.hero)} class="opacity-70 ml-1 text-sm">
+                  {hero_name(r.hero)}
+                </span>
+                <a
+                  :if={r.decklist_url}
+                  class="link ml-2 text-sm"
+                  href={r.decklist_url}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  deck
+                </a>
+                <span :if={r.dropped_at} class="badge badge-ghost ml-2">dropped</span>
+                <span
+                  :if={@tournament.status == :check_in and is_nil(r.dropped_at) and r.checked_in_at}
+                  class="badge badge-success ml-2"
+                >
+                  checked in
+                </span>
+                <span
+                  :if={
+                    @tournament.status == :check_in and is_nil(r.dropped_at) and
+                      is_nil(r.checked_in_at)
+                  }
+                  class="badge badge-warning ml-2"
+                >
+                  not checked in
+                </span>
+              </div>
             </div>
             <div>
               <.button
@@ -300,16 +316,26 @@ defmodule TabletopWeb.TournamentLive.Admin do
         </ul>
       </section>
 
-      <section class="my-6">
-        <.button variant="danger" phx-click="cancel" data-confirm="Cancel this tournament?">
-          Cancel tournament
-        </.button>
+      <section
+        :if={@tournament.status != :cancelled}
+        class="my-6 rounded-box border border-error/40 p-4"
+      >
+        <h2 class="font-display text-base font-bold text-error mb-1">Danger zone</h2>
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-sm text-base-content/70">
+            Cancelling ends the tournament for everyone. This can't be undone.
+          </p>
+          <.button variant="danger" phx-click="cancel" data-confirm="Cancel this tournament?">
+            Cancel tournament
+          </.button>
+        </div>
       </section>
     </Layouts.app>
     """
   end
 
   attr :tournament, :any, required: true
+  attr :hero_by_user, :map, required: true
   attr :round_complete, :boolean, required: true
   attr :completed_rounds, :integer, required: true
   attr :active_count, :integer, required: true
@@ -323,7 +349,7 @@ defmodule TabletopWeb.TournamentLive.Admin do
   defp phase_controls(assigns) do
     ~H"""
     <section class="card bg-base-200 p-4 my-4">
-      <h2 class="font-semibold text-lg mb-2">Phase</h2>
+      <h2 class="font-display text-lg font-bold mb-2">Phase</h2>
 
       <div :if={@tournament.status == :draft}>
         <.button variant="primary" phx-click="open_registration">Open registration</.button>
@@ -435,8 +461,15 @@ defmodule TabletopWeb.TournamentLive.Admin do
         </.button>
       </div>
 
-      <div :if={@tournament.status == :finished} class="opacity-70">
-        Tournament finished. Winner ID: {@tournament.winner_id}
+      <div :if={@tournament.status == :finished} class="space-y-2">
+        <div class="text-sm text-base-content/70">Tournament finished. Champion:</div>
+        <.player_identity
+          :if={@tournament.winner}
+          user={@tournament.winner}
+          hero={Map.get(@hero_by_user, @tournament.winner_id)}
+          portrait_class="size-10"
+        />
+        <div :if={is_nil(@tournament.winner)} class="opacity-70">No champion recorded.</div>
       </div>
     </section>
     """
@@ -444,30 +477,40 @@ defmodule TabletopWeb.TournamentLive.Admin do
 
   attr :matches, :list, required: true
   attr :tournament, :any, required: true
+  attr :hero_by_user, :map, required: true
 
   defp round_panel(assigns) do
     ~H"""
     <section class="my-6">
-      <h2 class="font-semibold text-lg mb-2">Current round matches</h2>
+      <h2 class="font-display text-lg font-bold mb-2">Current round matches</h2>
+      <.round_timer
+        :if={@tournament.status not in [:finished, :cancelled]}
+        round={@tournament.current_round}
+        class="mb-4 max-w-sm"
+      />
       <ul class="divide-y divide-base-300">
         <li :for={m <- @matches} class="py-3 flex justify-between items-center gap-4">
-          <div>
+          <div class="min-w-0">
             <div class="text-sm opacity-70">Table {m.table_number}</div>
             <div>
               <strong>{m.player1 && m.player1.name}</strong>
-              vs
-              <strong>
-                {(m.player2 && m.player2.name) || "(bye)"}
-              </strong>
+              vs <strong>{(m.player2 && m.player2.name) || "(bye)"}</strong>
             </div>
-            <div class="text-sm">
-              P1: {m.player1_reported || "—"} · P2: {m.player2_reported || "—"}
+            <div :if={is_nil(m.confirmed_result)} class="text-sm text-base-content/60">
+              {m.player1 && m.player1.name} reported:
+              <span class="font-medium">{report_text(m, m.player1_reported)}</span>
+              · {m.player2 && m.player2.name} reported:
+              <span class="font-medium">{report_text(m, m.player2_reported)}</span>
             </div>
           </div>
-          <div class="flex items-center gap-2">
-            <span :if={m.confirmed_result} class="badge badge-success">
-              {TournamentMatch.result_description(m.confirmed_result)}
-            </span>
+          <div class="flex items-center gap-2 shrink-0">
+            <.match_result
+              :if={m.confirmed_result}
+              match={m}
+              result={m.confirmed_result}
+              hero_by_user={@hero_by_user}
+              class="text-sm text-success text-right"
+            />
             <.button
               :if={
                 (is_nil(m.confirmed_result) and m.player1_reported) &&
@@ -487,6 +530,10 @@ defmodule TabletopWeb.TournamentLive.Admin do
     """
   end
 
+  # A player's report as a name-based label, or "—" when they haven't reported.
+  defp report_text(_match, nil), do: "—"
+  defp report_text(match, result), do: match_result_text(match, result)
+
   attr :match, :any, required: true
 
   defp override_menu(assigns) do
@@ -495,15 +542,15 @@ defmodule TabletopWeb.TournamentLive.Admin do
       <summary class="btn btn-sm">
         {if @match.confirmed_result, do: "Change", else: "Override"}
       </summary>
-      <ul class="menu dropdown-content bg-base-100 rounded-box shadow z-10 w-40">
+      <ul class="menu dropdown-content bg-base-100 rounded-box shadow z-10 w-56">
         <li>
           <button phx-click="override_match" phx-value-id={@match.id} phx-value-result="p1_win">
-            P1 wins
+            {@match.player1 && @match.player1.name} wins
           </button>
         </li>
         <li>
           <button phx-click="override_match" phx-value-id={@match.id} phx-value-result="p2_win">
-            P2 wins
+            {@match.player2 && @match.player2.name} wins
           </button>
         </li>
         <li>

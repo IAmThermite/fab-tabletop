@@ -7,6 +7,8 @@ defmodule TabletopWeb.GameLive.Index do
   alias Tabletop.Games.Game
   alias Tabletop.Heroes
   alias Tabletop.Languages
+  alias Tabletop.Tournaments
+  alias Tabletop.Tournaments.Tournament
 
   @impl true
   def render(assigns) do
@@ -202,11 +204,17 @@ defmodule TabletopWeb.GameLive.Index do
                 :for={{format, games} <- @grouped_games}
                 :if={games != []}
                 open={format == :classic_constructed}
-                class="border border-zinc-200 dark:border-zinc-700 rounded-lg"
+                class="group border border-zinc-200 dark:border-zinc-700 rounded-lg"
               >
-                <summary class="flex items-center justify-between p-3 cursor-pointer font-semibold select-none">
-                  <span>{Game.format_name_for(format)}</span>
-                  <span class="badge badge-sm badge-neutral">{length(games)}</span>
+                <summary class="flex items-center justify-between gap-3 p-3 cursor-pointer font-semibold select-none">
+                  <span class="flex items-center gap-2">
+                    <span class="badge badge-sm badge-neutral">{length(games)}</span>
+                    <span>{Game.format_name_for(format)}</span>
+                  </span>
+                  <.icon
+                    name="hero-chevron-down"
+                    class="size-5 shrink-0 text-primary transition-transform group-open:rotate-180"
+                  />
                 </summary>
                 <div class="px-3 pb-3 space-y-2">
                   <div
@@ -454,10 +462,62 @@ defmodule TabletopWeb.GameLive.Index do
                 </p>
               </div>
 
-              <%!-- Tournaments land here once events ship --%>
-              <div class="border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg p-4 text-center">
-                <div class="text-sm font-semibold text-zinc-600 dark:text-zinc-400">Tournaments</div>
-                <div class="text-xs text-zinc-500 mt-1">Coming soon</div>
+              <%!-- Tournaments: upcoming (sign-up / check-in) and in progress --%>
+              <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
+                <div class="flex items-center justify-between mb-3">
+                  <h3 class="font-bold text-lg">Tournaments</h3>
+                  <.link navigate={~p"/tournaments"} class="text-sm text-blue-600 underline">
+                    View all
+                  </.link>
+                </div>
+
+                <p
+                  :if={@home_tournaments.upcoming == [] and @home_tournaments.in_progress == []}
+                  class="text-sm text-zinc-500"
+                >
+                  No tournaments scheduled right now — check back soon.
+                </p>
+
+                <div :if={@home_tournaments.upcoming != []} class="space-y-2">
+                  <div class="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                    Upcoming
+                  </div>
+                  <.link
+                    :for={t <- Enum.take(@home_tournaments.upcoming, 4)}
+                    navigate={~p"/tournaments/#{t}"}
+                    class="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 p-2 hover:bg-base-200"
+                  >
+                    <div class="min-w-0">
+                      <div class="font-medium truncate">{t.name}</div>
+                      <div class="text-xs text-zinc-500">
+                        {Tournament.format_name(t)} · {t.active_player_count}/{t.max_players}
+                        <span :if={t.starts_at}>
+                          · <.local_datetime id={"home-tourney-#{t.id}"} at={t.starts_at} countdown />
+                        </span>
+                      </div>
+                    </div>
+                    <.tournament_status_badge status={t.status} class="badge-sm shrink-0" />
+                  </.link>
+                </div>
+
+                <div :if={@home_tournaments.in_progress != []} class="space-y-2 mt-3">
+                  <div class="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                    In progress
+                  </div>
+                  <.link
+                    :for={t <- Enum.take(@home_tournaments.in_progress, 4)}
+                    navigate={~p"/tournaments/#{t}"}
+                    class="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 p-2 hover:bg-base-200"
+                  >
+                    <div class="min-w-0">
+                      <div class="font-medium truncate">{t.name}</div>
+                      <div class="text-xs text-zinc-500">
+                        {Tournament.format_name(t)} · {round_progress_label(t)}
+                      </div>
+                    </div>
+                    <.tournament_status_badge status={t.status} class="badge-sm shrink-0" />
+                  </.link>
+                </div>
               </div>
             </div>
           </div>
@@ -514,6 +574,7 @@ defmodule TabletopWeb.GameLive.Index do
 
     if connected?(socket) do
       Games.subscribe_games(scope)
+      Tournaments.subscribe_tournaments()
     end
 
     socket =
@@ -527,6 +588,7 @@ defmodule TabletopWeb.GameLive.Index do
       |> assign_last_game(scope)
       |> assign_games()
       |> assign_activity()
+      |> assign_tournaments()
 
     {:ok, socket}
   end
@@ -710,6 +772,10 @@ defmodule TabletopWeb.GameLive.Index do
      |> assign_activity()}
   end
 
+  def handle_info({:tournaments_updated}, socket) do
+    {:noreply, assign_tournaments(socket)}
+  end
+
   defp assign_current_game(socket, %Scope{} = scope) do
     assign(socket, :current_game, Games.get_current_game_for_user(scope))
   end
@@ -756,6 +822,10 @@ defmodule TabletopWeb.GameLive.Index do
     socket
     |> assign(:activity, activity)
     |> assign(:popular_heroes_any?, popular_heroes_any?)
+  end
+
+  defp assign_tournaments(socket) do
+    assign(socket, :home_tournaments, Tournaments.list_home_tournaments())
   end
 
   # Screenshots shown in the anonymous intro header. `src` is nil until real

@@ -33,4 +33,34 @@ defmodule Tabletop.TournamentsFixtures do
   end
 
   def valid_fabrary_url, do: "https://fabrary.net/decks/abc123"
+
+  @doc """
+  Drives a 2-player, single-Swiss-round, no-cut tournament to completion and
+  returns `{tournament, champion_user}`. Requires an admin scope (the test
+  config sets `check_in_min_seconds` to 0 so it can start immediately).
+  """
+  def finished_tournament_fixture(%Scope{} = admin) do
+    t = tournament_fixture(scope: admin, params: %{"swiss_rounds" => 1, "top_cut_size" => 0})
+    {:ok, t} = Tournaments.open_registration(admin, t)
+
+    players =
+      for _ <- 1..2 do
+        s = Scope.for_user(user_fixture())
+        {:ok, _} = Tournaments.register(s, t.id, %{"decklist_url" => valid_fabrary_url()})
+        s
+      end
+
+    {:ok, t} = Tournaments.open_check_in(admin, t)
+    for s <- players, do: {:ok, _} = Tournaments.check_in(s, t.id)
+    {:ok, t} = Tournaments.start_tournament(admin, t)
+
+    [match] = Tournaments.list_matches_for_round(t.current_round_id)
+    {:ok, _} = Tournaments.override_match(admin, match.id, "p1_win")
+
+    t = Tournaments.get_tournament!(t.id)
+    {:ok, t} = Tournaments.generate_top_cut(admin, t)
+
+    champion = Enum.find(players, &(&1.user.id == t.winner_id)).user
+    {t, champion}
+  end
 end

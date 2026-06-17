@@ -272,6 +272,22 @@ defmodule TabletopWeb.Layouts do
         <.icon name="hero-arrow-path" class="ml-1 size-3 motion-safe:animate-spin" />
       </.flash>
     </div>
+
+    <%!-- Plays the audio cue that accompanies a tournament toast. Present on
+          every page (flash_group sits in both the app and game layouts) and
+          listens on its own event so it never collides with the in-game
+          `#game-sounds` hook, which owns `play_sound`. --%>
+    <div id="notification-sounds" phx-hook=".NotificationSounds"></div>
+    <script :type={ColocatedHook} name=".NotificationSounds">
+      import { sounds } from "@/js/sounds.js"
+
+      export default {
+        mounted() {
+          sounds.unlock()
+          this.handleEvent("play_notification_sound", ({ cue }) => sounds.play(cue))
+        },
+      }
+    </script>
     """
   end
 

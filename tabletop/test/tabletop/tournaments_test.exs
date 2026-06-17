@@ -289,6 +289,13 @@ defmodule Tabletop.TournamentsTest do
 
     {:ok, _} = Tournaments.start_tournament(admin, t)
     assert [%{type: :match, path: "/games/" <> _}] = Tournaments.player_action_items(s1.user.id)
+
+    # Once a result is entered for the match, the prompt clears for both players
+    # (the game is done — no longer surfaced on the home banner).
+    match = Tournaments.current_match_for_user(t.id, s1.user.id)
+    {:ok, _} = Tournaments.report_result(s1, match.id, "p1_win")
+    assert Tournaments.player_action_items(s1.user.id) == []
+    assert Tournaments.player_action_items(s2.user.id) == []
   end
 
   test "players receive notifications for check-in and new matches", %{admin_scope: admin} do
@@ -312,5 +319,39 @@ defmodule Tabletop.TournamentsTest do
     {:ok, _} = Tournaments.start_tournament(admin, t)
 
     assert_receive {:user_notification, %{type: :match, tournament_id: ^tid}}
+  end
+
+  test "result reports and confirmation notify the right players", %{admin_scope: admin} do
+    t = tournament_fixture(scope: admin)
+    {:ok, t} = Tournaments.open_registration(admin, t)
+
+    [s1, s2] =
+      for _ <- 1..2 do
+        s = Scope.for_user(user_fixture())
+        {:ok, _} = Tournaments.register(s, t.id, %{"decklist_url" => valid_fabrary_url()})
+        s
+      end
+
+    {:ok, t} = Tournaments.open_check_in(admin, t)
+    for s <- [s1, s2], do: {:ok, _} = Tournaments.check_in(s, t.id)
+    {:ok, t} = Tournaments.start_tournament(admin, t)
+    [match] = Tournaments.list_matches_for_round(t.current_round_id)
+    report = if match.player1_id == s1.user.id, do: "p1_win", else: "p2_win"
+
+    Tournaments.subscribe_user_notifications(s1.user.id)
+    Tournaments.subscribe_user_notifications(s2.user.id)
+
+    # A player's report notifies only the opponent (one message, not two).
+    {:ok, _} = Tournaments.report_result(s1, match.id, report)
+    assert_receive {:user_notification, %{type: :result, tournament_id: tid}}
+    assert tid == t.id
+    refute_receive {:user_notification, %{type: :result}}, 50
+
+    # The admin confirming notifies both players.
+    {:ok, _} = Tournaments.report_result(s2, match.id, report)
+    assert_receive {:user_notification, %{type: :result}}
+    {:ok, _} = Tournaments.confirm_match(admin, match.id)
+    assert_receive {:user_notification, %{type: :result}}
+    assert_receive {:user_notification, %{type: :result}}
   end
 end

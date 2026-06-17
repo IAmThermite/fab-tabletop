@@ -149,25 +149,21 @@ defmodule TabletopWeb.GameLive.Show do
     LeaveTimer.cancel_leave(socket.assigns.game.id, socket.assigns.user_id)
     Games.terminate_game(socket.assigns.current_scope, socket.assigns.game)
 
-    redirect_to =
-      case socket.assigns.tournament_match do
-        %{tournament_id: tid} -> ~p"/tournaments/#{tid}"
-        _ -> ~p"/"
-      end
-
     {:noreply,
      socket
      |> put_flash(:info, "The game has ended.")
-     |> push_navigate(to: redirect_to)}
+     |> push_navigate(to: post_game_path(socket))}
   end
 
   # --- PubSub messages ---
 
   @impl true
   def handle_info({:game_update, "game_ended", _sender_id}, socket) do
-    # Play the end cue now, then defer the redirect so the sound isn't cut off
-    # when the LiveView is torn down by navigation.
-    Process.send_after(self(), :navigate_home, 800)
+    # The game ended out from under this player — e.g. the opponent left or their
+    # disconnect grace period elapsed. Play the end cue now, then defer the
+    # redirect so the sound isn't cut off when the LiveView is torn down by
+    # navigation.
+    Process.send_after(self(), :navigate_after_game, 800)
 
     {:noreply,
      socket
@@ -175,8 +171,8 @@ defmodule TabletopWeb.GameLive.Show do
      |> push_event("play_sound", %{cue: "game_ended"})}
   end
 
-  def handle_info(:navigate_home, socket) do
-    {:noreply, push_navigate(socket, to: ~p"/")}
+  def handle_info(:navigate_after_game, socket) do
+    {:noreply, push_navigate(socket, to: post_game_path(socket))}
   end
 
   def handle_info({:game_update, side, delta, actor_user_id}, socket)
@@ -290,6 +286,15 @@ defmodule TabletopWeb.GameLive.Show do
 
   defp opponent_user_id(%{user_id: user_id, user1_id: user1_id, user2_id: user2_id}) do
     if user_id == user1_id, do: user2_id, else: user1_id
+  end
+
+  # Where to send the player once the game is over: back to the tournament when
+  # this game was a tournament match, otherwise the lobby.
+  defp post_game_path(socket) do
+    case socket.assigns.tournament_match do
+      %{tournament_id: tid} -> ~p"/tournaments/#{tid}"
+      _ -> ~p"/"
+    end
   end
 
   # Tournament match helpers (mirrored from TournamentLive.Show).

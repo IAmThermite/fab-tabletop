@@ -4,6 +4,7 @@ defmodule TabletopWeb.TournamentLive.Show do
   alias Tabletop.Tournaments
   alias Tabletop.Tournaments.{Tournament, TournamentRegistration, TournamentMatch}
   alias Tabletop.Accounts.Scope
+  alias Tabletop.Heroes
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -29,7 +30,13 @@ defmodule TabletopWeb.TournamentLive.Show do
     user_id = user_id(socket.assigns.current_scope)
     registrations = Tournaments.list_registrations(id)
     my_reg = user_id && Enum.find(registrations, &(&1.user_id == user_id))
-    my_match = user_id && Tournaments.current_match_for_user(id, user_id)
+
+    # Only surface the player's current match while the tournament is actually
+    # in progress — once it's finished (or cancelled) there's no "current match".
+    my_match =
+      if user_id && t.status in [:swiss, :cut] do
+        Tournaments.current_match_for_user(id, user_id)
+      end
 
     standings =
       if t.status in [:swiss, :cut, :finished] do
@@ -43,15 +50,23 @@ defmodule TabletopWeb.TournamentLive.Show do
     matches_by_round =
       Map.new(rounds, fn r -> {r.id, Tournaments.list_matches_for_round(r.id)} end)
 
+    # Lookups for display: a player's chosen hero (for portraits) and seed
+    # (for bracket ordering), keyed by user_id.
+    hero_by_user = Map.new(registrations, &{&1.user_id, &1.hero})
+    seed_by_user = Map.new(registrations, &{&1.user_id, &1.seed})
+
     socket
     |> assign(:tournament, t)
     |> assign(:page_title, t.name)
+    |> assign(:current_user_id, user_id)
     |> assign(:registrations, registrations)
     |> assign(:my_registration, my_reg)
     |> assign(:my_match, my_match)
     |> assign(:standings, standings)
     |> assign(:rounds, rounds)
     |> assign(:matches_by_round, matches_by_round)
+    |> assign(:hero_by_user, hero_by_user)
+    |> assign(:seed_by_user, seed_by_user)
     |> assign(:registration_form, registration_form(t))
   end
 
@@ -130,11 +145,12 @@ defmodule TabletopWeb.TournamentLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-4xl">
       <.header>
         {@tournament.name}
         <:subtitle>
-          {Tournament.format_name(@tournament)} · {status_label(@tournament.status)}
+          {Tournament.format_name(@tournament)}
+          <.tournament_status_badge status={@tournament.status} class="ml-1 align-middle" />
         </:subtitle>
         <:actions :if={Scope.admin?(@current_scope)}>
           <.button navigate={~p"/tournaments/#{@tournament}/admin"}>Admin</.button>
@@ -155,10 +171,28 @@ defmodule TabletopWeb.TournamentLive.Show do
 
       <p :if={@tournament.description} class="mb-4">{@tournament.description}</p>
 
+      <div
+        :if={@tournament.status == :finished and @tournament.winner}
+        class="my-4 flex items-center gap-3 rounded-box border border-success/30 bg-success/10 p-4"
+      >
+        <.icon name="hero-trophy" class="size-8 shrink-0 text-success" />
+        <div class="min-w-0">
+          <div class="font-display text-sm font-bold uppercase tracking-wide text-success">
+            Champion
+          </div>
+          <.player_identity
+            user={@tournament.winner}
+            hero={Map.get(@hero_by_user, @tournament.winner_id)}
+            portrait_class="size-10"
+          />
+        </div>
+      </div>
+
       <.my_match
         :if={@my_match}
         match={@my_match}
-        current_user_id={user_id(@current_scope)}
+        current_user_id={@current_user_id}
+        hero_by_user={@hero_by_user}
       />
 
       <.check_in_panel
@@ -179,6 +213,7 @@ defmodule TabletopWeb.TournamentLive.Show do
       <.register_panel
         :if={(@tournament.status == :registration and @current_scope) && !@my_registration}
         form={@registration_form}
+        tournament={@tournament}
       />
 
       <div :if={@my_registration && @tournament.status in [:swiss, :cut]} class="my-4">
@@ -188,7 +223,11 @@ defmodule TabletopWeb.TournamentLive.Show do
       <.tabs tournament={@tournament} tab={@tab} />
 
       <section :if={@tab == "standings"} class="my-4">
-        <.standings_table :if={@standings != []} rows={@standings} />
+        <.standings_table
+          :if={@standings != []}
+          rows={@standings}
+          current_user_id={@current_user_id}
+        />
         <p :if={@standings == []} class="opacity-60">
           Standings will appear once the tournament starts.
         </p>
@@ -208,6 +247,8 @@ defmodule TabletopWeb.TournamentLive.Show do
           rounds={@rounds}
           matches_by_round={@matches_by_round}
           round_tab={@round_tab}
+          hero_by_user={@hero_by_user}
+          seed_by_user={@seed_by_user}
         />
       </section>
     </Layouts.app>
@@ -249,10 +290,17 @@ defmodule TabletopWeb.TournamentLive.Show do
   attr :rounds, :list, required: true
   attr :matches_by_round, :map, required: true
   attr :round_tab, :any, required: true
+  attr :hero_by_user, :map, required: true
+  attr :seed_by_user, :map, required: true
 
   defp matches_panel(assigns) do
-    active = assigns.round_tab || default_round_id(assigns.rounds)
-    assigns = assign(assigns, :active_round_id, active)
+    active_id = assigns.round_tab || default_round_id(assigns.rounds)
+    active_round = Enum.find(assigns.rounds, &(&1.id == active_id))
+
+    assigns =
+      assigns
+      |> assign(:active_round_id, active_id)
+      |> assign(:active_round, active_round)
 
     ~H"""
     <div :if={@rounds == []} class="opacity-60">No rounds have been played yet.</div>
@@ -269,11 +317,19 @@ defmodule TabletopWeb.TournamentLive.Show do
         </.link>
       </div>
 
+      <%!-- Top cut renders as a full bracket; swiss rounds as a table. --%>
+      <.bracket
+        :if={@active_round && @active_round.kind == :top_cut}
+        rounds={Enum.filter(@rounds, &(&1.kind == :top_cut))}
+        matches_by_round={@matches_by_round}
+        seed_by_user={@seed_by_user}
+        hero_by_user={@hero_by_user}
+      />
+
       <.round_matches_table
-        :for={r <- @rounds}
-        :if={@active_round_id == r.id}
-        round={r}
-        matches={Map.get(@matches_by_round, r.id, [])}
+        :if={@active_round && @active_round.kind != :top_cut}
+        matches={Map.get(@matches_by_round, @active_round_id, [])}
+        hero_by_user={@hero_by_user}
       />
     </div>
     """
@@ -293,26 +349,51 @@ defmodule TabletopWeb.TournamentLive.Show do
   defp cut_stage_label(3), do: "Final"
   defp cut_stage_label(_), do: nil
 
-  attr :round, :any, required: true
   attr :matches, :list, required: true
+  attr :hero_by_user, :map, required: true
 
   defp round_matches_table(assigns) do
     ~H"""
-    <table class="table w-full">
+    <table class="table table-zebra w-full">
       <thead>
         <tr>
-          <th>Table</th>
+          <th class="w-12">#</th>
           <th>Player 1</th>
           <th>Player 2</th>
-          <th>Result</th>
+          <th class="text-right">Result</th>
         </tr>
       </thead>
       <tbody>
         <tr :for={m <- @matches}>
-          <td>{m.table_number}</td>
-          <td>{m.player1 && m.player1.name}</td>
-          <td>{(m.player2 && m.player2.name) || "(bye)"}</td>
-          <td>{TournamentMatch.result_description(m.confirmed_result)}</td>
+          <td class="text-base-content/60">{m.table_number}</td>
+          <td>
+            <div class="flex items-center gap-2">
+              <.hero_portrait hero={Map.get(@hero_by_user, m.player1_id)} class="size-7" />
+              <span class="truncate">{m.player1 && m.player1.name}</span>
+            </div>
+          </td>
+          <td>
+            <div class="flex items-center gap-2">
+              <.hero_portrait
+                :if={m.player2_id}
+                hero={Map.get(@hero_by_user, m.player2_id)}
+                class="size-7"
+              />
+              <span class={["truncate", is_nil(m.player2_id) && "opacity-60 italic"]}>
+                {(m.player2 && m.player2.name) || "bye"}
+              </span>
+            </div>
+          </td>
+          <td class="text-right">
+            <.match_result
+              :if={m.confirmed_result}
+              match={m}
+              result={m.confirmed_result}
+              hero_by_user={@hero_by_user}
+              class="text-sm"
+            />
+            <span :if={is_nil(m.confirmed_result)} class="text-xs text-base-content/50">pending</span>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -321,87 +402,98 @@ defmodule TabletopWeb.TournamentLive.Show do
 
   attr :match, :map, required: true
   attr :current_user_id, :any, required: true
+  attr :hero_by_user, :map, required: true
 
   defp my_match(assigns) do
     ~H"""
-    <section class="card bg-base-200 p-4 my-4">
-      <h2 class="font-semibold text-lg mb-2">Your current match</h2>
-      <div :if={@match.player2_id == nil}>
-        You have a bye this round.
+    <section class="card border-2 border-primary bg-base-100 p-4 my-4">
+      <h2 class="font-display text-lg font-bold mb-3">Your current match</h2>
+
+      <div :if={@match.player2_id == nil} class="flex items-center gap-2 text-base-content/80">
+        <.icon name="hero-trophy" class="size-5 text-success" />
+        You have a bye this round — an automatic win.
       </div>
-      <div :if={@match.player2_id != nil}>
-        <div>
-          Table {@match.table_number}: <strong>{@match.player1.name}</strong>
-          vs <strong>{@match.player2.name}</strong>
+
+      <div :if={@match.player2_id != nil} class="space-y-3">
+        <div class="flex items-center justify-center gap-4">
+          <div class="flex flex-1 flex-col items-center gap-1 min-w-0">
+            <.hero_portrait hero={Map.get(@hero_by_user, @match.player1_id)} class="size-12" />
+            <span class="text-sm font-medium truncate max-w-full">{@match.player1.name}</span>
+          </div>
+          <span class="text-xs font-bold text-base-content/40">VS</span>
+          <div class="flex flex-1 flex-col items-center gap-1 min-w-0">
+            <.hero_portrait hero={Map.get(@hero_by_user, @match.player2_id)} class="size-12" />
+            <span class="text-sm font-medium truncate max-w-full">{@match.player2.name}</span>
+          </div>
         </div>
-        <div :if={@match.game_id} class="my-2">
-          <.button variant="primary" navigate={~p"/games/#{@match.game_id}"}>
-            Open live game
-          </.button>
+        <div class="text-center text-sm text-base-content/60">Table {@match.table_number}</div>
+
+        <.button
+          :if={@match.game_id && !TournamentMatch.result_entered?(@match)}
+          variant="primary"
+          navigate={~p"/games/#{@match.game_id}"}
+        >
+          <.icon name="hero-video-camera" class="size-4" /> Open live game
+        </.button>
+        <p :if={TournamentMatch.result_entered?(@match)} class="text-sm text-base-content/60">
+          The game has ended — a result has been entered.
+        </p>
+
+        <.round_timer round={@match.round} />
+
+        <div :if={@match.confirmed_result} class="text-success">
+          <div class="flex items-center gap-2 font-medium">
+            <.icon name="hero-check-circle" class="size-5" /> Result confirmed
+          </div>
+          <.match_result
+            match={@match}
+            result={@match.confirmed_result}
+            hero_by_user={@hero_by_user}
+            class="ml-7"
+          />
         </div>
 
-        <div
-          id={"round-deadline-" <> @match.round.id}
-          class="text-sm opacity-70 my-2"
-          phx-hook=".RoundDeadline"
-          data-deadline={@match.round.deadline_at && DateTime.to_iso8601(@match.round.deadline_at)}
-        >
-          Round deadline: <span data-countdown>calculating…</span>
-        </div>
-        <div :if={@match.confirmed_result}>
-          <em>Result confirmed: {TournamentMatch.result_description(@match.confirmed_result)}</em>
-        </div>
-        <div :if={is_nil(@match.confirmed_result)} class="flex gap-2 flex-wrap">
-          <div :if={reported_by(@match, @current_user_id)}>
-            You reported: <strong>{reported_by(@match, @current_user_id)}</strong>
+        <div :if={is_nil(@match.confirmed_result)}>
+          <div :if={reported_by(@match, @current_user_id)} class="text-sm text-base-content/70">
+            You reported:
+            <strong>{match_result_text(@match, reported_by(@match, @current_user_id))}</strong>
+            <span class="opacity-70">— waiting on confirmation.</span>
           </div>
-          <.button
-            :if={!reported_by(@match, @current_user_id)}
-            phx-click="report"
-            phx-value-match_id={@match.id}
-            phx-value-result={my_side(@match, @current_user_id, :win)}
-          >
-            I won
-          </.button>
-          <.button
-            :if={!reported_by(@match, @current_user_id)}
-            phx-click="report"
-            phx-value-match_id={@match.id}
-            phx-value-result={my_side(@match, @current_user_id, :loss)}
-          >
-            I lost
-          </.button>
-          <.button
-            :if={!reported_by(@match, @current_user_id)}
-            phx-click="report"
-            phx-value-match_id={@match.id}
-            phx-value-result="draw"
-          >
-            Draw
-          </.button>
-        </div>
-        <div :if={reports_disagree?(@match)} class="mt-2 text-warning">
-          Reports disagree. Awaiting admin adjudication.
+          <div :if={!reported_by(@match, @current_user_id)} class="space-y-1">
+            <p class="text-sm text-base-content/70">Report your result:</p>
+            <div class="flex gap-2 flex-wrap">
+              <.button
+                variant="primary"
+                phx-click="report"
+                phx-value-match_id={@match.id}
+                phx-value-result={my_side(@match, @current_user_id, :win)}
+              >
+                I won
+              </.button>
+              <.button
+                variant="danger"
+                phx-click="report"
+                phx-value-match_id={@match.id}
+                phx-value-result={my_side(@match, @current_user_id, :loss)}
+              >
+                I lost
+              </.button>
+              <.button
+                phx-click="report"
+                phx-value-match_id={@match.id}
+                phx-value-result="draw"
+              >
+                Draw
+              </.button>
+            </div>
+          </div>
+          <div :if={reports_disagree?(@match)} class="mt-2 flex items-center gap-2 text-warning">
+            <.icon name="hero-exclamation-triangle" class="size-5" />
+            Reports disagree — awaiting admin adjudication.
+          </div>
         </div>
       </div>
     </section>
-
-    <script :type={Phoenix.LiveView.ColocatedHook} name=".RoundDeadline">
-      export default {
-        mounted() { this.tick(); this.t = setInterval(() => this.tick(), 1000); },
-        destroyed() { clearInterval(this.t); },
-        tick() {
-          const dl = this.el.dataset.deadline;
-          const span = this.el.querySelector("[data-countdown]");
-          if (!dl || !span) return;
-          const ms = new Date(dl).getTime() - Date.now();
-          if (ms <= 0) { span.textContent = "time's up"; return; }
-          const s = Math.floor(ms / 1000);
-          const m = Math.floor(s / 60);
-          span.textContent = `${m}m ${s % 60}s`;
-        }
-      }
-    </script>
     """
   end
 
@@ -441,13 +533,20 @@ defmodule TabletopWeb.TournamentLive.Show do
   end
 
   attr :form, :any, required: true
+  attr :tournament, :any, required: true
 
   defp register_panel(assigns) do
     ~H"""
     <section class="card bg-base-200 p-4 my-4">
       <h2 class="font-semibold text-lg mb-2">Sign up</h2>
       <.form for={@form} phx-change="validate-registration" phx-submit="register">
-        <.input field={@form[:hero]} type="text" label="Hero" />
+        <.input
+          field={@form[:hero]}
+          type="select"
+          label="Hero"
+          prompt="— Select hero —"
+          options={Heroes.options_for(@tournament.format)}
+        />
         <.input
           field={@form[:decklist_url]}
           type="text"
@@ -461,50 +560,69 @@ defmodule TabletopWeb.TournamentLive.Show do
   end
 
   attr :rows, :list, required: true
+  attr :current_user_id, :any, default: nil
 
   defp standings_table(assigns) do
     ~H"""
     <section class="my-6">
-      <h2 class="font-semibold text-lg mb-2">Standings</h2>
-      <table class="table w-full">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Player</th>
-            <th>Points</th>
-            <th>W/D/L</th>
-            <th>
-              <.stat_header
-                label="OMW%"
-                tip="Opponents' Match-Win % — strength of schedule: the average match-win rate of everyone you've played, floored at 33%."
-              />
-            </th>
-            <th>
-              <.stat_header
-                label="GW%"
-                tip="Game-Win % — your share of individual games won across all matches."
-              />
-            </th>
-            <th>
-              <.stat_header
-                label="OGW%"
-                tip="Opponents' Game-Win % — the average game-win rate of everyone you've played, floored at 33%."
-              />
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr :for={row <- @rows}>
-            <td>{row.rank}</td>
-            <td>{row.user && row.user.name}</td>
-            <td>{row.match_points}</td>
-            <td>{row.wins}/{row.draws}/{row.losses}</td>
-            <td>{pct(row.omw)}</td>
-            <td>{pct(row.gw)}</td>
-            <td>{pct(row.ogw)}</td>
-          </tr>
-        </tbody>
-      </table>
+      <h2 class="font-display text-lg font-bold mb-2">Standings</h2>
+      <div class="overflow-x-auto rounded-box border border-base-300">
+        <table class="table table-zebra w-full">
+          <thead>
+            <tr>
+              <th class="w-10">#</th>
+              <th>Player</th>
+              <th class="text-center">Pts</th>
+              <th class="text-center">W/D/L</th>
+              <th class="text-center">
+                <.stat_header
+                  label="OMW%"
+                  tip="Opponents' Match-Win % — strength of schedule: the average match-win rate of everyone you've played, floored at 33%."
+                />
+              </th>
+              <th class="text-center">
+                <.stat_header
+                  label="GW%"
+                  tip="Game-Win % — your share of individual games won across all matches."
+                />
+              </th>
+              <th class="text-center">
+                <.stat_header
+                  label="OGW%"
+                  tip="Opponents' Game-Win % — the average game-win rate of everyone you've played, floored at 33%."
+                />
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              :for={row <- @rows}
+              class={row.id == @current_user_id && "bg-primary/10 font-semibold"}
+            >
+              <td class="tabular-nums text-base-content/60">{row.rank}</td>
+              <td>
+                <div class="flex items-center gap-2">
+                  <.hero_portrait hero={row.registration && row.registration.hero} class="size-7" />
+                  <div class="min-w-0 leading-tight">
+                    <div class="truncate">{row.user && row.user.name}</div>
+                    <div
+                      :if={row.registration && hero_name(row.registration.hero)}
+                      class="text-xs font-normal text-base-content/60 truncate"
+                    >
+                      {hero_name(row.registration.hero)}
+                    </div>
+                  </div>
+                </div>
+              </td>
+              <td class="text-center font-bold tabular-nums">{row.match_points}</td>
+              <td class="text-center tabular-nums">{row.wins}/{row.draws}/{row.losses}</td>
+              <td class="text-center tabular-nums">{pct(row.omw)}</td>
+              <td class="text-center tabular-nums">{pct(row.gw)}</td>
+              <td class="text-center tabular-nums">{pct(row.ogw)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
     """
   end
@@ -515,11 +633,12 @@ defmodule TabletopWeb.TournamentLive.Show do
   attr :tip, :string, required: true
 
   defp stat_header(assigns) do
+    # Native `title` rather than the daisyUI `tooltip` class: the tooltip's
+    # absolutely-positioned `:before` bubble (long tip text) inflates the
+    # standings table's horizontal scroll width, leaving a phantom blank
+    # scroll region. `title` has zero layout impact.
     ~H"""
-    <span
-      class="tooltip tooltip-bottom cursor-help underline decoration-dotted underline-offset-2"
-      data-tip={@tip}
-    >
+    <span class="cursor-help underline decoration-dotted underline-offset-2" title={@tip}>
       {@label}
     </span>
     """
@@ -536,13 +655,16 @@ defmodule TabletopWeb.TournamentLive.Show do
         Registered players ({length(@registrations)})
       </h2>
       <ul class="divide-y divide-base-300">
-        <li :for={r <- @registrations} class="py-2 flex justify-between">
-          <div>
-            <strong>{r.user && r.user.name}</strong>
-            <span :if={r.hero} class="opacity-70 ml-2">{r.hero}</span>
-            <span :if={r.dropped_at} class="badge badge-ghost ml-2">dropped</span>
+        <li :for={r <- @registrations} class="py-2 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2 min-w-0">
+            <.hero_portrait hero={r.hero} class="size-8" />
+            <div class="min-w-0">
+              <strong class="truncate">{r.user && r.user.name}</strong>
+              <span :if={hero_name(r.hero)} class="opacity-70 ml-1 text-sm">{hero_name(r.hero)}</span>
+              <span :if={r.dropped_at} class="badge badge-ghost badge-sm ml-2">dropped</span>
+            </div>
           </div>
-          <div :if={can_view_decklist?(r, @current_scope, @tournament)}>
+          <div :if={can_view_decklist?(r, @current_scope, @tournament)} class="shrink-0">
             <a class="link" href={r.decklist_url} target="_blank" rel="noopener">deck</a>
           </div>
         </li>
@@ -557,12 +679,4 @@ defmodule TabletopWeb.TournamentLive.Show do
     do: true
 
   defp can_view_decklist?(_reg, scope, _t), do: Scope.admin?(scope)
-
-  defp status_label(:draft), do: "Draft"
-  defp status_label(:registration), do: "Registration open"
-  defp status_label(:check_in), do: "Check-in"
-  defp status_label(:swiss), do: "Swiss"
-  defp status_label(:cut), do: "Top cut"
-  defp status_label(:finished), do: "Finished"
-  defp status_label(:cancelled), do: "Cancelled"
 end

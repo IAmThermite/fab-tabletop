@@ -117,6 +117,40 @@ defmodule Tabletop.Tournaments do
     |> Enum.map(&with_player_count/1)
   end
 
+  @doc """
+  Tournaments to surface on the home page, split into `:upcoming` (open for
+  sign-up or check-in) and `:in_progress` (Swiss or top cut). Each carries
+  `active_player_count` and a preloaded `current_round` (for a round label).
+  Upcoming are ordered soonest-start first (no start time last); in-progress by
+  oldest first.
+  """
+  def list_home_tournaments do
+    tournaments =
+      from(t in Tournament,
+        where: t.status in [:registration, :check_in, :swiss, :cut],
+        preload: [:current_round]
+      )
+      |> Repo.all()
+      |> Enum.map(&with_player_count/1)
+
+    upcoming =
+      tournaments
+      |> Enum.filter(&(&1.status in [:registration, :check_in]))
+      |> Enum.sort_by(&{starts_at_sort(&1.starts_at), DateTime.to_unix(&1.inserted_at)})
+
+    in_progress =
+      tournaments
+      |> Enum.filter(&(&1.status in [:swiss, :cut]))
+      |> Enum.sort_by(&DateTime.to_unix(&1.inserted_at))
+
+    %{upcoming: upcoming, in_progress: in_progress}
+  end
+
+  # Sort key that puts tournaments with a start time first (soonest first) and
+  # those without a start time last.
+  defp starts_at_sort(nil), do: {1, 0}
+  defp starts_at_sort(%DateTime{} = at), do: {0, DateTime.to_unix(at)}
+
   defp status_order(:registration), do: 0
   defp status_order(:check_in), do: 1
   defp status_order(:swiss), do: 2
@@ -278,7 +312,8 @@ defmodule Tabletop.Tournaments do
       on: t.id == m.tournament_id,
       where:
         t.status in [:swiss, :cut] and m.round_id == t.current_round_id and
-          is_nil(m.confirmed_result) and not is_nil(m.player2_id) and
+          is_nil(m.confirmed_result) and is_nil(m.player1_reported) and
+          is_nil(m.player2_reported) and not is_nil(m.player2_id) and
           (m.player1_id == ^user_id or m.player2_id == ^user_id),
       select: %{tournament_id: t.id, tournament_name: t.name, game_id: m.game_id}
     )
@@ -436,6 +471,7 @@ defmodule Tabletop.Tournaments do
         |> case do
           {:ok, m} ->
             broadcast_one(match.tournament_id)
+            notify_result_reported(match, user, which)
             {:ok, m}
 
           error ->
@@ -895,6 +931,54 @@ defmodule Tabletop.Tournaments do
     }
   end
 
+  # Tell the opponent a result was reported for their match and now awaits
+  # agreement/confirmation. The reporter doesn't need telling — they just acted.
+  defp notify_result_reported(%TournamentMatch{} = match, reporter, which) do
+    opponent_id = if which == :p1, do: match.player2_id, else: match.player1_id
+
+    if opponent_id do
+      t = Repo.get!(Tournament, match.tournament_id)
+
+      notify_user(opponent_id, %{
+        type: :result,
+        tournament_id: t.id,
+        tournament_name: t.name,
+        message:
+          "#{t.name}: #{reporter.name} reported your #{round_short_label(match.round)} result.",
+        path: match_path(match.game_id, t.id)
+      })
+    end
+  end
+
+  # Tell both players a match result has been confirmed (or overridden) by an
+  # admin and is now final.
+  defp notify_result_confirmed(%TournamentMatch{} = match, result) do
+    t = Repo.get!(Tournament, match.tournament_id)
+    round_label = round_short_label(match.round)
+
+    for uid <- [match.player1_id, match.player2_id], not is_nil(uid) do
+      notify_user(uid, %{
+        type: :result,
+        tournament_id: t.id,
+        tournament_name: t.name,
+        message:
+          "#{t.name}: your #{round_label} match is confirmed — #{result_outcome_for(uid, match, result)}.",
+        path: "/tournaments/#{t.id}"
+      })
+    end
+  end
+
+  # The result string from the match's perspective, phrased for `uid`.
+  defp result_outcome_for(_uid, _match, "draw"), do: "a draw"
+  defp result_outcome_for(_uid, _match, "double_loss"), do: "a double loss"
+  defp result_outcome_for(_uid, _match, "bye"), do: "a bye"
+
+  defp result_outcome_for(uid, match, "p1_win"),
+    do: if(uid == match.player1_id, do: "a win", else: "a loss")
+
+  defp result_outcome_for(uid, match, "p2_win"),
+    do: if(uid == match.player2_id, do: "a win", else: "a loss")
+
   # Tell every active player the tournament is over (and the winner they are).
   defp notify_finished(%Tournament{} = t, winner_id) do
     winner_name =
@@ -970,6 +1054,7 @@ defmodule Tabletop.Tournaments do
         finish_match_game(match)
         maybe_complete_round(match.round_id)
         broadcast_one(match.tournament_id)
+        notify_result_confirmed(match, result)
         {:ok, m}
 
       error ->

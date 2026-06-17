@@ -56,6 +56,17 @@ defmodule Tabletop.Tournaments.TournamentMatch do
   def bye?(%__MODULE__{player2_id: nil}), do: true
   def bye?(_), do: false
 
+  @doc """
+  True once a result has been entered for the match — either a player has
+  reported, or an admin has confirmed/overridden. Used to treat the match's
+  game as done (no longer joinable, hidden from "open live game" and the
+  home-page banner).
+  """
+  def result_entered?(%__MODULE__{} = m) do
+    not is_nil(m.player1_reported) or not is_nil(m.player2_reported) or
+      not is_nil(m.confirmed_result)
+  end
+
   def result_description("p1_win"), do: "Player 1 win"
   def result_description("p2_win"), do: "Player 2 win"
   def result_description("draw"), do: "Draw"

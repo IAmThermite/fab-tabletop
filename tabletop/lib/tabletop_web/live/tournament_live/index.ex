@@ -12,18 +12,37 @@ defmodule TabletopWeb.TournamentLive.Index do
     {:ok,
      socket
      |> assign(:page_title, "Tournaments")
-     |> assign(:tournaments, Tournaments.list_tournaments())}
+     |> assign_tournaments()}
   end
 
   @impl true
   def handle_info({:tournaments_updated}, socket) do
-    {:noreply, assign(socket, :tournaments, Tournaments.list_tournaments())}
+    {:noreply, assign_tournaments(socket)}
+  end
+
+  # Groups tournaments into display sections. Draft tournaments are admin-only.
+  # `list_tournaments/0` already orders by status then recency, so each section
+  # keeps a sensible order.
+  defp assign_tournaments(socket) do
+    admin? = Scope.admin?(socket.assigns.current_scope)
+    all = Tournaments.list_tournaments()
+    visible = if admin?, do: all, else: Enum.reject(all, &(&1.status == :draft))
+
+    sections = [
+      {"Upcoming", Enum.filter(visible, &(&1.status in [:draft, :registration, :check_in]))},
+      {"In progress", Enum.filter(visible, &(&1.status in [:swiss, :cut]))},
+      {"Finished", Enum.filter(visible, &(&1.status in [:finished, :cancelled]))}
+    ]
+
+    socket
+    |> assign(:sections, sections)
+    |> assign(:sections_empty?, Enum.all?(sections, fn {_label, ts} -> ts == [] end))
   end
 
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-4xl">
       <.header>
         Tournaments
         <:subtitle>Browse and join Flesh and Blood tournaments.</:subtitle>
@@ -34,50 +53,64 @@ defmodule TabletopWeb.TournamentLive.Index do
 
       <.notification_banners items={@notification_items} />
 
-      <div :if={@tournaments == []} class="text-center py-12 opacity-60">
-        No tournaments yet.
+      <div :if={@sections_empty?} class="text-center py-16 opacity-60">
+        <.icon name="hero-trophy" class="size-10 mx-auto mb-3 opacity-40" />
+        <p>No tournaments yet.</p>
       </div>
 
-      <ul class="divide-y divide-base-300">
-        <li :for={t <- @tournaments} class="py-4">
-          <.link navigate={~p"/tournaments/#{t}"} class="block hover:bg-base-200 rounded p-2">
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <div class="font-semibold text-lg">{t.name}</div>
-                <div class="text-sm opacity-70">
-                  {Tournament.format_name(t)} · {t.active_player_count}/{t.max_players} players
-                </div>
-                <div :if={t.starts_at} class="text-sm opacity-70">
-                  Starts
-                  <.local_datetime
-                    id={"tournament-#{t.id}-starts-at"}
-                    at={t.starts_at}
-                    countdown={t.status in [:draft, :registration]}
-                  />
-                </div>
-              </div>
-              <span class={"badge #{status_class(t.status)}"}>{status_label(t.status)}</span>
-            </div>
-          </.link>
-        </li>
-      </ul>
+      <section :for={{label, tournaments} <- @sections} :if={tournaments != []} class="mb-8">
+        <h2 class="font-display text-xl font-bold mb-3 flex items-center gap-2">
+          {label}
+          <span class="badge badge-sm badge-neutral">{length(tournaments)}</span>
+        </h2>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <.tournament_card :for={t <- tournaments} tournament={t} />
+        </div>
+      </section>
     </Layouts.app>
     """
   end
 
-  defp status_class(:draft), do: "badge-ghost"
-  defp status_class(:registration), do: "badge-primary"
-  defp status_class(:check_in), do: "badge-accent"
-  defp status_class(:swiss), do: "badge-info"
-  defp status_class(:cut), do: "badge-warning"
-  defp status_class(:finished), do: "badge-success"
-  defp status_class(:cancelled), do: "badge-error"
+  attr :tournament, :any, required: true
 
-  defp status_label(:draft), do: "Draft"
-  defp status_label(:registration), do: "Registration open"
-  defp status_label(:check_in), do: "Check-in"
-  defp status_label(:swiss), do: "Swiss"
-  defp status_label(:cut), do: "Top cut"
-  defp status_label(:finished), do: "Finished"
-  defp status_label(:cancelled), do: "Cancelled"
+  defp tournament_card(assigns) do
+    t = assigns.tournament
+    assigns = assign(assigns, :filling?, t.status in [:registration, :check_in])
+
+    ~H"""
+    <.link
+      navigate={~p"/tournaments/#{@tournament}"}
+      class="group block rounded-box border border-base-300 p-4 transition-colors hover:bg-base-200"
+    >
+      <div class="flex items-start justify-between gap-3">
+        <h3 class="font-display text-lg font-bold leading-tight truncate group-hover:text-primary">
+          {@tournament.name}
+        </h3>
+        <.tournament_status_badge status={@tournament.status} class="shrink-0" />
+      </div>
+
+      <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-base-content/70">
+        <span class="badge badge-sm badge-ghost">{Tournament.format_name(@tournament)}</span>
+        <span>{@tournament.active_player_count}/{@tournament.max_players} players</span>
+      </div>
+
+      <progress
+        :if={@filling?}
+        class="progress progress-primary mt-2 w-full max-w-[14rem]"
+        value={@tournament.active_player_count}
+        max={@tournament.max_players}
+      >
+      </progress>
+
+      <p :if={@tournament.starts_at} class="mt-2 text-sm text-base-content/70">
+        <span class="opacity-70">Starts</span>
+        <.local_datetime
+          id={"tournament-#{@tournament.id}-starts-at"}
+          at={@tournament.starts_at}
+          countdown={@tournament.status in [:draft, :registration]}
+        />
+      </p>
+    </.link>
+    """
+  end
 end

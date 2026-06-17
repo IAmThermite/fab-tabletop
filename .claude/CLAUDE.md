@@ -12,7 +12,7 @@ Toolchain pins live in [.tool-versions](.tool-versions): Elixir 1.19.5 / Erlang 
 
 All `mix` commands run from [tabletop/](tabletop/).
 
-**Setup:** `docker compose up -d database` (Postgres on host port 5555), then `mix setup` (deps, ecto.setup, asset install + build).
+**Setup:** `docker compose up -d database` (Postgres on host port 5432), then `mix setup` (deps, ecto.setup, asset install + build).
 
 **Dev server:** `mix phx.server` — HTTP on `:4000`, HTTPS on `:4001` (self-signed cert at `priv/cert/`; generate via `mix phx.gen.cert` if missing). HTTPS is needed for getUserMedia (webcam).
 

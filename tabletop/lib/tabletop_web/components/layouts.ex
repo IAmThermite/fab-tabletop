@@ -68,8 +68,13 @@ defmodule TabletopWeb.Layouts do
           </.link>
         </div>
 
-        <div class="flex items-center gap-1">
-          <.link navigate={~p"/about"} class="btn btn-ghost btn-sm">About</.link>
+        <div class="flex items-center gap-4">
+          <.link navigate={~p"/tournaments"} class="btn btn-ghost">
+            Tournaments
+          </.link>
+          <.link navigate={~p"/about"} class="btn btn-ghost">
+            About
+          </.link>
 
           <a
             href={@discord_url}

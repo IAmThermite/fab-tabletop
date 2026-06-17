@@ -158,7 +158,7 @@ defmodule TabletopWeb.GameComponents do
             >
               -
             </button>
-            <span class="text-xs font-bold w-3 text-center">{@game_state.my.amp.count}</span>
+            <span class="text-xs font-bold w-3 text-center">{@game_state.my.amp.value}</span>
             <button
               type="button"
               class="btn btn-xs btn-circle btn-success"
@@ -912,7 +912,7 @@ defmodule TabletopWeb.GameComponents do
         tiles
       end
 
-    amp = Map.get(player_state, :amp, %{active: false, count: 0})
+    amp = Map.get(player_state, :amp, %{active: false, value: 0})
 
     tiles =
       if amp.active do
@@ -923,7 +923,7 @@ defmodule TabletopWeb.GameComponents do
             id: "amp",
             owner: owner,
             label: "Amp",
-            value: amp.count,
+            value: amp.value,
             x: pos.x,
             y: pos.y,
             type: :amp

@@ -15,6 +15,11 @@ alias Tabletop.Games
 alias Tabletop.Games.Game
 alias Tabletop.Repo
 
+{:ok, admin_user} =
+  Accounts.register_user(%{email: "admin@test.com", password: "password", name: "Admin User"})
+
+Repo.update(User.confirm_changeset(admin_user))
+
 {:ok, user1} =
   Accounts.register_user(%{email: "user1@test.com", password: "password", name: "User 1"})
 

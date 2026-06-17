@@ -48,9 +48,33 @@ defmodule Tabletop.Games.Game do
     |> validate_required([:title, :format])
     |> validate_inclusion(:format, Map.keys(@valid_formats))
     |> put_change(:user_id, user_scope.user.id)
+    |> put_active_game_constraints()
+  end
+
+  @doc """
+  Builds a game row for a tournament match (both players known up front).
+  Declares the same one-active-game-per-user constraints as `changeset/3` so a
+  collision surfaces as a changeset error rather than a raw `Ecto.ConstraintError`.
+  """
+  def match_changeset(game, attrs) do
+    game
+    |> cast(attrs, [:title, :format, :status, :user_id, :user2_id])
+    |> validate_required([:title, :format, :user_id, :user2_id])
+    |> validate_inclusion(:format, Map.keys(@valid_formats))
+    |> put_active_game_constraints()
+  end
+
+  # Both partial unique indexes from the `one_active_game_per_user` migration:
+  # a user may be user1 of at most one live game, and user2 of at most one.
+  defp put_active_game_constraints(changeset) do
+    changeset
     |> unique_constraint(:user_id,
       name: :games_one_active_per_user1,
       message: "you are already in a game"
+    )
+    |> unique_constraint(:user2_id,
+      name: :games_one_active_per_user2,
+      message: "your opponent is already in a game"
     )
   end
 end

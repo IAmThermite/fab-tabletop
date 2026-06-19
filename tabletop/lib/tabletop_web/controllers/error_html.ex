@@ -39,7 +39,7 @@ defmodule TabletopWeb.ErrorHTML do
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="robots" content="noindex" />
         <title>{@page_title} · FaB Tabletop</title>
-        <link rel="icon" type="image/png" href={~p"/images/logo.png"} />
+        <link rel="icon" type="image/svg+xml" href={~p"/images/logo-mark.svg"} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
@@ -52,7 +52,7 @@ defmodule TabletopWeb.ErrorHTML do
         <main class="grid min-h-screen place-items-center px-4 py-16">
           <div class="w-full max-w-xl space-y-8 text-center">
             <a href={~p"/"} class="inline-flex justify-center" aria-label="FaB Tabletop home">
-              <img src={~p"/images/logo.png"} alt="FaB Tabletop" class="h-16 w-auto" />
+              <img src={~p"/images/logo-mark.svg"} alt="FaB Tabletop" class="h-16 w-auto" />
             </a>
 
             <div class="space-y-3">

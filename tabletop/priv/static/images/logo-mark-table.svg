@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="FaBTabletop">
+  <defs>
+    <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7c6238"/><stop offset="1" stop-color="#4a3a20"/>
+    </linearGradient>
+    <linearGradient id="woodside" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f3119"/><stop offset="1" stop-color="#241a0d"/>
+    </linearGradient>
+  </defs>
+
+  <!-- wooden round table (no silver rim) -->
+  <path d="M6 46 A26 11 0 0 0 58 46 L58 52 A26 11 0 0 1 6 52 Z" fill="url(#woodside)" stroke="#2c2210" stroke-width="0.8"/>
+  <ellipse cx="32" cy="46" rx="26" ry="11" fill="url(#wood)" stroke="#2c2210" stroke-width="0.9"/>
+
+  <!-- soft cast shadows where the floating gems hover over the table -->
+  <g fill="#000000" fill-opacity="0.18">
+    <ellipse cx="32" cy="45" rx="5.5" ry="1.7"/>
+    <ellipse cx="22" cy="48" rx="5.5" ry="1.7"/>
+    <ellipse cx="42" cy="48" rx="5.5" ry="1.7"/>
+  </g>
+
+  <!-- three flat pitch gems floating above the table, each with a flat silver ring -->
+  <g stroke="#565b65" stroke-width="0.9">
+    <circle cx="32" cy="11" r="8.5" fill="#c2c7cf"/>
+    <circle cx="22" cy="25" r="8.5" fill="#c2c7cf"/>
+    <circle cx="42" cy="25" r="8.5" fill="#c2c7cf"/>
+  </g>
+  <g stroke="#000000" stroke-opacity="0.22" stroke-width="0.6">
+    <circle cx="32" cy="11" r="6.3" fill="#df4a3b"/>
+    <circle cx="22" cy="25" r="6.3" fill="#e9b23c"/>
+    <circle cx="42" cy="25" r="6.3" fill="#3f80d6"/>
+  </g>
+</svg>

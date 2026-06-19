@@ -61,7 +61,7 @@ defmodule TabletopWeb.Layouts do
       <header class="navbar gap-2 border-b border-base-300 bg-base-100/90 backdrop-blur px-4 sm:px-6 lg:px-8">
         <div class="flex-1">
           <.link navigate={~p"/"} class="inline-flex items-center gap-3">
-            <img src={~p"/images/logo.png"} alt="FaB Tabletop" class="h-12 w-auto" />
+            <img src={~p"/images/logo-mark.svg"} alt="FaB Tabletop" class="h-12 w-auto" />
             <span class="font-display text-xl font-bold tracking-wide hidden sm:inline">
               FaB Tabletop
             </span>
@@ -176,7 +176,7 @@ defmodule TabletopWeb.Layouts do
         </div>
 
         <p class="text-xs leading-relaxed text-base-content/50 text-center sm:text-left">
-          FaB Tabletop is an unofficial, fan-made project and is not affiliated with, endorsed by, or sponsored by Legend Story Studios. All Flesh and Blood cards, logos, and artwork are the property of Legend Story Studios.
+          Fab Tabletop is in no way affiliated with Legend Story Studios. Flesh and Blood™, and set names are trademarks of Legend Story Studios®.
         </p>
       </div>
     </footer>

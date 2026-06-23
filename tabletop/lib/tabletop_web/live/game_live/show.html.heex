@@ -286,13 +286,13 @@
         const oppVolOnIcon = document.getElementById("opp-vol-on-icon")
         const oppVolOffIcon = document.getElementById("opp-vol-off-icon")
 
-        // Load flip preference from localStorage
+        // The opponent's board is rotated 180° by default (you sit across the
+        // table from them), so the resting view is already readable. The toggle
+        // defaults to off; turning it on rotates the board back to upright.
         const FLIP_KEY = "tabletop:flip-opponent"
-        const savedFlip = localStorage.getItem(FLIP_KEY) === "true"
-        flipToggle.checked = savedFlip
-        if (savedFlip) {
-          canvasEl.style.transform = "rotate(180deg)"
-        }
+        const flipToggleOn = localStorage.getItem(FLIP_KEY) === "true"
+        flipToggle.checked = flipToggleOn
+        canvasEl.style.transform = flipToggleOn ? "" : "rotate(180deg)"
 
         // Load debug preference from localStorage (default off)
         debugToggle.checked = isDebugEnabled()
@@ -442,7 +442,9 @@
         // Card lookup — click on remote canvas to identify the card via pHash
         const gameArea = document.getElementById("game-area")
         setupCardLookup(this, canvasEl, gameArea, {
-          isFlipped: () => flipToggle.checked,
+          // The canvas is visually rotated 180° in the default (toggle-off)
+          // state, so it is "flipped" for click-mapping when the toggle is off.
+          isFlipped: () => !flipToggle.checked,
           guardFn: () => this.webrtc._status === "connected",
         })
 
@@ -451,11 +453,12 @@
           settingsDialog.showModal()
         })
 
-        // Flip opponent toggle
+        // Flip opponent toggle. Off (default) keeps the board's default 180°
+        // rotation; on rotates it back to upright.
         flipToggle.addEventListener("change", () => {
-          const flipped = flipToggle.checked
-          canvasEl.style.transform = flipped ? "rotate(180deg)" : ""
-          localStorage.setItem(FLIP_KEY, flipped)
+          const toggleOn = flipToggle.checked
+          canvasEl.style.transform = toggleOn ? "" : "rotate(180deg)"
+          localStorage.setItem(FLIP_KEY, toggleOn)
         })
 
         // Debug scan overlay toggle
@@ -660,8 +663,8 @@
 
       updated() {
         const canvasEl = document.getElementById("remote-canvas")
-        const flipped = localStorage.getItem("tabletop:flip-opponent") === "true"
-        canvasEl.style.transform = flipped ? "rotate(180deg)" : ""
+        const flipToggleOn = localStorage.getItem("tabletop:flip-opponent") === "true"
+        canvasEl.style.transform = flipToggleOn ? "" : "rotate(180deg)"
 
         // Keep the local tracks aligned with the server-authoritative state.
         // Normally these are the same — the click handler updates both — but

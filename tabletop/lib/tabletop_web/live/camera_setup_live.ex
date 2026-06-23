@@ -220,7 +220,10 @@ defmodule TabletopWeb.CameraSetupLive do
           debugToggle.checked = isDebugEnabled()
           debugToggle.addEventListener("change", () => setDebugEnabled(debugToggle.checked))
 
-          // Flip toggle (load preference but no canvas to flip on setup page)
+          // Flip toggle. This only affects the opponent's board in-game; the
+          // setup canvas shows your own camera and is never flipped here. The
+          // toggle defaults to off — in-game the opponent's board is rotated
+          // 180° by default, and turning this on rotates it back to upright.
           const FLIP_KEY = "tabletop:flip-opponent"
           flipToggle.checked = localStorage.getItem(FLIP_KEY) === "true"
           flipToggle.addEventListener("change", () => {

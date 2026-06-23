@@ -77,6 +77,18 @@ defmodule Tabletop.Fab.GameStateTest do
       {:ok, new_player, _} = GameState.toggle_damage(player, :physical)
       refute Map.has_key?(new_player.tile_positions, "physical")
     end
+
+    test "resets the damage counter to 0 when toggling off" do
+      {:ok, player, _} = GameState.toggle_damage(GameState.default_player(), :physical)
+      {:ok, player, _} = GameState.change_damage(player, :physical, 5)
+      assert player.physical.damage == 5
+
+      {:ok, new_player, {:damage_toggled, :physical, false}} =
+        GameState.toggle_damage(player, :physical)
+
+      assert new_player.physical.active == false
+      assert new_player.physical.damage == 0
+    end
   end
 
   describe "change_damage/3" do
@@ -168,6 +180,22 @@ defmodule Tabletop.Fab.GameStateTest do
       assert Map.get(player.effects, "Mark") == nil
     end
 
+    test "resets a counterable effect's count when toggling off" do
+      key = GameState.effect_key("on_hit", "Deal Damage")
+
+      {:ok, player, _} =
+        GameState.change_effect_count(GameState.default_player(), "on_hit", "Deal Damage", 2)
+
+      assert player.effects[key] == true
+      assert player.effect_counts[key] == 3
+
+      {:ok, new_player, {:effect_toggled, "on_hit", "Deal Damage", false}} =
+        GameState.toggle_effect(player, "on_hit", "Deal Damage")
+
+      assert new_player.effects[key] == false
+      refute Map.has_key?(new_player.effect_counts, key)
+    end
+
     test "returns error for unknown effect" do
       assert {:error, :invalid_effect} =
                GameState.toggle_effect(GameState.default_player(), "ability", "Nonexistent")
@@ -194,6 +222,16 @@ defmodule Tabletop.Fab.GameStateTest do
       assert {:ok, new_player, {:amp_toggled, false}} = GameState.toggle_amp(player)
       assert new_player.amp.active == false
       refute Map.has_key?(new_player.tile_positions, "amp")
+    end
+
+    test "resets the amp counter to 0 when toggling off" do
+      {:ok, player, _} = GameState.toggle_amp(GameState.default_player())
+      {:ok, player, _} = GameState.change_amp(player, 3)
+      assert player.amp.value == 3
+
+      assert {:ok, new_player, {:amp_toggled, false}} = GameState.toggle_amp(player)
+      assert new_player.amp.active == false
+      assert new_player.amp.value == 0
     end
   end
 

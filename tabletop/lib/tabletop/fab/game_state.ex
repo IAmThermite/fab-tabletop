@@ -83,13 +83,20 @@ defmodule Tabletop.Fab.GameState do
 
   def toggle_damage(player, type) when type in @valid_damage_types do
     new_val = !player[type].active
-    new_player = put_in(player, [type, :active], new_val)
     tile_id = Atom.to_string(type)
 
+    # Turning the tile off resets its damage counter back to 0.
     new_player =
-      if new_val,
-        do: ensure_tile_position(new_player, tile_id),
-        else: remove_tile(new_player, tile_id)
+      if new_val do
+        player
+        |> put_in([type, :active], true)
+        |> ensure_tile_position(tile_id)
+      else
+        player
+        |> put_in([type, :active], false)
+        |> put_in([type, :damage], 0)
+        |> remove_tile(tile_id)
+      end
 
     {:ok, new_player, {:damage_toggled, type, new_val}}
   end
@@ -122,12 +129,16 @@ defmodule Tabletop.Fab.GameState do
   """
   def toggle_amp(player) do
     new_val = !player.amp.active
-    new_player = %{player | amp: %{player.amp | active: new_val}}
 
+    # Turning the tile off resets its counter (the "X" in Amp X) back to 0.
     new_player =
-      if new_val,
-        do: ensure_tile_position(new_player, "amp"),
-        else: remove_tile(new_player, "amp")
+      if new_val do
+        %{player | amp: %{player.amp | active: true}}
+        |> ensure_tile_position("amp")
+      else
+        %{player | amp: %{player.amp | active: false, value: 0}}
+        |> remove_tile("amp")
+      end
 
     {:ok, new_player, {:amp_toggled, new_val}}
   end
@@ -205,10 +216,15 @@ defmodule Tabletop.Fab.GameState do
       new_effects = Map.put(player.effects, key, new_val)
       new_player = %{player | effects: new_effects}
 
+      # Turning the tile off resets its counter (for counterable effects) so a
+      # later re-toggle starts fresh at the default rather than the stale count.
       new_player =
-        if new_val,
-          do: ensure_tile_position(new_player, key),
-          else: remove_tile(new_player, key)
+        if new_val do
+          ensure_tile_position(new_player, key)
+        else
+          new_counts = Map.delete(Map.get(new_player, :effect_counts, %{}), key)
+          %{new_player | effect_counts: new_counts} |> remove_tile(key)
+        end
 
       {:ok, new_player, {:effect_toggled, category, effect_name, new_val}}
     else

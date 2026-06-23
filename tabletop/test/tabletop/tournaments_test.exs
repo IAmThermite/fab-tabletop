@@ -354,4 +354,47 @@ defmodule Tabletop.TournamentsTest do
     assert_receive {:user_notification, %{type: :result}}
     assert_receive {:user_notification, %{type: :result}}
   end
+
+  describe "list_recent_winners/1" do
+    test "returns finished tournaments newest-first with the winner preloaded",
+         %{admin_scope: admin} do
+      assert Tournaments.list_recent_winners() == []
+
+      {older, champ_old} = finished_tournament_fixture(admin)
+      {newer, champ_new} = finished_tournament_fixture(admin)
+
+      # `updated_at` has second precision, so two tournaments finished in the
+      # same test run can tie. Backdate one so finish order is unambiguous.
+      set_updated_at(older.id, ~U[2026-06-01 00:00:00Z])
+      set_updated_at(newer.id, ~U[2026-06-10 00:00:00Z])
+
+      assert [first, second] = Tournaments.list_recent_winners()
+
+      assert first.id == newer.id
+      assert first.winner.id == champ_new.id
+      assert first.winner.name == champ_new.name
+
+      # The champion's own registration (hero + deck) is attached.
+      assert first.winner_hero == "arakni-huntsman"
+      assert first.winner_decklist_url == valid_fabrary_url()
+
+      assert second.id == older.id
+      assert second.winner.id == champ_old.id
+    end
+
+    test "honours the limit and excludes unfinished tournaments", %{admin_scope: admin} do
+      for _ <- 1..3, do: finished_tournament_fixture(admin)
+      # A still-open tournament must never appear among winners.
+      _open = tournament_fixture(scope: admin)
+
+      assert length(Tournaments.list_recent_winners(2)) == 2
+    end
+  end
+
+  defp set_updated_at(id, %DateTime{} = at) do
+    Repo.update_all(
+      from(t in Tabletop.Tournaments.Tournament, where: t.id == ^id),
+      set: [updated_at: at]
+    )
+  end
 end

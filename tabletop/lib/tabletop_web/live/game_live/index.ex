@@ -519,6 +519,54 @@ defmodule TabletopWeb.GameLive.Index do
                   </.link>
                 </div>
               </div>
+
+              <%!-- Recent winners: most recently finished tournaments and their
+                   champions. Hidden until at least one tournament has finished. --%>
+              <div
+                :if={@recent_winners != []}
+                class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4"
+              >
+                <h3 class="font-bold text-lg mb-3 flex items-center gap-2">
+                  <.icon name="hero-trophy" class="size-5 text-amber-500" /> Recent winners
+                </h3>
+
+                <div class="space-y-2">
+                  <div
+                    :for={t <- @recent_winners}
+                    class="flex items-start justify-between gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 p-2"
+                  >
+                    <%!-- The whole identity links to the tournament; the deck
+                         link sits outside it (anchors can't nest). --%>
+                    <.link
+                      navigate={~p"/tournaments/#{t}"}
+                      class="group flex items-start gap-2 min-w-0"
+                    >
+                      <.hero_portrait hero={t.winner_hero} class="size-10 shrink-0" />
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-1 font-semibold">
+                          <.icon name="hero-trophy-solid" class="size-4 shrink-0 text-amber-500" />
+                          <span class="truncate group-hover:underline">{t.winner.name}</span>
+                        </div>
+                        <div class="text-sm truncate text-zinc-600 dark:text-zinc-400">{t.name}</div>
+                        <div class="mt-0.5 text-xs text-zinc-500 truncate">
+                          <span :if={hero_name(t.winner_hero)}>{hero_name(t.winner_hero)} · </span>{Tournament.format_name(
+                            t
+                          )} · {finished_ago(t.updated_at)}
+                        </div>
+                      </div>
+                    </.link>
+                    <.link
+                      :if={present?(t.winner_decklist_url)}
+                      href={t.winner_decklist_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="shrink-0 whitespace-nowrap text-xs text-blue-600 underline"
+                    >
+                      Deck ↗
+                    </.link>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -825,8 +873,30 @@ defmodule TabletopWeb.GameLive.Index do
   end
 
   defp assign_tournaments(socket) do
-    assign(socket, :home_tournaments, Tournaments.list_home_tournaments())
+    socket
+    |> assign(:home_tournaments, Tournaments.list_home_tournaments())
+    |> assign(:recent_winners, Tournaments.list_recent_winners())
   end
+
+  # A compact, timezone-independent "finished X ago" label for the recent
+  # winners list. Day granularity and coarser, so the lack of a server-side
+  # timezone database doesn't matter.
+  defp finished_ago(%DateTime{} = at) do
+    diff = DateTime.diff(DateTime.utc_now(), at, :second)
+
+    cond do
+      diff < 60 -> "just now"
+      diff < 3600 -> pluralize(div(diff, 60), "minute")
+      diff < 86_400 -> pluralize(div(diff, 3600), "hour")
+      diff < 7 * 86_400 -> pluralize(div(diff, 86_400), "day")
+      diff < 30 * 86_400 -> pluralize(div(diff, 7 * 86_400), "week")
+      diff < 365 * 86_400 -> pluralize(div(diff, 30 * 86_400), "month")
+      true -> pluralize(div(diff, 365 * 86_400), "year")
+    end
+  end
+
+  defp pluralize(1, unit), do: "1 #{unit} ago"
+  defp pluralize(n, unit), do: "#{n} #{unit}s ago"
 
   # Screenshots shown in the anonymous intro header. `src` is nil until real
   # captures land in priv/static/images/home/ — set each one to its

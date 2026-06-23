@@ -104,6 +104,26 @@ defmodule TabletopWeb.GameLiveTest do
       assert html =~ "Live activity"
     end
 
+    test "shows recent tournament winners once a tournament has finished", %{conn: conn} do
+      admin = Tabletop.TournamentsFixtures.admin_scope_fixture()
+      {tournament, champion} = Tabletop.TournamentsFixtures.finished_tournament_fixture(admin)
+
+      {:ok, _live, html} = live(conn, ~p"/")
+
+      assert html =~ "Recent winners"
+      assert html =~ champion.name
+      assert html =~ tournament.name
+      # The champion's hero and a link to their deck.
+      assert html =~ "Arakni, Huntsman"
+      assert html =~ Tabletop.TournamentsFixtures.valid_fabrary_url()
+    end
+
+    test "hides the recent winners card when no tournament has finished", %{conn: conn} do
+      {:ok, _live, html} = live(conn, ~p"/")
+
+      refute html =~ "Recent winners"
+    end
+
     test "shows hero and decklist on a joinable game row", %{conn: conn} do
       other_scope = user_scope_fixture()
 

@@ -146,6 +146,52 @@ defmodule Tabletop.Tournaments do
     %{upcoming: upcoming, in_progress: in_progress}
   end
 
+  @doc """
+  The most recently finished tournaments that crowned a champion, newest first.
+
+  There is no dedicated `finished_at` column — finishing is the last thing that
+  touches a finished tournament's row (`generate_top_cut`/`advance_bracket`
+  stamp `winner_id` + `status`), so `updated_at` is the finish time. Each result
+  has its `:winner` preloaded. `limit` caps the list (default 3).
+  """
+  def list_recent_winners(limit \\ 3) do
+    from(t in Tournament,
+      where: t.status == :finished and not is_nil(t.winner_id),
+      order_by: [desc: t.updated_at, desc: t.inserted_at],
+      limit: ^limit,
+      preload: [:winner]
+    )
+    |> Repo.all()
+    |> attach_winner_registrations()
+  end
+
+  # Attach each champion's own registration as virtual `winner_hero` /
+  # `winner_decklist_url` fields (for the home-page winners card). One extra
+  # query keyed by {tournament_id, winner_id} beats preloading every
+  # registration just to find the winner's.
+  defp attach_winner_registrations([]), do: []
+
+  defp attach_winner_registrations(tournaments) do
+    tournament_ids = Enum.map(tournaments, & &1.id)
+    winner_ids = Enum.map(tournaments, & &1.winner_id)
+
+    regs =
+      from(r in TournamentRegistration,
+        where: r.tournament_id in ^tournament_ids and r.user_id in ^winner_ids
+      )
+      |> Repo.all()
+      |> Map.new(&{{&1.tournament_id, &1.user_id}, &1})
+
+    Enum.map(tournaments, fn t ->
+      reg = Map.get(regs, {t.id, t.winner_id})
+
+      Map.merge(t, %{
+        winner_hero: reg && reg.hero,
+        winner_decklist_url: reg && reg.decklist_url
+      })
+    end)
+  end
+
   # Sort key that puts tournaments with a start time first (soonest first) and
   # those without a start time last.
   defp starts_at_sort(nil), do: {1, 0}

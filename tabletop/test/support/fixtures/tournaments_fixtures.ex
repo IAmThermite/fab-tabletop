@@ -46,7 +46,13 @@ defmodule Tabletop.TournamentsFixtures do
     players =
       for _ <- 1..2 do
         s = Scope.for_user(user_fixture())
-        {:ok, _} = Tournaments.register(s, t.id, %{"decklist_url" => valid_fabrary_url()})
+
+        {:ok, _} =
+          Tournaments.register(s, t.id, %{
+            "hero" => "arakni-huntsman",
+            "decklist_url" => valid_fabrary_url()
+          })
+
         s
       end
 

@@ -1,45 +1,48 @@
 defmodule Tabletop.Tournaments.Pairing.Standings do
   @moduledoc """
-  Standings computation with FAB-style tiebreakers:
+  Standings computation following the official Flesh and Blood Tournament Rules
+  and Policy (Appendix A.4). Players are ordered by these tiebreakers, in order:
 
-    * Match points
-    * Opponents' match-win % (OMW%), floored at 0.33
-    * Game-win % (GW%)
-    * Opponents' game-win % (OGW%), floored at 0.33
+    1. Match points (win/bye = 1, draw/loss = 0)
+    2. Cumulative Match Points (CMP) — higher is better
+    3. Match Loss % (MLP) — lower is better
+    4. Opponents' average Match Loss % (OMLP) — lower is better
+    5. Opponents' average Cumulative Match Points (OCMP) — higher is better
+    6. A deterministic fallback (registration seed) standing in for the
+       official "selected at random".
 
-  Byes are excluded from an opponent's denominator when computing OMW/OGW.
+  CMP, MLP, OMLP and OCMP are all fractions in `0.0..1.0` with no minimum floor,
+  and there is no game-level (GW%/OGW%) component.
   """
 
   alias Tabletop.Tournaments.Pairing.{Player, Scoring}
 
-  @floor 0.3333
-
   def compute(players, opts \\ []) do
     scoring = Keyword.get(opts, :scoring, Scoring.default())
+    rounds = total_rounds(players)
     by_id = Map.new(players, &{&1.id, &1})
+
+    # Compute each player's own CMP/MLP once; the opponent averages reuse them.
+    cmp_by_id = Map.new(players, &{&1.id, cmp(&1, rounds)})
+    mlp_by_id = Map.new(players, &{&1.id, mlp(&1)})
 
     players
     |> Enum.map(fn p ->
-      mp = match_points(p, scoring)
-      mw = match_win_pct(p, scoring)
-      gw = game_win_pct(p)
-
-      omw = mean_opponent(p, by_id, &match_win_pct(&1, scoring))
-      ogw = mean_opponent(p, by_id, &game_win_pct/1)
-
       %{
         id: p.id,
-        match_points: mp,
+        match_points: match_points(p, scoring),
         wins: p.wins,
         draws: p.draws,
         losses: p.losses,
-        mw: mw,
-        omw: omw,
-        gw: gw,
-        ogw: ogw
+        cmp: Map.fetch!(cmp_by_id, p.id),
+        mlp: Map.fetch!(mlp_by_id, p.id),
+        omlp: mean_opponent(p, mlp_by_id),
+        ocmp: mean_opponent(p, cmp_by_id)
       }
     end)
-    |> Enum.sort_by(fn r -> {-r.match_points, -r.omw, -r.gw, -r.ogw, seed_of(by_id[r.id])} end)
+    |> Enum.sort_by(fn r ->
+      {-r.match_points, -r.cmp, r.mlp, r.omlp, -r.ocmp, seed_of(by_id[r.id])}
+    end)
     |> Enum.with_index(1)
     |> Enum.map(fn {row, rank} -> Map.put(row, :rank, rank) end)
   end
@@ -51,37 +54,64 @@ defmodule Tabletop.Tournaments.Pairing.Standings do
     p.wins * scoring.win + p.draws * scoring.draw + p.losses * scoring.loss
   end
 
-  defp match_win_pct(p, scoring) do
-    rounds = p.wins + p.losses + p.draws
-
-    if rounds == 0 do
-      @floor
-    else
-      pts = match_points(p, scoring)
-      max(pts / (rounds * scoring.win), @floor)
+  # Total completed rounds across the whole tournament — the denominator basis
+  # for CMP. Derived from the highest round any player has a result for.
+  defp total_rounds(players) do
+    players
+    |> Enum.flat_map(fn p -> Enum.map(p.round_results, & &1.round) end)
+    |> case do
+      [] -> 0
+      rounds -> Enum.max(rounds)
     end
   end
 
-  defp game_win_pct(p) do
-    total = p.game_wins + p.game_losses + p.game_draws
+  # Cumulative Match Points: the sum, over each completed round, of the player's
+  # running match-point total (a win or a bye earns the point), normalised by an
+  # all-wins player's total of R*(R+1)/2. All wins → 1.0; no wins → 0.0; for an
+  # equal win count, taking losses later yields a higher CMP.
+  defp cmp(_p, 0), do: 0.0
 
-    if total == 0 do
-      @floor
+  defp cmp(p, rounds) do
+    won = won_rounds(p)
+
+    {total, _running} =
+      Enum.reduce(1..rounds, {0, 0}, fn r, {total, running} ->
+        running = if MapSet.member?(won, r), do: running + 1, else: running
+        {total + running, running}
+      end)
+
+    total / (rounds * (rounds + 1) / 2)
+  end
+
+  defp won_rounds(p) do
+    for %{round: r, result: result} <- p.round_results,
+        result in [:win, :bye],
+        into: MapSet.new(),
+        do: r
+  end
+
+  # Match Loss %: losses over the rounds actually played. A bye is not a played
+  # round, so it is excluded from the denominator; a draw is not a loss.
+  defp mlp(p) do
+    played = Enum.count(p.round_results, &(&1.result != :bye))
+
+    if played == 0 do
+      0.0
     else
-      max(p.game_wins / total, @floor)
+      losses = Enum.count(p.round_results, &(&1.result == :loss))
+      losses / played
     end
   end
 
-  defp mean_opponent(p, by_id, fun) do
-    opps =
+  defp mean_opponent(p, value_by_id) do
+    values =
       p.opponents
-      |> Enum.map(&Map.get(by_id, &1))
+      |> Enum.map(&Map.get(value_by_id, &1))
       |> Enum.reject(&is_nil/1)
 
-    if opps == [] do
-      @floor
-    else
-      max(Enum.sum(Enum.map(opps, fun)) / length(opps), @floor)
+    case values do
+      [] -> 0.0
+      vs -> Enum.sum(vs) / length(vs)
     end
   end
 end

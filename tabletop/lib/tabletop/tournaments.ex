@@ -309,7 +309,8 @@ defmodule Tabletop.Tournaments do
 
   defp list_confirmed_matches(tournament_id) do
     from(m in TournamentMatch,
-      where: m.tournament_id == ^tournament_id and not is_nil(m.confirmed_result)
+      where: m.tournament_id == ^tournament_id and not is_nil(m.confirmed_result),
+      preload: [:round]
     )
     |> Repo.all()
   end
@@ -1297,16 +1298,13 @@ defmodule Tabletop.Tournaments do
   # ─────────── Ecto ↔ Pairing translation ───────────
 
   defp to_pairing_players(registrations, confirmed_matches) do
+    # Only Swiss matches feed the standings/pairing tiebreakers — top-cut
+    # (single-elim) results never affect match points, CMP, MLP, etc.
     agg =
-      Enum.reduce(confirmed_matches, %{}, fn m, acc ->
-        acc
-        |> apply_result(
-          m.player1_id,
-          m.player2_id,
-          m.confirmed_result,
-          m.player1_games_won || 0,
-          m.player2_games_won || 0
-        )
+      confirmed_matches
+      |> Enum.filter(fn m -> match?(%{kind: :swiss}, m.round) end)
+      |> Enum.reduce(%{}, fn m, acc ->
+        apply_result(acc, m.round.round_number, m.player1_id, m.player2_id, m.confirmed_result)
       end)
 
     Enum.map(registrations, fn reg ->
@@ -1317,9 +1315,7 @@ defmodule Tabletop.Tournaments do
         wins: stats.wins,
         losses: stats.losses,
         draws: stats.draws,
-        game_wins: stats.game_wins,
-        game_losses: stats.game_losses,
-        game_draws: stats.game_draws,
+        round_results: Enum.sort_by(stats.round_results, & &1.round),
         opponents: Enum.reverse(stats.opponents),
         had_bye: stats.had_bye,
         dropped: !is_nil(reg.dropped_at),
@@ -1329,102 +1325,58 @@ defmodule Tabletop.Tournaments do
   end
 
   defp default_stats do
-    %{
-      wins: 0,
-      losses: 0,
-      draws: 0,
-      game_wins: 0,
-      game_losses: 0,
-      game_draws: 0,
-      opponents: [],
-      had_bye: false
-    }
+    %{wins: 0, losses: 0, draws: 0, round_results: [], opponents: [], had_bye: false}
   end
 
-  defp apply_result(acc, p1, p2, result, gw1, gw2) do
+  defp apply_result(acc, round, p1, p2, result) do
     case result do
       "bye" ->
-        acc
-        |> update_player(p1, fn s ->
-          %{s | wins: s.wins + 1, had_bye: true}
+        update_player(acc, p1, fn s ->
+          %{
+            s
+            | wins: s.wins + 1,
+              had_bye: true,
+              round_results: [%{round: round, result: :bye} | s.round_results]
+          }
         end)
 
       "p1_win" ->
         acc
-        |> update_player(p1, fn s ->
-          %{
-            s
-            | wins: s.wins + 1,
-              game_wins: s.game_wins + gw1,
-              game_losses: s.game_losses + gw2,
-              opponents: [p2 | s.opponents]
-          }
-        end)
-        |> update_player(p2, fn s ->
-          %{
-            s
-            | losses: s.losses + 1,
-              game_wins: s.game_wins + gw2,
-              game_losses: s.game_losses + gw1,
-              opponents: [p1 | s.opponents]
-          }
-        end)
+        |> update_player(p1, &record_result(&1, round, :win, p2))
+        |> update_player(p2, &record_result(&1, round, :loss, p1))
 
       "p2_win" ->
         acc
-        |> update_player(p2, fn s ->
-          %{
-            s
-            | wins: s.wins + 1,
-              game_wins: s.game_wins + gw2,
-              game_losses: s.game_losses + gw1,
-              opponents: [p1 | s.opponents]
-          }
-        end)
-        |> update_player(p1, fn s ->
-          %{
-            s
-            | losses: s.losses + 1,
-              game_wins: s.game_wins + gw1,
-              game_losses: s.game_losses + gw2,
-              opponents: [p2 | s.opponents]
-          }
-        end)
+        |> update_player(p2, &record_result(&1, round, :win, p1))
+        |> update_player(p1, &record_result(&1, round, :loss, p2))
 
       "draw" ->
         acc
-        |> update_player(p1, fn s ->
-          %{
-            s
-            | draws: s.draws + 1,
-              game_wins: s.game_wins + gw1,
-              game_losses: s.game_losses + gw2,
-              opponents: [p2 | s.opponents]
-          }
-        end)
-        |> update_player(p2, fn s ->
-          %{
-            s
-            | draws: s.draws + 1,
-              game_wins: s.game_wins + gw2,
-              game_losses: s.game_losses + gw1,
-              opponents: [p1 | s.opponents]
-          }
-        end)
+        |> update_player(p1, &record_result(&1, round, :draw, p2))
+        |> update_player(p2, &record_result(&1, round, :draw, p1))
 
       "double_loss" ->
         acc
-        |> update_player(p1, fn s ->
-          %{s | losses: s.losses + 1, opponents: [p2 | s.opponents]}
-        end)
-        |> update_player(p2, fn s ->
-          %{s | losses: s.losses + 1, opponents: [p1 | s.opponents]}
-        end)
+        |> update_player(p1, &record_result(&1, round, :loss, p2))
+        |> update_player(p2, &record_result(&1, round, :loss, p1))
 
       _ ->
         acc
     end
   end
+
+  # Folds a single non-bye match result into a player's running stats: bumps the
+  # win/loss/draw tally, appends the per-round outcome, and records the opponent.
+  defp record_result(stats, round, result, opponent) do
+    stats
+    |> bump_tally(result)
+    |> Map.update!(:round_results, &[%{round: round, result: result} | &1])
+    |> Map.update!(:opponents, &[opponent | &1])
+  end
+
+  defp bump_tally(s, :win), do: %{s | wins: s.wins + 1}
+  defp bump_tally(s, :loss), do: %{s | losses: s.losses + 1}
+  defp bump_tally(s, :draw), do: %{s | draws: s.draws + 1}
 
   defp update_player(acc, nil, _fun), do: acc
 

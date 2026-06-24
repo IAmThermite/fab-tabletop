@@ -1,10 +1,11 @@
 defmodule Tabletop.Tournaments.Pairing.Scoring do
   @moduledoc """
-  Point configuration for tournament scoring. Defaults match standard FAB/MTG
-  Swiss: 3 points for a match win, 1 for a draw, 0 for a loss, 3 for a bye.
+  Point configuration for tournament scoring. Defaults mirror the official
+  Flesh and Blood Tournament Rules and Policy (Appendix A.4): a match win and a
+  bye are each worth 1 point, while draws and losses are worth 0.
   """
 
-  @default %{win: 3, draw: 1, loss: 0, bye: 3}
+  @default %{win: 1, draw: 0, loss: 0, bye: 1}
 
   def default, do: @default
 

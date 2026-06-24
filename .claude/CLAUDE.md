@@ -124,3 +124,4 @@ Swiss-into-top-cut tournament running on top of the normal game stack. The data 
 # Important instructions
 
 - If you discover a pre existing issue to anything, please fix it and make note of it, do not ignore and pass it off as a comment.
+- Do not create new git branches/stage files/commit, please leave any work for manual inspection and commiting.

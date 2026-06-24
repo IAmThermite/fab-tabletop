@@ -576,20 +576,26 @@ defmodule TabletopWeb.TournamentLive.Show do
               <th class="text-center">W/D/L</th>
               <th class="text-center">
                 <.stat_header
-                  label="OMW%"
-                  tip="Opponents' Match-Win % — strength of schedule: the average match-win rate of everyone you've played, floored at 33%."
+                  label="CMP"
+                  tip="Cumulative Match Points — rewards earning your match points earlier in the tournament (and so facing tougher opponents). Higher is better."
                 />
               </th>
               <th class="text-center">
                 <.stat_header
-                  label="GW%"
-                  tip="Game-Win % — your share of individual games won across all matches."
+                  label="MLP"
+                  tip="Match Loss % — your share of played matches lost (byes excluded, draws don't count). Lower is better."
                 />
               </th>
               <th class="text-center">
                 <.stat_header
-                  label="OGW%"
-                  tip="Opponents' Game-Win % — the average game-win rate of everyone you've played, floored at 33%."
+                  label="OMLP"
+                  tip="Opponents' Match Loss % — strength of schedule: the average match-loss rate of everyone you've played. Lower is better."
+                />
+              </th>
+              <th class="text-center">
+                <.stat_header
+                  label="OCMP"
+                  tip="Opponents' Cumulative Match Points — the average CMP of everyone you've played. Higher is better."
                 />
               </th>
             </tr>
@@ -616,9 +622,10 @@ defmodule TabletopWeb.TournamentLive.Show do
               </td>
               <td class="text-center font-bold tabular-nums">{row.match_points}</td>
               <td class="text-center tabular-nums">{row.wins}/{row.draws}/{row.losses}</td>
-              <td class="text-center tabular-nums">{pct(row.omw)}</td>
-              <td class="text-center tabular-nums">{pct(row.gw)}</td>
-              <td class="text-center tabular-nums">{pct(row.ogw)}</td>
+              <td class="text-center tabular-nums">{pct(row.cmp)}</td>
+              <td class="text-center tabular-nums">{pct(row.mlp)}</td>
+              <td class="text-center tabular-nums">{pct(row.omlp)}</td>
+              <td class="text-center tabular-nums">{pct(row.ocmp)}</td>
             </tr>
           </tbody>
         </table>

@@ -21,8 +21,5 @@
     "ask": [
       "Bash(fly*)"
     ]
-  },
-  "enabledPlugins": {
-    "superpowers@claude-plugins-official": true
   }
 }

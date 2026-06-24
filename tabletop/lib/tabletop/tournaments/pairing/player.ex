@@ -11,9 +11,11 @@ defmodule Tabletop.Tournaments.Pairing.Player do
     wins: 0,
     losses: 0,
     draws: 0,
-    game_wins: 0,
-    game_losses: 0,
-    game_draws: 0,
+    # Per-round match outcomes, one entry per round the player participated in:
+    # `%{round: integer, result: :win | :loss | :draw | :bye}`. Backs the
+    # cumulative-match-points (CMP) and match-loss-% (MLP) tiebreakers, which
+    # depend on *when* results occurred, not just their totals.
+    round_results: [],
     opponents: [],
     had_bye: false,
     dropped: false,

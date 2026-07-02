@@ -1,33 +1,203 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="FaBTabletop">
-  <defs>
-    <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#7c6238"/><stop offset="1" stop-color="#4a3a20"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 64 64"
+   width="64"
+   height="64"
+   role="img"
+   aria-label="FaBTabletop"
+   version="1.1"
+   id="svg12"
+   sodipodi:docname="logo-mark-table.svg"
+   inkscape:version="1.4.4 (1:1.4.4+202605061432+dcaf3e7d9e)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview12"
+     pagecolor="#ffffff"
+     bordercolor="#999999"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="12.671875"
+     inkscape:cx="17.953144"
+     inkscape:cy="47.546239"
+     inkscape:window-width="1850"
+     inkscape:window-height="1016"
+     inkscape:window-x="1270"
+     inkscape:window-y="408"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg12" />
+  <defs
+     id="defs4">
+    <linearGradient
+       id="wood"
+       x1="0"
+       y1="0"
+       x2="0"
+       y2="1">
+      <stop
+         offset="0"
+         stop-color="#7c6238"
+         id="stop1" />
+      <stop
+         offset="1"
+         stop-color="#4a3a20"
+         id="stop2" />
     </linearGradient>
-    <linearGradient id="woodside" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#3f3119"/><stop offset="1" stop-color="#241a0d"/>
+    <linearGradient
+       id="woodside"
+       x1="0"
+       y1="0"
+       x2="0"
+       y2="1">
+      <stop
+         offset="0"
+         stop-color="#3f3119"
+         id="stop3" />
+      <stop
+         offset="1"
+         stop-color="#241a0d"
+         id="stop4" />
     </linearGradient>
   </defs>
-
   <!-- wooden round table (no silver rim) -->
-  <path d="M6 46 A26 11 0 0 0 58 46 L58 52 A26 11 0 0 1 6 52 Z" fill="url(#woodside)" stroke="#2c2210" stroke-width="0.8"/>
-  <ellipse cx="32" cy="46" rx="26" ry="11" fill="url(#wood)" stroke="#2c2210" stroke-width="0.9"/>
-
+  <path
+     d="M6 46 A26 11 0 0 0 58 46 L58 52 A26 11 0 0 1 6 52 Z"
+     fill="url(#woodside)"
+     stroke="#2c2210"
+     stroke-width="0.8"
+     id="path4" />
+  <ellipse
+     cx="32"
+     cy="46"
+     rx="26"
+     ry="11"
+     fill="url(#wood)"
+     stroke="#2c2210"
+     stroke-width="0.9"
+     id="ellipse4" />
   <!-- soft cast shadows where the floating gems hover over the table -->
-  <g fill="#000000" fill-opacity="0.18">
-    <ellipse cx="32" cy="45" rx="5.5" ry="1.7"/>
-    <ellipse cx="22" cy="48" rx="5.5" ry="1.7"/>
-    <ellipse cx="42" cy="48" rx="5.5" ry="1.7"/>
-  </g>
-
   <!-- three flat pitch gems floating above the table, each with a flat silver ring -->
-  <g stroke="#565b65" stroke-width="0.9">
-    <circle cx="32" cy="11" r="8.5" fill="#c2c7cf"/>
-    <circle cx="22" cy="25" r="8.5" fill="#c2c7cf"/>
-    <circle cx="42" cy="25" r="8.5" fill="#c2c7cf"/>
+  <circle
+     cx="32"
+     cy="17.861687"
+     r="14.138312"
+     fill="none"
+     stroke="#565b65"
+     stroke-width="0.456075"
+     id="circle1" />
+  <circle
+     cx="32"
+     cy="17.861687"
+     r="13.112144"
+     fill="none"
+     stroke="#c2c7cf"
+     stroke-width="2.05234"
+     id="circle2" />
+  <circle
+     cx="32"
+     cy="17.861687"
+     r="12.085978"
+     fill="none"
+     stroke="#565b65"
+     stroke-width="0.456075"
+     id="circle3" />
+  <g
+     stroke="#565b65"
+     stroke-width="1"
+     id="g6"
+     transform="matrix(0.45607461,0,0,0.45607461,17.405612,3.2673001)">
+    <circle
+       cx="32"
+       cy="21"
+       r="10"
+       fill="#c2c7cf"
+       id="circle4" />
+    <circle
+       cx="21.5"
+       cy="39.5"
+       r="10"
+       fill="#c2c7cf"
+       id="circle5" />
+    <circle
+       cx="42.5"
+       cy="39.5"
+       r="10"
+       fill="#c2c7cf"
+       id="circle6" />
   </g>
-  <g stroke="#000000" stroke-opacity="0.22" stroke-width="0.6">
-    <circle cx="32" cy="11" r="6.3" fill="#df4a3b"/>
-    <circle cx="22" cy="25" r="6.3" fill="#e9b23c"/>
-    <circle cx="42" cy="25" r="6.3" fill="#3f80d6"/>
+  <g
+     stroke="#000000"
+     stroke-opacity="0.22"
+     stroke-width="0.6"
+     id="g9"
+     transform="matrix(0.45607461,0,0,0.45607461,17.405612,3.2673001)">
+    <circle
+       cx="32"
+       cy="21"
+       r="7.5"
+       fill="#df4a3b"
+       id="circle7" />
+    <circle
+       cx="21.5"
+       cy="39.5"
+       r="7.5"
+       fill="#e9b23c"
+       id="circle8" />
+    <circle
+       cx="42.5"
+       cy="39.5"
+       r="7.5"
+       fill="#3f80d6"
+       id="circle9" />
+  </g>
+  <g
+     id="g18"
+     transform="matrix(0.9190573,0,0,0.9190573,-2.0663123,3.92692)">
+    <g
+       id="g17"
+       transform="matrix(1.2600403,0,0,1.2600403,-10.961131,-10.029348)">
+      <path
+         id="rect12-0"
+         style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
+         d="m 29.762883,44.158341 h 3.018131 l 0.797067,6.479453 h -5.30137 z"
+         sodipodi:nodetypes="ccccc" />
+      <path
+         id="rect12-0-5"
+         style="fill:#df4a3b;fill-opacity:1;stroke:#000000;stroke-width:0.3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
+         d="m 29.019797,47.398068 0.743086,-3.239727 v 0 l 3.018319,0.0015 0.398345,3.238198"
+         sodipodi:nodetypes="ccccc" />
+    </g>
+    <g
+       id="g17-7"
+       transform="matrix(-1.2600403,0,0,1.2600403,85.094294,-10.029348)">
+      <path
+         id="rect12-0-4"
+         style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
+         d="m 29.762883,44.158341 h 3.018131 l 0.797067,6.479453 h -5.30137 z"
+         sodipodi:nodetypes="ccccc" />
+      <path
+         id="rect12-0-5-4"
+         style="fill:#3f80d6;fill-opacity:1;stroke:#000000;stroke-width:0.3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
+         d="m 29.019797,47.398068 0.743086,-3.239727 v 0 l 3.018319,0.0015 0.398345,3.238198"
+         sodipodi:nodetypes="ccccc" />
+    </g>
+    <g
+       id="g17-5"
+       transform="matrix(1.2600403,0,0,1.2600403,-1.9031841,-12.029348)">
+      <path
+         id="rect12-0-2"
+         style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
+         d="m 29.073778,44.158341 h 3.707236 l 0.797067,6.479453 h -5.30137 z"
+         sodipodi:nodetypes="ccccc" />
+      <path
+         id="rect12-0-5-5"
+         style="fill:#e9b23c;fill-opacity:1;stroke:#000000;stroke-width:0.3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
+         d="m 28.67562,47.398067 0.398345,-3.238198 v 0 h 3.707237 l 0.398345,3.238198" />
+    </g>
   </g>
 </svg>

@@ -547,7 +547,9 @@ defmodule TabletopWeb.GameLive.Index do
                           <.icon name="hero-trophy-solid" class="size-4 shrink-0 text-amber-500" />
                           <span class="truncate group-hover:underline">{t.winner.name}</span>
                         </div>
-                        <div class="text-sm truncate text-zinc-600 dark:text-zinc-400">{t.name}</div>
+                        <div class="text-sm truncate text-zinc-600 dark:text-zinc-400">
+                          {t.name}
+                        </div>
                         <div class="mt-0.5 text-xs text-zinc-500 truncate">
                           <span :if={hero_name(t.winner_hero)}>{hero_name(t.winner_hero)} · </span>{Tournament.format_name(
                             t

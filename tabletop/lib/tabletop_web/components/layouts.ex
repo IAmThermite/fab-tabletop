@@ -57,11 +57,30 @@ defmodule TabletopWeb.Layouts do
       |> assign(:patreon_url, @patreon_url)
 
     ~H"""
+    <%!-- Full-page hero-selection backdrop shared by every standard page: a
+         random Flesh and Blood scene texture (see background_image/0). A fixed
+         layer behind all content (-z-10) so it stays put while the page scrolls
+         and covers the whole viewport (bg-cover) with no letterboxing. Sized
+         with h-screen/w-screen (100vh/100vw) rather than inset-0 on purpose:
+         inset-0 stops at the scrollbar gutters, leaving a strip of the base-100
+         <html> background showing at the edges; 100vh/100vw span the gutters
+         too, and a fixed element doesn't add to scroll width so this creates no
+         scrollbars. `phx-update="ignore"` freezes the image chosen by the dead
+         render so a LiveView's connected mount (which re-picks) doesn't swap it
+         out and flash a different image. --%>
+    <div
+      id="page-backdrop"
+      phx-update="ignore"
+      aria-hidden="true"
+      class="fixed top-0 left-0 -z-10 h-screen w-screen bg-cover bg-center bg-no-repeat"
+      style={"background-image: url('#{background_image()}')"}
+    >
+    </div>
     <div class="flex min-h-screen flex-col">
-      <header class="navbar gap-2 border-b border-base-300 bg-base-100/90 backdrop-blur px-4 sm:px-6 lg:px-8">
+      <header class="navbar gap-2 border-b border-base-300 bg-base-100/40 backdrop-blur px-4 sm:px-6 lg:px-8">
         <div class="flex-1">
           <.link navigate={~p"/"} class="inline-flex items-center gap-3">
-            <img src={~p"/images/logo-mark.svg"} alt="FaB Tabletop" class="h-12 w-auto" />
+            <img src={~p"/images/logo-mark-table.svg"} alt="FaB Tabletop" class="h-12 w-auto" />
             <span class="font-display text-xl font-bold tracking-wide hidden sm:inline">
               FaB Tabletop
             </span>
@@ -132,8 +151,14 @@ defmodule TabletopWeb.Layouts do
       </header>
 
       <main class="flex-1 px-3 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-10 sm:pb-12">
-        <div class={["mx-auto space-y-4", @max_width]}>
-          {render_slot(@inner_block)}
+        <%!-- Content sits on a slightly transparent base-background panel so it stays readable
+             over the backdrop image. The panel hugs its content (no forced
+             height) and is centred at the page's max width, leaving the image
+             visible in the surrounding margins. --%>
+        <div class={["mx-auto", @max_width]}>
+          <div class="space-y-4 rounded-box border border-base-300 bg-base-100/80 backdrop-blur p-4 sm:p-6">
+            {render_slot(@inner_block)}
+          </div>
         </div>
       </main>
 
@@ -142,6 +167,37 @@ defmodule TabletopWeb.Layouts do
 
     <.flash_group flash={@flash} />
     """
+  end
+
+  @doc """
+  Picks one page backdrop at random. Rendered by `app/1` and re-picked per
+  render, but `phx-update="ignore"` on the backdrop element keeps whichever
+  image the dead render chose, so a visitor sees one random scene per page load.
+  """
+  def background_image, do: Enum.random(background_images())
+
+  @doc """
+  De-duplicated set of Flesh and Blood hero-selection scene textures, saved from
+  fabtcg.com/hero-selection (several heroes share a scene). These back the random
+  full-page backdrop applied to every standard page via `app/1`.
+  """
+  def background_images do
+    [
+      ~p"/images/hero-backgrounds/aria_candlehold_bg-scaled-1.jpg",
+      ~p"/images/hero-backgrounds/aria_isenloft_bg-scaled-1.jpg",
+      ~p"/images/hero-backgrounds/aria_volthaven_bg-scaled-1.jpg",
+      ~p"/images/hero-backgrounds/BG_OMN_HEROSELECTOR-scaled.jpg",
+      ~p"/images/hero-backgrounds/deathmatch_bg-scaled-1.jpg",
+      ~p"/images/hero-backgrounds/demonastery_bg-scaled-1.jpg",
+      ~p"/images/hero-backgrounds/Everfest_BG.webp",
+      ~p"/images/hero-backgrounds/high_seas_bg-scaled-1.jpg",
+      ~p"/images/hero-backgrounds/metrix_bg-scaled-1.jpg",
+      ~p"/images/hero-backgrounds/misteria_bg-scaled-1.jpg",
+      ~p"/images/hero-backgrounds/pits_bg-scaled-1.jpg",
+      ~p"/images/hero-backgrounds/savage_lands_bg-scaled-1.jpg",
+      ~p"/images/hero-backgrounds/solana_bg-scaled-2.jpg",
+      ~p"/images/hero-backgrounds/volcor_bg-scaled-1.jpg"
+    ]
   end
 
   @doc """
@@ -299,7 +355,7 @@ defmodule TabletopWeb.Layouts do
   def theme_toggle(assigns) do
     ~H"""
     <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=cupcake]_&]:left-1/3 [[data-theme=halloween]_&]:left-2/3 transition-[left]" />
+      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=garden]_&]:left-1/3 [[data-theme=halloween]_&]:left-2/3 transition-[left]" />
 
       <button
         class="flex p-2 cursor-pointer w-1/3"
@@ -310,7 +366,7 @@ defmodule TabletopWeb.Layouts do
 
       <button
         class="flex p-2 cursor-pointer w-1/3"
-        data-phx-theme="cupcake"
+        data-phx-theme="garden"
       >
         <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>

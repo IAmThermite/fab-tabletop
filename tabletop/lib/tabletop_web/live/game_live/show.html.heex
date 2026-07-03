@@ -85,8 +85,17 @@
         </div>
       </div>
 
-      <div class="flex-1 text-center font-semibold truncate">
-        {@game.title}
+      <%!-- Title flanked by both players' hero portraits (user1 left, user2
+            right). @game is reassigned on {:updated, game}, so the opponent's
+            icon fills in live once they join. --%>
+      <div class="flex-1 flex items-center justify-center gap-2 min-w-0">
+        <span class="shrink-0" title={hero_name(@game.hero)}>
+          <.hero_portrait hero={@game.hero} class="size-8" />
+        </span>
+        <span class="font-semibold truncate">{@game.title}</span>
+        <span class="shrink-0" title={hero_name(@game.user2_hero)}>
+          <.hero_portrait hero={@game.user2_hero} class="size-8" />
+        </span>
       </div>
 
       <div id="connection-status" phx-update="ignore" class="badge badge-sm badge-outline">

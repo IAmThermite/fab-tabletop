@@ -394,10 +394,11 @@ defmodule TabletopWeb.CameraSetupLive do
 
             const gameId = el.dataset.gameId
             if (gameId) {
-              // When invoked from a game's pre-join flow, join (if needed) and
-              // jump straight into the game instead of bouncing back through
-              // pre-join. The `camera-confirmed` flag is set by the server's
-              // "camera_confirmed" event only on a confirmed join, not here.
+              // When invoked from a game's pre-join flow: a creator (already a
+              // participant) jumps straight into the game; a not-yet-joined user is
+              // routed back to pre-join to pick their hero before joining. The
+              // server decides which — see `save_and_join`. The `camera-confirmed`
+              // flag is set by the server's "camera_confirmed" event, not here.
               localStorage.setItem("tabletop:camera-source", this._usingPhone ? "phone" : "webcam")
               this.pushEvent("save_and_join", {})
             } else {
@@ -539,29 +540,11 @@ defmodule TabletopWeb.CameraSetupLive do
          |> push_event("camera_confirmed", %{game_id: game.id})
          |> push_navigate(to: ~p"/games/#{game}")}
       else
-        case Games.join_game(scope, game) do
-          {:ok, game} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Joined game successfully")
-             |> push_event("camera_confirmed", %{game_id: game.id})
-             |> push_navigate(to: ~p"/games/#{game}")}
-
-          {:error, :already_in_game} ->
-            {:noreply,
-             socket
-             |> put_flash(
-               :error,
-               "You're already in a game. Finish or leave it before joining another."
-             )
-             |> push_navigate(to: ~p"/")}
-
-          {:error, _reason} ->
-            {:noreply,
-             socket
-             |> put_flash(:error, "Unable to join game. It may no longer be available.")
-             |> push_navigate(to: ~p"/")}
-        end
+        # A not-yet-joined user must declare their hero in pre-join before joining,
+        # so route them there rather than joining directly here. Camera setup is
+        # marked done (localStorage set before this event fires), so pre-join now
+        # shows the hero picker + camera preview instead of bouncing back here.
+        {:noreply, push_navigate(socket, to: ~p"/games/#{game}/pre-join")}
       end
     else
       _ -> {:noreply, push_navigate(socket, to: ~p"/")}

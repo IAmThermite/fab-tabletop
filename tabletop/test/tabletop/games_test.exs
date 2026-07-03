@@ -3,6 +3,13 @@ defmodule Tabletop.GamesTest do
 
   alias Tabletop.Games
 
+  # A hero legal in the given format (default Classic Constructed) — used wherever
+  # a test needs a valid hero now that a hero is required on create and on join.
+  defp legal_hero(format \\ :classic_constructed) do
+    [hero | _] = Tabletop.Heroes.legal_for(format)
+    hero.slug
+  end
+
   describe "games" do
     alias Tabletop.Games.Game
 
@@ -64,7 +71,7 @@ defmodule Tabletop.GamesTest do
     end
 
     test "create_game/2 with valid data creates a game" do
-      valid_attrs = %{title: "some title"}
+      valid_attrs = %{title: "some title", hero: legal_hero()}
       scope = user_scope_fixture()
 
       assert {:ok, %Game{} = game} = Games.create_game(scope, valid_attrs)
@@ -74,7 +81,10 @@ defmodule Tabletop.GamesTest do
 
     test "create_game/2 defaults language to the default when not provided" do
       scope = user_scope_fixture()
-      assert {:ok, %Game{} = game} = Games.create_game(scope, %{title: "some title"})
+
+      assert {:ok, %Game{} = game} =
+               Games.create_game(scope, %{title: "some title", hero: legal_hero()})
+
       assert game.language == Tabletop.Languages.default()
     end
 
@@ -82,7 +92,7 @@ defmodule Tabletop.GamesTest do
       scope = user_scope_fixture()
 
       assert {:ok, %Game{} = game} =
-               Games.create_game(scope, %{title: "fr game", language: :fra})
+               Games.create_game(scope, %{title: "fr game", language: :fra, hero: legal_hero()})
 
       assert game.language == :fra
     end
@@ -105,7 +115,11 @@ defmodule Tabletop.GamesTest do
       scope = user_scope_fixture()
 
       assert {:ok, %Game{} = game} =
-               Games.create_game(scope, %{title: "blitz game", format: :blitz})
+               Games.create_game(scope, %{
+                 title: "blitz game",
+                 format: :blitz,
+                 hero: legal_hero(:blitz)
+               })
 
       assert game.format == :blitz
     end
@@ -143,11 +157,13 @@ defmodule Tabletop.GamesTest do
       assert %{hero: ["is not a recognized hero"]} = errors_on(changeset)
     end
 
-    test "create_game/2 allows a hidden (blank) hero" do
+    test "create_game/2 requires a hero" do
       scope = user_scope_fixture()
 
-      assert {:ok, %Game{} = game} = Games.create_game(scope, %{title: "no hero", hero: ""})
-      assert game.hero == nil
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Games.create_game(scope, %{title: "no hero", hero: ""})
+
+      assert %{hero: ["can't be blank"]} = errors_on(changeset)
     end
 
     test "update_game/3 with valid data updates the game" do
@@ -197,17 +213,19 @@ defmodule Tabletop.GamesTest do
     end
   end
 
-  describe "join_game/2" do
+  describe "join_game/3" do
     import Tabletop.AccountsFixtures, only: [user_scope_fixture: 0]
     import Tabletop.GamesFixtures
 
-    test "sets user2 and status to active" do
+    test "sets user2, the joiner's hero and status to active" do
       scope1 = user_scope_fixture()
       scope2 = user_scope_fixture()
       game = game_fixture(scope1)
+      hero = legal_hero()
 
-      assert {:ok, game} = Games.join_game(scope2, game)
+      assert {:ok, game} = Games.join_game(scope2, game, hero)
       assert game.user2_id == scope2.user.id
+      assert game.user2_hero == hero
       assert game.status == :active
     end
 
@@ -215,7 +233,7 @@ defmodule Tabletop.GamesTest do
       scope = user_scope_fixture()
       game = game_fixture(scope)
 
-      assert {:error, :own_game} = Games.join_game(scope, game)
+      assert {:error, :own_game} = Games.join_game(scope, game, legal_hero())
     end
 
     test "cannot join a full game" do
@@ -224,8 +242,26 @@ defmodule Tabletop.GamesTest do
       scope3 = user_scope_fixture()
       game = game_fixture(scope1)
 
-      assert {:ok, game} = Games.join_game(scope2, game)
-      assert {:error, :game_full} = Games.join_game(scope3, game)
+      assert {:ok, game} = Games.join_game(scope2, game, legal_hero())
+      assert {:error, :game_full} = Games.join_game(scope3, game, legal_hero())
+    end
+
+    test "rejects a blank hero" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1)
+
+      assert {:error, :invalid_hero} = Games.join_game(scope2, game, "")
+      assert Games.get_game!(scope1, game.id).status == :waiting
+    end
+
+    test "rejects a hero not legal in the game's format" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      game = game_fixture(scope1, %{format: :blitz, hero: legal_hero(:blitz)})
+      illegal = Enum.find(Tabletop.Heroes.all(), &(:blitz not in &1.formats))
+
+      assert {:error, :invalid_hero} = Games.join_game(scope2, game, illegal.slug)
     end
   end
 
@@ -245,7 +281,7 @@ defmodule Tabletop.GamesTest do
       scope1 = user_scope_fixture()
       scope2 = user_scope_fixture()
       game = game_fixture(scope1)
-      {:ok, _} = Games.join_game(scope2, game)
+      {:ok, _} = Games.join_game(scope2, game, legal_hero())
 
       assert {:error, :already_in_game} =
                Games.create_game(scope2, %{title: "second", format: :classic_constructed})
@@ -257,7 +293,11 @@ defmodule Tabletop.GamesTest do
       {:ok, _} = Games.terminate_game(scope, game)
 
       assert {:ok, _new} =
-               Games.create_game(scope, %{title: "second", format: :classic_constructed})
+               Games.create_game(scope, %{
+                 title: "second",
+                 format: :classic_constructed,
+                 hero: legal_hero()
+               })
     end
 
     test "join_game/2 refuses when the joiner already has a waiting game of their own" do
@@ -266,7 +306,7 @@ defmodule Tabletop.GamesTest do
       _own = game_fixture(scope2)
       target = game_fixture(scope1)
 
-      assert {:error, :already_in_game} = Games.join_game(scope2, target)
+      assert {:error, :already_in_game} = Games.join_game(scope2, target, legal_hero())
     end
 
     test "reserve_join/2 refuses when the user already has a different active game" do
@@ -324,7 +364,7 @@ defmodule Tabletop.GamesTest do
       scope1 = user_scope_fixture()
       scope2 = user_scope_fixture()
       game = game_fixture(scope1)
-      {:ok, game} = Games.join_game(scope2, game)
+      {:ok, game} = Games.join_game(scope2, game, legal_hero())
 
       assert {:ok, game} = Games.terminate_game(scope1, game)
       assert game.status == :finished
@@ -336,7 +376,7 @@ defmodule Tabletop.GamesTest do
       scope1 = user_scope_fixture()
       scope2 = user_scope_fixture()
       game = game_fixture(scope1)
-      {:ok, game} = Games.join_game(scope2, game)
+      {:ok, game} = Games.join_game(scope2, game, legal_hero())
 
       {:ok, game} = Games.terminate_game(scope1, game)
       original_user1_left = game.user1_left_at
@@ -356,7 +396,7 @@ defmodule Tabletop.GamesTest do
       scope1 = user_scope_fixture()
       scope2 = user_scope_fixture()
       game = game_fixture(scope1)
-      {:ok, game} = Games.join_game(scope2, game)
+      {:ok, game} = Games.join_game(scope2, game, legal_hero())
       {:ok, game} = Games.terminate_game(scope1, game)
       assert not is_nil(game.user1_left_at)
 
@@ -368,7 +408,7 @@ defmodule Tabletop.GamesTest do
       scope1 = user_scope_fixture()
       scope2 = user_scope_fixture()
       game = game_fixture(scope1)
-      {:ok, game} = Games.join_game(scope2, game)
+      {:ok, game} = Games.join_game(scope2, game, legal_hero())
       {:ok, game} = Games.terminate_game(scope2, game)
       assert not is_nil(game.user2_left_at)
 
@@ -380,7 +420,7 @@ defmodule Tabletop.GamesTest do
       scope1 = user_scope_fixture()
       scope2 = user_scope_fixture()
       game = game_fixture(scope1)
-      {:ok, game} = Games.join_game(scope2, game)
+      {:ok, game} = Games.join_game(scope2, game, legal_hero())
 
       assert {:ok, ^game} = Games.rejoin_game(scope1, game)
     end
@@ -394,7 +434,7 @@ defmodule Tabletop.GamesTest do
       scope1 = user_scope_fixture()
       scope2 = user_scope_fixture()
       game = game_fixture(scope1)
-      {:ok, _game} = Games.join_game(scope2, game)
+      {:ok, _game} = Games.join_game(scope2, game, legal_hero())
 
       current = Games.get_current_game_for_user(scope1)
       assert current.id == game.id
@@ -412,7 +452,7 @@ defmodule Tabletop.GamesTest do
       scope1 = user_scope_fixture()
       scope2 = user_scope_fixture()
       game = game_fixture(scope1)
-      {:ok, game} = Games.join_game(scope2, game)
+      {:ok, game} = Games.join_game(scope2, game, legal_hero())
       Games.terminate_game(scope1, game)
 
       assert is_nil(Games.get_current_game_for_user(scope1))
@@ -439,7 +479,7 @@ defmodule Tabletop.GamesTest do
       creator = user_scope_fixture()
       joiner = user_scope_fixture()
       game = game_fixture(creator)
-      {:ok, _} = Games.join_game(joiner, game)
+      {:ok, _} = Games.join_game(joiner, game, legal_hero())
 
       assert is_nil(Games.get_last_created_game(joiner))
       assert Games.get_last_created_game(creator).id == game.id
@@ -479,7 +519,7 @@ defmodule Tabletop.GamesTest do
       scope2 = user_scope_fixture()
       scope3 = user_scope_fixture()
       game = game_fixture(scope1)
-      {:ok, _game} = Games.join_game(scope2, game)
+      {:ok, _game} = Games.join_game(scope2, game, legal_hero())
 
       joinable = Games.list_joinable_games(scope3)
       refute Enum.any?(joinable, &(&1.id == game.id))
@@ -490,7 +530,7 @@ defmodule Tabletop.GamesTest do
       scope2 = user_scope_fixture()
       scope3 = user_scope_fixture()
       game = game_fixture(scope1)
-      {:ok, game} = Games.join_game(scope2, game)
+      {:ok, game} = Games.join_game(scope2, game, legal_hero())
       Games.terminate_game(scope1, game)
 
       joinable = Games.list_joinable_games(scope3)
@@ -549,7 +589,7 @@ defmodule Tabletop.GamesTest do
       scope1 = user_scope_fixture()
       scope2 = user_scope_fixture()
       game = game_fixture(scope1)
-      {:ok, _} = Games.join_game(scope2, game)
+      {:ok, _} = Games.join_game(scope2, game, legal_hero())
 
       stats = Games.activity_stats()
 
@@ -559,13 +599,12 @@ defmodule Tabletop.GamesTest do
       assert stats.open_total == 0
     end
 
-    test "ranks popular heroes per format, most popular first, ignoring blank heroes" do
+    test "ranks popular heroes per format, most popular first" do
       [hero1, hero2 | _] = Tabletop.Heroes.legal_for(:classic_constructed)
 
       game_fixture(user_scope_fixture(), %{format: :classic_constructed, hero: hero1.slug})
       game_fixture(user_scope_fixture(), %{format: :classic_constructed, hero: hero1.slug})
       game_fixture(user_scope_fixture(), %{format: :classic_constructed, hero: hero2.slug})
-      game_fixture(user_scope_fixture(), %{format: :classic_constructed})
 
       stats = Games.activity_stats()
 
@@ -573,6 +612,50 @@ defmodule Tabletop.GamesTest do
                {hero1.slug, 2},
                {hero2.slug, 1}
              ]
+    end
+
+    test "counts the joiner's hero alongside the creator's" do
+      [hero1, hero2 | _] = Tabletop.Heroes.legal_for(:classic_constructed)
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+
+      game = game_fixture(scope1, %{format: :classic_constructed, hero: hero1.slug})
+      {:ok, _} = Games.join_game(scope2, game, hero2.slug)
+
+      stats = Games.activity_stats()
+
+      assert Enum.sort(stats.popular_heroes[:classic_constructed]) ==
+               Enum.sort([{hero1.slug, 1}, {hero2.slug, 1}])
+    end
+
+    test "credits a hero once per pilot in a mirror match" do
+      [hero | _] = Tabletop.Heroes.legal_for(:classic_constructed)
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+
+      game = game_fixture(scope1, %{format: :classic_constructed, hero: hero.slug})
+      {:ok, _} = Games.join_game(scope2, game, hero.slug)
+
+      stats = Games.activity_stats()
+
+      assert stats.popular_heroes[:classic_constructed] == [{hero.slug, 2}]
+    end
+
+    test "counts heroes from competitive games too (hidden from the list, not the leaderboard)" do
+      [hero1, hero2 | _] = Tabletop.Heroes.legal_for(:classic_constructed)
+
+      game_fixture(user_scope_fixture(), %{format: :classic_constructed, hero: hero1.slug})
+
+      game_fixture(user_scope_fixture(), %{
+        format: :classic_constructed,
+        hero: hero2.slug,
+        competitive: true
+      })
+
+      stats = Games.activity_stats()
+
+      assert Enum.sort(stats.popular_heroes[:classic_constructed]) ==
+               Enum.sort([{hero1.slug, 1}, {hero2.slug, 1}])
     end
 
     test "excludes games created outside the window" do

@@ -199,7 +199,7 @@ defmodule TabletopWeb.GameLive.Index do
             </div>
             --%>
 
-            <div class="space-y-3">
+            <div id="joinable-games" class="space-y-3">
               <details
                 :for={{format, games} <- @grouped_games}
                 :if={games != []}
@@ -222,8 +222,17 @@ defmodule TabletopWeb.GameLive.Index do
                     class="flex items-center justify-between gap-3 border border-zinc-200 dark:border-zinc-700 rounded-lg p-3"
                   >
                     <div class="flex items-center gap-3 min-w-0">
+                      <%!-- Competitive games hide the hero: show a neutral "mystery"
+                           marker instead of the hero avatar. --%>
+                      <span
+                        :if={game.competitive}
+                        class="w-10 h-10 rounded-full shrink-0 bg-base-200 flex items-center justify-center"
+                        title="Competitive — hero hidden until you sit down"
+                      >
+                        <.icon name="hero-question-mark-circle" class="size-6 text-base-content/40" />
+                      </span>
                       <img
-                        :if={Heroes.known?(game.hero)}
+                        :if={!game.competitive && Heroes.known?(game.hero)}
                         src={Heroes.icon_path(game.hero)}
                         alt={Heroes.name(game.hero)}
                         class="w-10 h-10 rounded-full shrink-0 bg-base-200"
@@ -239,18 +248,33 @@ defmodule TabletopWeb.GameLive.Index do
                           </span>
                         </div>
                         <div
-                          :if={present?(game.hero) || present?(game.decklist)}
-                          class="flex items-center gap-2 mt-1"
+                          :if={game.competitive || present?(game.hero) || present?(game.decklist)}
+                          class="flex items-center gap-2 mt-1 min-w-0"
                         >
-                          <span :if={present?(game.hero)} class="badge badge-sm badge-outline">
-                            {Heroes.name(game.hero) || game.hero}
+                          <%!-- Competitive: a single badge, and no hero/decklist —
+                               a Fabrary link would give the hero away. --%>
+                          <span
+                            :if={game.competitive}
+                            class="badge badge-sm badge-neutral gap-1 shrink-0"
+                          >
+                            <.icon name="hero-eye-slash" class="size-3" /> Competitive
+                          </span>
+                          <%!-- Long hero names must ellipsize on one line rather than
+                               wrap and break the pill; min-w-0 lets it shrink in the
+                               flex row (full name still available via the tooltip). --%>
+                          <span
+                            :if={!game.competitive && present?(game.hero)}
+                            class="badge badge-sm badge-outline min-w-0"
+                            title={Heroes.name(game.hero) || game.hero}
+                          >
+                            <span class="truncate">{Heroes.name(game.hero) || game.hero}</span>
                           </span>
                           <.link
-                            :if={present?(game.decklist)}
+                            :if={!game.competitive && present?(game.decklist)}
                             href={game.decklist}
                             target="_blank"
                             rel="noopener noreferrer"
-                            class="text-xs text-blue-600 underline"
+                            class="text-xs text-blue-600 underline shrink-0 whitespace-nowrap"
                           >
                             Decklist ↗
                           </.link>
@@ -348,6 +372,12 @@ defmodule TabletopWeb.GameLive.Index do
                   type="checkbox"
                   class="toggle"
                   label="Private game (won't appear in the public list)"
+                />
+                <.input
+                  field={@form[:competitive]}
+                  type="checkbox"
+                  class="toggle"
+                  label="Competitive (hide your hero from the games list)"
                 />
                 <div class="pt-4">
                   <.button class="btn btn-primary w-full" phx-disable-with="Starting...">
@@ -691,7 +721,8 @@ defmodule TabletopWeb.GameLive.Index do
           language: last.language,
           title: last.title,
           hero: last.hero,
-          decklist: last.decklist
+          decklist: last.decklist,
+          competitive: last.competitive
         }
 
         {:noreply,

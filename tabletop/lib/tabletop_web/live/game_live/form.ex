@@ -3,6 +3,7 @@ defmodule TabletopWeb.GameLive.Form do
 
   alias Tabletop.Games
   alias Tabletop.Games.Game
+  alias Tabletop.Heroes
 
   on_mount {TabletopWeb.UserAuth, :require_authenticated}
 
@@ -35,7 +36,13 @@ defmodule TabletopWeb.GameLive.Form do
           options={Tabletop.Languages.options()}
         />
         --%>
-        <.input field={@form[:hero]} type="text" label="Hero" />
+        <.input
+          field={@form[:hero]}
+          type="select"
+          label="Hero"
+          prompt="— Select hero —"
+          options={@hero_options}
+        />
         <.input
           field={@form[:decklist]}
           type="text"
@@ -64,13 +71,22 @@ defmodule TabletopWeb.GameLive.Form do
     socket
     |> assign(:page_title, "Edit Game")
     |> assign(:game, game)
+    |> assign(:hero_options, Heroes.options_for(game.format))
     |> assign(:form, to_form(Games.change_game(socket.assigns.current_scope, game)))
   end
 
   @impl true
   def handle_event("validate", %{"game" => game_params}, socket) do
+    format = parse_format(game_params["format"], socket.assigns.game.format)
+    hero_options = Heroes.options_for(format)
+    game_params = drop_illegal_hero(game_params, hero_options)
+
     changeset = Games.change_game(socket.assigns.current_scope, socket.assigns.game, game_params)
-    {:noreply, assign(socket, form: to_form(changeset, action: :validate))}
+
+    {:noreply,
+     socket
+     |> assign(:hero_options, hero_options)
+     |> assign(form: to_form(changeset, action: :validate))}
   end
 
   def handle_event("save", %{"game" => game_params}, socket) do
@@ -92,4 +108,26 @@ defmodule TabletopWeb.GameLive.Form do
 
   defp return_path(_scope, "index", _game), do: ~p"/"
   defp return_path(_scope, "show", game), do: ~p"/games/#{game}"
+
+  # Resolve the format param (a string) to its atom, falling back to the current
+  # game's format when absent or unrecognised.
+  defp parse_format(nil, fallback), do: fallback
+
+  defp parse_format(param, fallback) do
+    case Enum.find(Game.format_options(), fn {_label, key} -> to_string(key) == param end) do
+      {_label, key} -> key
+      nil -> fallback
+    end
+  end
+
+  # Clear the chosen hero when it isn't legal in the (possibly just-changed)
+  # format, so the dropdown never shows a stale, illegal selection.
+  defp drop_illegal_hero(%{"hero" => hero} = params, hero_options)
+       when is_binary(hero) and hero != "" do
+    if Enum.any?(hero_options, fn {_name, slug} -> slug == hero end),
+      do: params,
+      else: Map.put(params, "hero", "")
+  end
+
+  defp drop_illegal_hero(params, _hero_options), do: params
 end

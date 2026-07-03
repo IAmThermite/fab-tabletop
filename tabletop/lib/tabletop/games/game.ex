@@ -22,12 +22,14 @@ defmodule Tabletop.Games.Game do
       default: Tabletop.Languages.default()
 
     field :hero, :string
+    field :user2_hero, :string
     field :decklist, :string
     field :status, Ecto.Enum, values: [:waiting, :active, :finished], default: :waiting
     field :user1_left_at, :utc_datetime_usec
     field :user2_left_at, :utc_datetime_usec
     field :joining_expires_at, :utc_datetime_usec
     field :private, :boolean, default: false
+    field :competitive, :boolean, default: false
 
     belongs_to :user, Tabletop.Accounts.User, type: Ecto.UUID
     belongs_to :user2, Tabletop.Accounts.User, type: Ecto.UUID
@@ -52,8 +54,8 @@ defmodule Tabletop.Games.Game do
   @doc false
   def changeset(game, attrs, user_scope) do
     game
-    |> cast(attrs, [:title, :format, :language, :hero, :decklist, :private])
-    |> validate_required([:title, :format, :language])
+    |> cast(attrs, [:title, :format, :language, :hero, :decklist, :private, :competitive])
+    |> validate_required([:title, :format, :language, :hero])
     |> validate_inclusion(:format, Map.keys(@valid_formats))
     |> validate_inclusion(:language, Tabletop.Languages.keys())
     |> validate_hero_legal()
@@ -88,10 +90,13 @@ defmodule Tabletop.Games.Game do
     )
   end
 
-  # Hero is optional — a blank hero means "hidden" (not shown). When a hero IS
-  # chosen it must be a recognised hero and legal in the selected format.
-  # Tournament games will enforce a hero separately (upcoming work). Legacy
-  # free-text heroes on already-saved games predate this and aren't re-validated.
+  # Hero is required on created/edited games (see `validate_required` above) and
+  # must be a recognised hero legal in the selected format. This helper adds the
+  # legality/recognition errors on top of the required check; a blank hero is left
+  # to `validate_required`. Tournament games use `match_changeset/2`, which does
+  # not set or require a hero (their heroes come from registrations). Legacy
+  # free-text heroes on already-saved games predate this and aren't re-validated
+  # unless the game is edited.
   defp validate_hero_legal(changeset) do
     hero = get_field(changeset, :hero)
     format = get_field(changeset, :format)

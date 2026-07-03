@@ -192,6 +192,31 @@ defmodule Tabletop.Tournaments do
     end)
   end
 
+  @doc """
+  Hero picks from tournaments recently in play, for the lobby's popular-heroes
+  leaderboard. Returns `{format, hero_slug}` tuples — **one per player per
+  tournament** (the registration row is the unit), so a tournament's many round
+  games never multiply a player's hero.
+
+  Only tournaments that have begun play (`:swiss`/`:cut`/`:finished`) and whose
+  row was last touched on/after `cutoff` are counted (`updated_at` tracks
+  activity — see `list_recent_winners/1`), so pure sign-up rosters don't leak in
+  and long-finished events age out. Dropped registrations and blank heroes are
+  skipped.
+  """
+  def recent_hero_entries(%DateTime{} = cutoff) do
+    from(r in TournamentRegistration,
+      join: t in Tournament,
+      on: t.id == r.tournament_id,
+      where: t.status in [:swiss, :cut, :finished],
+      where: t.updated_at >= ^cutoff,
+      where: is_nil(r.dropped_at),
+      where: not is_nil(r.hero) and r.hero != "",
+      select: {t.format, r.hero}
+    )
+    |> Repo.all()
+  end
+
   # Sort key that puts tournaments with a start time first (soonest first) and
   # those without a start time last.
   defp starts_at_sort(nil), do: {1, 0}

@@ -7,6 +7,7 @@ defmodule Tabletop.Games do
   alias Tabletop.Repo
 
   alias Tabletop.Games.Game
+  alias Tabletop.Heroes
   alias Tabletop.Accounts.Scope
 
   @doc """
@@ -176,22 +177,36 @@ defmodule Tabletop.Games do
 
   @hero_leaderboard_limit 3
 
-  # Top heroes chosen per format across games created within the window. Counts
-  # every created game (any status) that names a known-or-not hero; blank heroes
-  # are excluded. Returns at most `@hero_leaderboard_limit` heroes per format.
+  # Top heroes piloted per format across recent activity — casual games and
+  # tournaments alike. For a game, both seats count: the creator's `hero` and the
+  # opponent's `user2_hero` (so a hero is credited whether chosen at create time
+  # or at join time; a mirror match credits it once per pilot). Competitive games
+  # count too — hiding a hero from the lobby list doesn't hide it from this
+  # aggregate. Tournament play is folded in via `Tournaments.recent_hero_entries/1`,
+  # which yields one entry per player per tournament so a tournament's many round
+  # games don't multiply a player's hero (those match games carry no hero on the
+  # `Game` row, so they never double-count here). Blank heroes are skipped.
+  # Tallied in Elixir (like `active_game_stats`) to keep the format-enum cast
+  # straightforward across every source. Returns at most `@hero_leaderboard_limit`
+  # heroes per format.
   defp popular_heroes_by_format(days) do
     cutoff = DateTime.add(DateTime.utc_now(), -days * 24 * 60 * 60, :second)
 
-    from(g in Game,
-      where: g.inserted_at >= ^cutoff,
-      where: not is_nil(g.hero) and g.hero != "",
-      group_by: [g.format, g.hero],
-      select: {g.format, g.hero, count(g.id)}
-    )
-    |> Repo.all()
+    game_entries =
+      from(g in Game,
+        where: g.inserted_at >= ^cutoff,
+        select: {g.format, g.hero, g.user2_hero}
+      )
+      |> Repo.all()
+      |> Enum.flat_map(fn {format, hero, user2_hero} ->
+        hero_entry(format, hero) ++ hero_entry(format, user2_hero)
+      end)
+
+    (game_entries ++ Tabletop.Tournaments.recent_hero_entries(cutoff))
+    |> Enum.frequencies()
     |> Enum.group_by(
-      fn {format, _hero, _count} -> format end,
-      fn {_format, hero, count} -> {hero, count} end
+      fn {{format, _hero}, _count} -> format end,
+      fn {{_format, hero}, count} -> {hero, count} end
     )
     |> Map.new(fn {format, heroes} ->
       top =
@@ -202,6 +217,13 @@ defmodule Tabletop.Games do
       {format, top}
     end)
   end
+
+  # A single `{format, hero}` tally entry when the hero slug is present, else none.
+  defp hero_entry(format, hero) when is_binary(hero) do
+    if String.trim(hero) == "", do: [], else: [{format, hero}]
+  end
+
+  defp hero_entry(_format, _hero), do: []
 
   @doc """
   Gets a single game the scoped user is a participant in (creator or opponent).
@@ -430,10 +452,16 @@ defmodule Tabletop.Games do
   end
 
   @doc """
-  Joins a game by setting the current user as user2 (opponent).
-  Verifies the user holds the join reservation (or no reservation exists).
+  Joins a game by setting the current user as user2 (opponent) and recording the
+  hero they're playing.
+
+  Verifies the user holds the join reservation (or no reservation exists) and that
+  `hero` is a recognised hero legal in the game's format — the joiner must always
+  declare a hero (`{:error, :invalid_hero}` otherwise). Legality is checked here
+  rather than via a changeset because the join is an atomic conditional
+  `update_all` for race safety.
   """
-  def join_game(%Scope{} = scope, %Game{} = game) do
+  def join_game(%Scope{} = scope, %Game{} = game, hero) do
     user_id = scope.user.id
 
     cond do
@@ -449,6 +477,9 @@ defmodule Tabletop.Games do
       user_in_other_game?(scope, game) ->
         {:error, :already_in_game}
 
+      not Heroes.legal?(hero, game.format) ->
+        {:error, :invalid_hero}
+
       true ->
         {count, _} =
           from(g in Game,
@@ -460,6 +491,7 @@ defmodule Tabletop.Games do
           |> Repo.update_all(
             set: [
               user2_id: user_id,
+              user2_hero: hero,
               status: :active,
               joining_user_id: nil,
               joining_expires_at: nil

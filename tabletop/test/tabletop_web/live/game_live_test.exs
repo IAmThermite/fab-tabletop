@@ -5,7 +5,11 @@ defmodule TabletopWeb.GameLiveTest do
   import Tabletop.GamesFixtures
   import Tabletop.AccountsFixtures
 
-  @create_attrs %{title: "some title", format: :classic_constructed}
+  @create_attrs %{
+    title: "some title",
+    format: :classic_constructed,
+    hero: hd(Tabletop.Heroes.legal_for(:classic_constructed)).slug
+  }
   @update_attrs %{title: "some updated title"}
   @invalid_attrs %{title: nil}
 
@@ -138,6 +142,31 @@ defmodule TabletopWeb.GameLiveTest do
 
       assert html =~ "Briar, Warden of Thorns"
       assert html =~ "https://fabrary.net/decks/abc123"
+    end
+
+    test "hides the hero and decklist on a competitive game row", %{conn: conn} do
+      other_scope = user_scope_fixture()
+
+      game_fixture(other_scope, %{
+        title: "Competitive Game",
+        format: :living_legend,
+        hero: "briar-warden-of-thorns",
+        decklist: "https://fabrary.net/decks/secret",
+        competitive: true
+      })
+
+      {:ok, live, html} = live(conn, ~p"/")
+
+      # The game is still listed, but on its row the hero name and decklist are
+      # hidden and a "Competitive" marker is shown instead. The hero name is only
+      # refuted within the joinable-games list — competitive games now feed the
+      # separate "Popular heroes" panel, where the name legitimately appears.
+      joinable = live |> element("#joinable-games") |> render()
+
+      assert joinable =~ "Competitive Game"
+      assert joinable =~ "Competitive"
+      refute joinable =~ "Briar, Warden of Thorns"
+      refute html =~ "https://fabrary.net/decks/secret"
     end
 
     test "shows a single empty state when no games are open", %{conn: conn} do
@@ -412,7 +441,8 @@ defmodule TabletopWeb.GameLiveTest do
   end
 
   describe "Camera setup join" do
-    test "joins a not-yet-participant user as user2 via save_and_join", %{conn: conn, user: user} do
+    test "routes a not-yet-participant user to pre-join (to pick a hero) via save_and_join",
+         %{conn: conn} do
       other_scope = user_scope_fixture()
       game = game_fixture(other_scope, %{title: "Join Via Setup"})
 
@@ -421,11 +451,13 @@ defmodule TabletopWeb.GameLiveTest do
       assert {:error, {:live_redirect, %{to: to}}} =
                render_hook(live_view, "save_and_join", %{})
 
-      assert to == ~p"/games/#{game}"
+      # Non-participants must declare their hero in pre-join before joining, so
+      # save_and_join sends them there rather than joining directly.
+      assert to == ~p"/games/#{game}/pre-join"
 
       updated = Tabletop.Repo.reload!(game)
-      assert updated.user2_id == user.id
-      assert updated.status == :active
+      assert is_nil(updated.user2_id)
+      assert updated.status == :waiting
     end
   end
 
@@ -462,6 +494,40 @@ defmodule TabletopWeb.GameLiveTest do
 
       {:ok, _live, html} = live(conn, ~p"/games/#{game}/pre-join")
       assert html =~ ~s(data-skip-allowed="true")
+    end
+  end
+
+  describe "Pre-join (joiner hero selection)" do
+    test "Continue is disabled until the joiner picks a hero, then joining records it",
+         %{conn: conn, user: user} do
+      other_scope = user_scope_fixture()
+      game = game_fixture(other_scope, %{title: "Pick A Hero", format: :classic_constructed})
+      cc_hero = hd(Tabletop.Heroes.legal_for(:classic_constructed))
+
+      {:ok, live, html} = live(conn, ~p"/games/#{game}/pre-join")
+
+      # The joiner sees a prominent hero picker and Continue starts disabled.
+      assert html =~ "Choose your hero"
+      assert has_element?(live, "#pre-join-hero-picker")
+      assert live |> element("#pre-join-continue-btn") |> render() =~ "disabled"
+
+      # Selecting a legal hero enables Continue.
+      live
+      |> element("#pre-join form")
+      |> render_change(%{"hero" => cc_hero.slug})
+
+      refute live |> element("#pre-join-continue-btn") |> render() =~ "disabled"
+
+      # Continuing joins the game and records the joiner's hero.
+      assert {:error, {:live_redirect, %{to: to}}} =
+               live |> element("#pre-join-continue-btn") |> render_click()
+
+      assert to == ~p"/games/#{game}"
+
+      updated = Tabletop.Repo.reload!(game)
+      assert updated.user2_id == user.id
+      assert updated.user2_hero == cc_hero.slug
+      assert updated.status == :active
     end
   end
 

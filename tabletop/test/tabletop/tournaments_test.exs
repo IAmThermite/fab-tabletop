@@ -391,6 +391,51 @@ defmodule Tabletop.TournamentsTest do
     end
   end
 
+  describe "recent_hero_entries/1 (popular-heroes source)" do
+    test "counts each player's hero once per tournament, whatever the round count",
+         %{admin_scope: admin} do
+      {_t, _champ} = finished_tournament_fixture(admin)
+      cutoff = DateTime.add(DateTime.utc_now(), -7 * 24 * 60 * 60, :second)
+
+      # Both players piloted arakni-huntsman — one entry per player (the
+      # registration row), never multiplied by the tournament's match games.
+      assert Enum.frequencies(Tournaments.recent_hero_entries(cutoff)) ==
+               %{{:classic_constructed, "arakni-huntsman"} => 2}
+    end
+
+    test "excludes tournaments that haven't begun play", %{admin_scope: admin} do
+      t = tournament_fixture(scope: admin)
+      {:ok, _t} = Tournaments.open_registration(admin, t)
+      s = Scope.for_user(user_fixture())
+
+      {:ok, _} =
+        Tournaments.register(s, t.id, %{
+          "hero" => "arakni-huntsman",
+          "decklist_url" => valid_fabrary_url()
+        })
+
+      cutoff = DateTime.add(DateTime.utc_now(), -7 * 24 * 60 * 60, :second)
+      assert Tournaments.recent_hero_entries(cutoff) == []
+    end
+
+    test "excludes tournaments last active before the window", %{admin_scope: admin} do
+      {t, _champ} = finished_tournament_fixture(admin)
+      set_updated_at(t.id, ~U[2026-01-01 00:00:00Z])
+
+      cutoff = DateTime.add(DateTime.utc_now(), -7 * 24 * 60 * 60, :second)
+      assert Tournaments.recent_hero_entries(cutoff) == []
+    end
+
+    test "activity_stats folds tournament heroes into the popular-heroes leaderboard",
+         %{admin_scope: admin} do
+      {_t, _champ} = finished_tournament_fixture(admin)
+
+      stats = Tabletop.Games.activity_stats()
+
+      assert stats.popular_heroes[:classic_constructed] == [{"arakni-huntsman", 2}]
+    end
+  end
+
   defp set_updated_at(id, %DateTime{} = at) do
     Repo.update_all(
       from(t in Tabletop.Tournaments.Tournament, where: t.id == ^id),

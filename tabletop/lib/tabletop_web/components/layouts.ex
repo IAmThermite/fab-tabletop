@@ -80,10 +80,7 @@ defmodule TabletopWeb.Layouts do
       <header class="navbar gap-2 border-b border-base-300 bg-base-100/40 backdrop-blur px-4 sm:px-6 lg:px-8">
         <div class="flex-1">
           <.link navigate={~p"/"} class="inline-flex items-center gap-3">
-            <img src={~p"/images/logo-mark-table.svg"} alt="FaB Tabletop" class="h-12 w-auto" />
-            <span class="font-display text-xl font-bold tracking-wide hidden sm:inline">
-              FaB Tabletop
-            </span>
+            <img src={~p"/images/banner.png"} alt="FaB Tabletop" class="h-12 w-auto" />
           </.link>
         </div>
 

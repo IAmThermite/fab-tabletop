@@ -35,6 +35,7 @@ COPY vendor/flesh-and-blood-cards/json/english/card.json priv/cards/card.json
 COPY tabletop/lib lib
 COPY tabletop/assets assets
 COPY tabletop/rel rel
+RUN chmod +x rel/overlays/bin/migrate rel/overlays/bin/server
 
 # Copy runtime config and compile (must happen before assets.deploy
 # so Phoenix generates colocated JS into _build/prod/phoenix-colocated/)

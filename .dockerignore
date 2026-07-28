@@ -4,8 +4,19 @@
 # Dev/test artifacts
 tabletop/_build
 tabletop/deps
-tabletop/node_modules
+tabletop/assets/node_modules
 tabletop/.elixir_ls
+
+# Rebuilt by `mix assets.deploy`; dev-only self-signed certs
+tabletop/priv/static/assets
+tabletop/priv/static/cache_manifest.json
+tabletop/priv/cert
+
+# Vendored card data: the build only needs the precomputed card.json
+# (see infrastructure/Dockerfile). The rest of the submodule — csvs/, web/,
+# other languages — is ~60MB of dead weight in the build context.
+vendor
+!vendor/flesh-and-blood-cards/json/english/card.json
 
 # Infrastructure (not needed in build)
 infrastructure/terraform

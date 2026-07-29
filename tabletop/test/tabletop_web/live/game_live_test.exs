@@ -531,6 +531,25 @@ defmodule TabletopWeb.GameLiveTest do
     end
   end
 
+  describe "Pre-join (unavailable game)" do
+    test "redirects to the lobby when the game can no longer be reserved", %{conn: conn} do
+      # A third player opening pre-join on a game that already has both seats
+      # taken falls into the reservation-failure branch, which still renders
+      # once before the navigate lands — so it must assign everything the
+      # template reads (ice_servers, relay_user_id) or the mount raises.
+      creator = user_scope_fixture()
+      opponent = user_scope_fixture()
+      game = game_fixture(creator, %{title: "Full Game", format: :classic_constructed})
+      cc_hero = hd(Tabletop.Heroes.legal_for(:classic_constructed))
+      {:ok, game} = Tabletop.Games.join_game(opponent, game, cc_hero.slug)
+
+      assert {:error, {:live_redirect, %{to: "/", flash: %{"error" => message}}}} =
+               live(conn, ~p"/games/#{game}/pre-join")
+
+      assert message =~ "no longer available"
+    end
+  end
+
   describe "Pre-join (unconfirmed user)" do
     test "redirects to index with flash when email not confirmed", %{conn: _conn} do
       conn =

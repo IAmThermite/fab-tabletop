@@ -58,15 +58,53 @@ defmodule Tabletop.TurnTest do
       assert turn.credential == expected
     end
 
-    test "expiry honours the configured ttl" do
+    test "expiry is at least the configured ttl away, and at most ttl + window" do
       before = System.os_time(:second)
       servers = Turn.ice_servers("user-42")
-      turn = List.last(servers)
 
-      [expiry_str, _] = String.split(turn.username, ":")
-      expiry = String.to_integer(expiry_str)
+      expiry = expiry_of(List.last(servers))
 
-      # ttl is 3600; allow a small window for clock movement during the test.
+      # The expiry is rounded up to the next window boundary before ttl is
+      # added, so it lands in [now + ttl, now + ttl + window].
+      assert expiry >= before + 3600
+      assert expiry <= System.os_time(:second) + 3600 + 3600
+    end
+
+    test "expiry lands exactly on a window boundary plus the ttl" do
+      expiry = expiry_of(List.last(Turn.ice_servers("user-42")))
+
+      assert rem(expiry - 3600, 3600) == 0
+    end
+
+    test "the same user gets the same credential within a window" do
+      # coturn keys user-quota on the literal username, so this stability is
+      # what makes the quota bind to a person rather than to a page load.
+      first = List.last(Turn.ice_servers("user-42"))
+      second = List.last(Turn.ice_servers("user-42"))
+
+      assert first.username == second.username
+      assert first.credential == second.credential
+    end
+
+    test "different users get different credentials in the same window" do
+      a = List.last(Turn.ice_servers("user-1"))
+      b = List.last(Turn.ice_servers("user-2"))
+
+      refute a.username == b.username
+      refute a.credential == b.credential
+    end
+
+    test "a window of 0 disables quantisation" do
+      Application.put_env(:tabletop, Tabletop.Turn,
+        secret: "test_secret",
+        urls: ["turn:turn.example.com:3478"],
+        ttl: 3600,
+        window: 0
+      )
+
+      before = System.os_time(:second)
+      expiry = expiry_of(List.last(Turn.ice_servers("user-42")))
+
       assert expiry >= before + 3600
       assert expiry <= System.os_time(:second) + 3600 + 5
     end
@@ -75,5 +113,10 @@ defmodule Tabletop.TurnTest do
       servers = Turn.ice_servers("user-42")
       assert [%{urls: "stun:" <> _}, %{urls: "stun:" <> _} | _] = servers
     end
+  end
+
+  defp expiry_of(%{username: username}) do
+    [expiry_str, _user_id] = String.split(username, ":")
+    String.to_integer(expiry_str)
   end
 end

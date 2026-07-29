@@ -18,10 +18,6 @@ tabletop/priv/cert
 vendor
 !vendor/flesh-and-blood-cards/json/english/card.json
 
-# Infrastructure (not needed in build)
-infrastructure/terraform
-infrastructure/coturn
-
 # Docker
 docker-compose.yml
 

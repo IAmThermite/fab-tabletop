@@ -20,6 +20,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
         data-user-token={@user_token}
         data-ice-servers={Jason.encode!(@ice_servers)}
         data-camera-relay-token={@camera_relay_token}
+        data-relay-user-id={@relay_user_id}
         data-skip-allowed={to_string(@mode == :creator)}
         class="flex flex-col h-full"
       >
@@ -419,14 +420,16 @@ defmodule TabletopWeb.GameLive.PreJoin do
           console.log("[PreJoin] calling start()")
           start()
 
-          // Phone camera relay
+          // Phone camera relay. The topic is keyed by the stable user id (not the
+          // rotating relay token), so the desktop and the phone land in the same
+          // camera_relay:* topic — see CameraRelayChannel.
           const token = el.dataset.userToken
-          const relayToken = el.dataset.cameraRelayToken
+          const relayUserId = el.dataset.relayUserId
           const iceServers = JSON.parse(el.dataset.iceServers)
 
           this.cameraRelay = new CameraRelayReceiver({
             token,
-            relayToken,
+            relayUserId,
             iceServers,
             onStream: (remoteStream) => {
               phoneStream = remoteStream
@@ -560,6 +563,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
     |> assign(:mode, :creator)
     |> assign(:user_token, user_token)
     |> assign(:camera_relay_token, camera_relay_token)
+    |> assign(:relay_user_id, scope.user.id)
     |> assign(:ice_servers, Tabletop.Turn.ice_servers(scope.user.id))
     |> assign(:qr_svg, qr_svg)
     |> assign(:hero_options, [])
@@ -588,6 +592,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:mode, :joiner)
         |> assign(:user_token, user_token)
         |> assign(:camera_relay_token, camera_relay_token)
+        |> assign(:relay_user_id, scope.user.id)
         |> assign(:ice_servers, Tabletop.Turn.ice_servers(scope.user.id))
         |> assign(:qr_svg, qr_svg)
         |> assign(:hero_options, Heroes.options_for(game.format))
@@ -610,6 +615,11 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:mode, :joiner)
         |> assign(:user_token, "")
         |> assign(:camera_relay_token, "")
+        |> assign(:relay_user_id, "")
+        # Still rendered once before the push_navigate lands, so the template's
+        # ice-server attribute needs a value. No credential is minted for a
+        # page the user is being bounced off.
+        |> assign(:ice_servers, [])
         |> assign(:qr_svg, "")
         |> assign(:hero_options, [])
         |> assign(:selected_hero, nil)

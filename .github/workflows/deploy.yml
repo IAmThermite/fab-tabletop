@@ -14,7 +14,11 @@ jobs:
     # disable deployment for now
     if: ${{ github.event.workflow_run.conclusion == 'success' && false }}
     steps:
+      # The Dockerfile bundles `vendor/flesh-and-blood-cards/json/english/card.json`
+      # into the release, so the submodule must be in the build context.
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 

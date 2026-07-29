@@ -7,6 +7,7 @@ defmodule Tabletop.Games do
   alias Tabletop.Repo
 
   alias Tabletop.Games.Game
+  alias Tabletop.Heroes
   alias Tabletop.Accounts.Scope
 
   @doc """
@@ -102,6 +103,127 @@ defmodule Tabletop.Games do
 
     Repo.all(query)
   end
+
+  @doc """
+  Returns an at-a-glance snapshot of lobby activity for the live-activity panel.
+
+  The returned map has:
+
+    * `:open_by_format` — `%{format => count}` of public games waiting for an
+      opponent (reservation-aware; mirrors `list_joinable_games/2`, but global
+      rather than scoped to a single user)
+    * `:open_total` — sum of `:open_by_format`
+    * `:active_games` — number of games currently in progress (`status == :active`)
+    * `:active_players` — players currently seated in those active games (i.e.
+      who have not left); a user can only be in one game at a time, so this is a
+      distinct head-count
+    * `:popular_heroes` — `%{format => [{hero_slug, count}]}`, the most-chosen
+      heroes across games created in the last `days` days (default 7), most
+      popular first, capped per format
+
+  Cheap enough to recompute on every lobby broadcast.
+  """
+  def activity_stats(days \\ 7) do
+    open_by_format = open_games_by_format()
+    active = active_game_stats()
+
+    %{
+      open_by_format: open_by_format,
+      open_total: open_by_format |> Map.values() |> Enum.sum(),
+      active_games: active.games,
+      active_players: active.players,
+      popular_heroes: popular_heroes_by_format(days)
+    }
+  end
+
+  # Counts public games still waiting for an opponent, grouped by format. Skips
+  # games that are currently reserved by a (non-expired) joiner, matching the
+  # joinable-list semantics. Formats with no open games are simply absent.
+  defp open_games_by_format do
+    now = DateTime.utc_now()
+
+    from(g in Game,
+      where: g.status == :waiting,
+      where: g.private == false,
+      where: is_nil(g.user2_id),
+      where: is_nil(g.joining_user_id) or g.joining_expires_at < ^now,
+      group_by: g.format,
+      select: {g.format, count(g.id)}
+    )
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  # Active games and the number of players actually seated in them. We pull the
+  # left-at/opponent columns for the (small) set of active games and tally alive
+  # seats in Elixir, since "still present" is a per-seat condition.
+  defp active_game_stats do
+    seats =
+      from(g in Game,
+        where: g.status == :active,
+        select: {g.user1_left_at, g.user2_id, g.user2_left_at}
+      )
+      |> Repo.all()
+
+    players =
+      Enum.reduce(seats, 0, fn {user1_left_at, user2_id, user2_left_at}, acc ->
+        acc +
+          if(is_nil(user1_left_at), do: 1, else: 0) +
+          if(not is_nil(user2_id) and is_nil(user2_left_at), do: 1, else: 0)
+      end)
+
+    %{games: length(seats), players: players}
+  end
+
+  @hero_leaderboard_limit 3
+
+  # Top heroes piloted per format across recent activity — casual games and
+  # tournaments alike. For a game, both seats count: the creator's `hero` and the
+  # opponent's `user2_hero` (so a hero is credited whether chosen at create time
+  # or at join time; a mirror match credits it once per pilot). Competitive games
+  # count too — hiding a hero from the lobby list doesn't hide it from this
+  # aggregate. Tournament play is folded in via `Tournaments.recent_hero_entries/1`,
+  # which yields one entry per player per tournament so a tournament's many round
+  # games don't multiply a player's hero (those match games carry no hero on the
+  # `Game` row, so they never double-count here). Blank heroes are skipped.
+  # Tallied in Elixir (like `active_game_stats`) to keep the format-enum cast
+  # straightforward across every source. Returns at most `@hero_leaderboard_limit`
+  # heroes per format.
+  defp popular_heroes_by_format(days) do
+    cutoff = DateTime.add(DateTime.utc_now(), -days * 24 * 60 * 60, :second)
+
+    game_entries =
+      from(g in Game,
+        where: g.inserted_at >= ^cutoff,
+        select: {g.format, g.hero, g.user2_hero}
+      )
+      |> Repo.all()
+      |> Enum.flat_map(fn {format, hero, user2_hero} ->
+        hero_entry(format, hero) ++ hero_entry(format, user2_hero)
+      end)
+
+    (game_entries ++ Tabletop.Tournaments.recent_hero_entries(cutoff))
+    |> Enum.frequencies()
+    |> Enum.group_by(
+      fn {{format, _hero}, _count} -> format end,
+      fn {{_format, hero}, count} -> {hero, count} end
+    )
+    |> Map.new(fn {format, heroes} ->
+      top =
+        heroes
+        |> Enum.sort_by(fn {_hero, count} -> count end, :desc)
+        |> Enum.take(@hero_leaderboard_limit)
+
+      {format, top}
+    end)
+  end
+
+  # A single `{format, hero}` tally entry when the hero slug is present, else none.
+  defp hero_entry(format, hero) when is_binary(hero) do
+    if String.trim(hero) == "", do: [], else: [{format, hero}]
+  end
+
+  defp hero_entry(_format, _hero), do: []
 
   @doc """
   Gets a single game the scoped user is a participant in (creator or opponent).
@@ -330,10 +452,16 @@ defmodule Tabletop.Games do
   end
 
   @doc """
-  Joins a game by setting the current user as user2 (opponent).
-  Verifies the user holds the join reservation (or no reservation exists).
+  Joins a game by setting the current user as user2 (opponent) and recording the
+  hero they're playing.
+
+  Verifies the user holds the join reservation (or no reservation exists) and that
+  `hero` is a recognised hero legal in the game's format — the joiner must always
+  declare a hero (`{:error, :invalid_hero}` otherwise). Legality is checked here
+  rather than via a changeset because the join is an atomic conditional
+  `update_all` for race safety.
   """
-  def join_game(%Scope{} = scope, %Game{} = game) do
+  def join_game(%Scope{} = scope, %Game{} = game, hero) do
     user_id = scope.user.id
 
     cond do
@@ -349,6 +477,9 @@ defmodule Tabletop.Games do
       user_in_other_game?(scope, game) ->
         {:error, :already_in_game}
 
+      not Heroes.legal?(hero, game.format) ->
+        {:error, :invalid_hero}
+
       true ->
         {count, _} =
           from(g in Game,
@@ -360,6 +491,7 @@ defmodule Tabletop.Games do
           |> Repo.update_all(
             set: [
               user2_id: user_id,
+              user2_hero: hero,
               status: :active,
               joining_user_id: nil,
               joining_expires_at: nil
@@ -463,6 +595,24 @@ defmodule Tabletop.Games do
 
   def get_current_game_for_user(nil), do: nil
 
+  @doc """
+  Returns the most recent game *created* by the scoped user (any status), or
+  `nil` if they have never created one. Powers the lobby's "quick match" button,
+  which re-seeds the create form from a previous game's settings. Only games the
+  user created are considered, since the hero/decklist on a joined game belong to
+  the other player.
+  """
+  def get_last_created_game(%Scope{user: user}) do
+    from(g in Game,
+      where: g.user_id == ^user.id,
+      order_by: [desc: g.inserted_at],
+      limit: 1
+    )
+    |> Repo.one()
+  end
+
+  def get_last_created_game(nil), do: nil
+
   def user_part_of_game?(%Scope{} = scope, %Game{} = game) do
     game.user_id == scope.user.id || game.user2_id == scope.user.id
   end
@@ -472,5 +622,33 @@ defmodule Tabletop.Games do
       %Game{id: id} -> id != game.id
       nil -> false
     end
+  end
+
+  @doc """
+  Updates or creates the state for a given game using an upsert.
+  """
+  def update_game_state(game_id, state_map) do
+    %Tabletop.Games.GameState{
+      game_id: game_id,
+      state: state_map
+    }
+    |> Repo.insert!(
+      on_conflict: :replace_all,
+      conflict_target: :game_id
+    )
+  rescue
+    _ -> :error
+  end
+
+  @doc """
+  Gets the state for a given game, returning an empty map if not found.
+  """
+  def get_game_state(game_id) do
+    case Repo.get(Tabletop.Games.GameState, game_id) do
+      nil -> %{}
+      record -> record.state
+    end
+  rescue
+    _ -> %{}
   end
 end

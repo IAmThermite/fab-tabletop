@@ -139,6 +139,38 @@ defmodule TabletopWeb.GameComponents do
         </div>
       </div>
 
+      <%!-- Amp (compact, like Go Again but with an inline counter) --%>
+      <div class="bg-secondary/20 rounded p-2">
+        <div class="flex items-center gap-1">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-xs checkbox-secondary"
+            checked={@game_state.my.amp.active}
+            phx-click="toggle_amp"
+          />
+          <span class="text-xs font-semibold">Amp</span>
+          <div class="flex items-center gap-0.5 ml-auto shrink-0">
+            <button
+              type="button"
+              class="btn btn-xs btn-circle btn-error"
+              phx-click="change_amp"
+              phx-value-delta="-1"
+            >
+              -
+            </button>
+            <span class="text-xs font-bold w-3 text-center">{@game_state.my.amp.value}</span>
+            <button
+              type="button"
+              class="btn btn-xs btn-circle btn-success"
+              phx-click="change_amp"
+              phx-value-delta="1"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      </div>
+
       <%!-- Go Again --%>
       <div class="bg-success/20 rounded p-2">
         <div class="flex items-center gap-1 mb-1">
@@ -168,7 +200,7 @@ defmodule TabletopWeb.GameComponents do
         </button>
         <ul
           :if={@abilities_open}
-          class="absolute z-30 menu bg-base-100 rounded-box w-32 p-2 shadow-sm mt-1"
+          class="absolute z-30 menu bg-base-100 rounded-box w-36 p-2 shadow-sm mt-1"
         >
           <%= for {_key, effect} <- Tabletop.Fab.Effects.abilities() do %>
             <li>
@@ -315,29 +347,33 @@ defmodule TabletopWeb.GameComponents do
         </ul>
       </div>
 
-      <button type="button" class="btn btn-success" phx-click="reset_chain">Reset Chain</button>
+      <%!-- Custom Counters (tinted block, styled like Go Again) --%>
+      <div class="bg-yellow-300/30 rounded p-2">
+        <form phx-submit="add_custom_counter" class="flex items-center gap-1">
+          <input
+            type="text"
+            name="name"
+            placeholder="Counter…"
+            maxlength={24}
+            class="input input-bordered input-xs flex-1 min-w-0 text-xs"
+          />
+          <button
+            type="submit"
+            class="btn btn-xs btn-square bg-yellow-400 hover:bg-yellow-500 text-yellow-950 border-yellow-500"
+            aria-label="Add custom counter"
+          >
+            <.icon name="hero-plus" class="size-3" />
+          </button>
+        </form>
+      </div>
 
       <div class="flex-1"></div>
-
-      <form phx-change="search_card" phx-submit="search_card" onsubmit="return false" class="relative">
-        <input
-          type="text"
-          placeholder="Search card..."
-          phx-debounce="1000"
-          name="query"
-          class="input input-bordered input-sm w-full pr-7 text-xs"
-        />
-        <.icon
-          name="hero-magnifying-glass"
-          class="size-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-40 pointer-events-none"
-        />
-      </form>
 
       <%!-- Create Proxy Token --%>
       <div class="relative">
         <button
           type="button"
-          class="btn btn-sm w-full bg-emerald-300 hover:bg-emerald-400 text-emerald-950 border-emerald-400"
+          class="btn w-full text-xs bg-emerald-300 hover:bg-emerald-400 text-emerald-950 border-emerald-400"
           phx-click="toggle_dropdown"
           phx-value-name="create_proxy_token"
         >
@@ -365,7 +401,16 @@ defmodule TabletopWeb.GameComponents do
                 <span class="text-xs font-semibold leading-tight">{token[:name]}</span>
               </div>
               <div class="flex items-center gap-0.5 shrink-0">
+                <input
+                  :if={token[:singleton]}
+                  type="checkbox"
+                  class="checkbox checkbox-xs checkbox-success"
+                  checked={Map.get(@game_state.my.proxy_tokens || %{}, token[:name], 0) > 0}
+                  phx-click="toggle_proxy_token"
+                  phx-value-type={token[:name]}
+                />
                 <button
+                  :if={!token[:singleton]}
                   type="button"
                   class="btn btn-xs btn-circle btn-error"
                   phx-click="remove_proxy_token"
@@ -373,10 +418,11 @@ defmodule TabletopWeb.GameComponents do
                 >
                   -
                 </button>
-                <span class="text-xs font-bold w-3 text-center">
+                <span :if={!token[:singleton]} class="text-xs font-bold w-3 text-center">
                   {Map.get(@game_state.my.proxy_tokens || %{}, token[:name], 0)}
                 </span>
                 <button
+                  :if={!token[:singleton]}
                   type="button"
                   class="btn btn-xs btn-circle btn-success"
                   phx-click="add_proxy_token"
@@ -389,6 +435,22 @@ defmodule TabletopWeb.GameComponents do
           <% end %>
         </ul>
       </div>
+
+      <form phx-change="search_card" phx-submit="search_card" onsubmit="return false" class="relative">
+        <input
+          type="text"
+          placeholder="Search card..."
+          phx-debounce="1000"
+          name="query"
+          class="input input-bordered input-sm w-full pr-7 text-xs"
+        />
+        <.icon
+          name="hero-magnifying-glass"
+          class="size-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-40 pointer-events-none"
+        />
+      </form>
+
+      <button type="button" class="btn btn-success" phx-click="reset_board">Reset Board</button>
 
       <%!-- Player life --%>
       <div class="bg-warning text-warning-content rounded p-2 text-center">
@@ -488,6 +550,17 @@ defmodule TabletopWeb.GameComponents do
           </div>
           <div class="flex items-center gap-1">
             <button
+              :if={token[:singleton]}
+              type="button"
+              class="btn btn-xs btn-circle btn-error"
+              phx-click="remove_proxy_token"
+              phx-value-type={name}
+              aria-label={"Remove #{name}"}
+            >
+              <.icon name="hero-x-mark" class="size-3" />
+            </button>
+            <button
+              :if={!token[:singleton]}
               type="button"
               class="btn btn-xs btn-circle btn-error"
               phx-click="remove_proxy_token"
@@ -495,8 +568,9 @@ defmodule TabletopWeb.GameComponents do
             >
               -
             </button>
-            <span class="text-sm font-bold w-6 text-center">{count}</span>
+            <span :if={!token[:singleton]} class="text-sm font-bold w-6 text-center">{count}</span>
             <button
+              :if={!token[:singleton]}
               type="button"
               class="btn btn-xs btn-circle btn-success"
               phx-click="add_proxy_token"
@@ -550,36 +624,88 @@ defmodule TabletopWeb.GameComponents do
         phx-hook={if @context in [:expanded, :setup], do: "TabletopWeb.GameComponents.DraggableTile"}
         id={"tile-#{@context}-#{tile.owner}-#{tile.id}"}
       >
-        <span class={[
-          "rounded-full bg-black/25 flex items-center justify-center shrink-0",
-          case @context do
-            :local -> "p-[1px]"
-            _ -> "p-1"
-          end
-        ]}>
-          <.icon
-            name={tile_icon(tile)}
-            class={
+        <%= cond do %>
+          <% tile.type == :custom_counter and @context in [:expanded, :setup] -> %>
+            <%!-- Interactive custom counter: optional name, then −/value/+ and remove. --%>
+            <span
+              :if={tile.label not in [nil, ""]}
+              class="uppercase tracking-wide leading-none"
+            >
+              {tile.label}
+            </span>
+            <div class="flex items-center gap-0.5">
+              <button
+                type="button"
+                class="btn btn-xs btn-circle btn-error"
+                phx-click="change_custom_counter"
+                phx-value-id={tile.id}
+                phx-value-delta="-1"
+              >
+                -
+              </button>
+              <span class="font-bold leading-none text-sm min-w-3 text-center">{tile.value}</span>
+              <button
+                type="button"
+                class="btn btn-xs btn-circle btn-success"
+                phx-click="change_custom_counter"
+                phx-value-id={tile.id}
+                phx-value-delta="1"
+              >
+                +
+              </button>
+            </div>
+            <button
+              type="button"
+              class="opacity-50 hover:opacity-100 shrink-0 ml-0.5"
+              phx-click="remove_custom_counter"
+              phx-value-id={tile.id}
+              aria-label="Remove counter"
+            >
+              <.icon name="hero-x-mark" class="size-3" />
+            </button>
+          <% nameless_counter?(tile) -> %>
+            <%!-- Read-only nameless counter: just the number, larger. --%>
+            <span class={[
+              "font-bold leading-none",
               case @context do
-                :local -> "size-2"
-                _ -> "size-3.5"
+                :local -> "text-xs"
+                _ -> "text-base"
               end
-            }
-          />
-        </span>
-        <span class="uppercase tracking-wide leading-none">{tile.label}</span>
-        <span
-          :if={Map.get(tile, :value)}
-          class={[
-            "font-bold leading-none ml-0.5",
-            case @context do
-              :local -> "text-[10px]"
-              _ -> "text-sm"
-            end
-          ]}
-        >
-          {tile.value}
-        </span>
+            ]}>
+              {tile.value}
+            </span>
+          <% true -> %>
+            <span class={[
+              "rounded-full bg-black/25 flex items-center justify-center shrink-0",
+              case @context do
+                :local -> "p-[1px]"
+                _ -> "p-1"
+              end
+            ]}>
+              <.icon
+                name={tile_icon(tile)}
+                class={
+                  case @context do
+                    :local -> "size-2"
+                    _ -> "size-3.5"
+                  end
+                }
+              />
+            </span>
+            <span class="uppercase tracking-wide leading-none">{tile.label}</span>
+            <span
+              :if={Map.get(tile, :value)}
+              class={[
+                "font-bold leading-none ml-0.5",
+                case @context do
+                  :local -> "text-[10px]"
+                  _ -> "text-sm"
+                end
+              ]}
+            >
+              {tile.value}
+            </span>
+        <% end %>
         <.tile_hover_preview :if={@context != :local} tile={tile} />
       </div>
     <% end %>
@@ -621,6 +747,9 @@ defmodule TabletopWeb.GameComponents do
 
           const onPointerDown = (e) => {
             if (e.button !== 0) return
+            // Let in-tile controls (custom counter −/+/× buttons) handle their
+            // own clicks; capturing the pointer here would swallow them.
+            if (e.target.closest("button")) return
 
             startX = e.clientX
             startY = e.clientY
@@ -783,6 +912,46 @@ defmodule TabletopWeb.GameComponents do
         tiles
       end
 
+    amp = Map.get(player_state, :amp, %{active: false, value: 0})
+
+    tiles =
+      if amp.active do
+        pos = Map.get(player_state.tile_positions, "amp", %{x: 80.0, y: 65.0})
+
+        [
+          %{
+            id: "amp",
+            owner: owner,
+            label: "Amp",
+            value: amp.value,
+            x: pos.x,
+            y: pos.y,
+            type: :amp
+          }
+          | tiles
+        ]
+      else
+        tiles
+      end
+
+    tiles =
+      Enum.reduce(Map.get(player_state, :custom_counters, %{}), tiles, fn {id, counter}, acc ->
+        pos = Map.get(player_state.tile_positions, id, %{x: 50.0, y: 50.0})
+
+        [
+          %{
+            id: id,
+            owner: owner,
+            label: counter.name,
+            value: counter.count,
+            x: pos.x,
+            y: pos.y,
+            type: :custom_counter
+          }
+          | acc
+        ]
+      end)
+
     abilities_by_name =
       Map.new(Tabletop.Fab.Effects.abilities(), fn {_k, e} -> {e.name, e} end)
 
@@ -842,6 +1011,9 @@ defmodule TabletopWeb.GameComponents do
       Map.get(tile, :description_html) not in [nil, ""]
   end
 
+  defp nameless_counter?(%{type: :custom_counter, label: name}), do: name in [nil, ""]
+  defp nameless_counter?(_), do: false
+
   defp tile_color_class(%{owner: "my", type: :goagain}),
     do: "from-success to-success/70 text-success-content"
 
@@ -850,6 +1022,12 @@ defmodule TabletopWeb.GameComponents do
 
   defp tile_color_class(%{owner: "my", type: :arcane}),
     do: "from-info to-info/70 text-info-content"
+
+  defp tile_color_class(%{owner: "my", type: :amp}),
+    do: "from-secondary to-secondary/70 text-secondary-content"
+
+  defp tile_color_class(%{owner: "my", type: :custom_counter}),
+    do: "from-yellow-300 to-yellow-400/70 text-yellow-950"
 
   defp tile_color_class(%{owner: "my", type: :ability}),
     do: "from-purple-300 to-purple-400/70 text-purple-950"
@@ -872,6 +1050,12 @@ defmodule TabletopWeb.GameComponents do
   defp tile_color_class(%{owner: "opponent", type: :arcane}),
     do: "from-info/60 to-info/40 text-info-content border border-info"
 
+  defp tile_color_class(%{owner: "opponent", type: :amp}),
+    do: "from-secondary/60 to-secondary/40 text-secondary-content border border-secondary"
+
+  defp tile_color_class(%{owner: "opponent", type: :custom_counter}),
+    do: "from-yellow-300/60 to-yellow-400/40 text-yellow-950 border border-yellow-400"
+
   defp tile_color_class(%{owner: "opponent", type: :ability}),
     do: "from-purple-300/60 to-purple-400/40 text-purple-950 border border-purple-400"
 
@@ -888,6 +1072,8 @@ defmodule TabletopWeb.GameComponents do
   defp tile_icon(%{type: :goagain}), do: "hero-arrow-path"
   defp tile_icon(%{type: :physical}), do: "hero-bolt"
   defp tile_icon(%{type: :arcane}), do: "hero-sparkles"
+  defp tile_icon(%{type: :amp}), do: "hero-arrow-trending-up"
+  defp tile_icon(%{type: :custom_counter}), do: "hero-hashtag"
   defp tile_icon(_), do: "hero-star"
 
   defp tile_group_name(%{type: :ability}), do: "ability"
@@ -895,15 +1081,15 @@ defmodule TabletopWeb.GameComponents do
   defp tile_group_name(%{type: :token}), do: "on_hit"
   defp tile_group_name(_), do: nil
 
-  defp pitch_color_class(1), do: "bg-red-500"
-  defp pitch_color_class(2), do: "bg-yellow-400"
-  defp pitch_color_class(3), do: "bg-blue-500"
+  # FaB pitch colours, sourced from the shared palette defined in app.css
+  # (`--color-pitch-*` → `bg-pitch-*` utilities).
+  defp pitch_color_class(1), do: "bg-pitch-red"
+  defp pitch_color_class(2), do: "bg-pitch-yellow"
+  defp pitch_color_class(3), do: "bg-pitch-blue"
   defp pitch_color_class(_), do: "bg-base-300"
 
   # Hamming distance between a captured client phash (of `kind`) and the
-  # corresponding stored hash on `card_print`. For horizontal `art_left` /
-  # `art_right` we take the min over both stored halves to reflect how the
-  # server-side query absorbs the player's 180° flip.
+  # corresponding stored hash on `card_print`.
   defp phash_debug_distance(_kind, _value, nil), do: nil
 
   defp phash_debug_distance(:art, value, %{image_phash: stored}) when is_integer(stored),
@@ -915,19 +1101,6 @@ defmodule TabletopWeb.GameComponents do
 
   defp phash_debug_distance(:full, value, %{image_phash_full: stored}) when is_integer(stored),
     do: Tabletop.Cards.PHash.hamming_distance(value, stored)
-
-  defp phash_debug_distance(kind, value, %{image_phash_left: l, image_phash_right: r})
-       when kind in [:art_left, :art_right] do
-    candidates =
-      [l, r]
-      |> Enum.filter(&is_integer/1)
-      |> Enum.map(&Tabletop.Cards.PHash.hamming_distance(value, &1))
-
-    case candidates do
-      [] -> nil
-      ds -> Enum.min(ds)
-    end
-  end
 
   defp phash_debug_distance(_kind, _value, _card_print), do: nil
 
@@ -961,6 +1134,33 @@ defmodule TabletopWeb.GameComponents do
   end
 
   defp winning_phash_kind(_, _), do: nil
+
+  attr :title, :string, required: true
+  attr :body, :string, default: nil
+  attr :class, :string, default: nil, doc: "extra classes merged onto the banner container"
+  attr :rest, :global, doc: "passed to the outer container (id, phx-update, …)"
+  slot :action, doc: "trailing action — a link or button"
+
+  @doc """
+  A warning/notice banner with a title, optional body, and a trailing action.
+
+  Used on the lobby for the camera-setup and email-confirmation prompts. Pass
+  `id` / `phx-update` through `@rest` and toggling classes through `@class` when
+  the caller needs to show/hide the banner client-side.
+  """
+  def notice_banner(assigns) do
+    ~H"""
+    <div class={["border-2 border-warning rounded-lg p-4 bg-warning/10", @class]} {@rest}>
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="font-bold">{@title}</h3>
+          <p :if={@body} class="text-sm opacity-75">{@body}</p>
+        </div>
+        {render_slot(@action)}
+      </div>
+    </div>
+    """
+  end
 
   attr :id, :string, required: true
   attr :code, :string, required: true
@@ -1034,6 +1234,28 @@ defmodule TabletopWeb.GameComponents do
           <label class="flex items-center justify-between cursor-pointer">
             <span class="label-text">Card scan debug overlay</span>
             <input id="debug-scan-toggle" type="checkbox" class="toggle" />
+          </label>
+          <label class="flex items-center justify-between gap-3 cursor-pointer">
+            <span class="label-text">Effect volume</span>
+            <input
+              id="effect-volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              class="range range-sm flex-1 max-w-40"
+            />
+          </label>
+          <label class="flex items-center justify-between gap-3 cursor-pointer">
+            <span class="label-text">Opponent volume</span>
+            <input
+              id="opponent-volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              class="range range-sm flex-1 max-w-40"
+            />
           </label>
 
           <div :if={@game_id} class="divider text-xs">Share game</div>
@@ -1119,6 +1341,7 @@ defmodule TabletopWeb.GameComponents do
       <div
         id={"card-popout-#{card.id}"}
         phx-hook=".DraggableCardPopout"
+        data-card-id={card.id}
         data-x={card.x}
         data-y={card.y}
         class="absolute z-30 w-80 bg-base-100 border border-base-300 rounded-lg shadow-xl overflow-hidden"
@@ -1201,14 +1424,6 @@ defmodule TabletopWeb.GameComponents do
             <%= if card.card_print && card.card_print.image_phash do %>
               <div><span class="opacity-50">phash (art):</span> {card.card_print.image_phash}</div>
             <% end %>
-            <%= if card.card_print && card.card_print.image_phash_left do %>
-              <div>
-                <span class="opacity-50">phash (left):</span> {card.card_print.image_phash_left}
-              </div>
-              <div>
-                <span class="opacity-50">phash (right):</span> {card.card_print.image_phash_right}
-              </div>
-            <% end %>
             <%= if card.card_print && card.card_print.image_phash_full do %>
               <div>
                 <span class="opacity-50">phash (full):</span> {card.card_print.image_phash_full}
@@ -1218,6 +1433,14 @@ defmodule TabletopWeb.GameComponents do
               <% winning_kind = winning_phash_kind(Map.get(debug, :phashes, %{}), card.card_print) %>
               <div class="font-semibold text-[11px] opacity-60 pt-1">Client (scan)</div>
               <div><span class="opacity-50">match method:</span> {debug.match_method}</div>
+              <%= if (rs = Map.get(debug, :region_scale)) && rs > 1.0 do %>
+                <div>
+                  <span class="opacity-50">capture region:</span>
+                  <span class="ml-1 px-1.5 py-0.5 rounded bg-warning text-warning-content font-semibold">
+                    expanded to {round(rs * 100)}%
+                  </span>
+                </div>
+              <% end %>
               <%= if winning_kind do %>
                 <div>
                   <span class="opacity-50">resolved by:</span>
@@ -1255,6 +1478,20 @@ defmodule TabletopWeb.GameComponents do
                   <% end %>
                 </div>
               <% end %>
+              <%!-- Exports this scan as a recognition.test.mjs fixture. Only
+                   offered for popouts a scan opened — a name-searched card has
+                   no capture behind it. The button starts disabled and the
+                   popout hook enables it once it finds the held capture. --%>
+              <%= if debug.match_method == "phash" do %>
+                <button
+                  type="button"
+                  disabled
+                  class="card-popout-save-capture btn btn-xs btn-outline w-full mt-2 disabled:opacity-40"
+                  title="Download the deskewed capture + sidecar as a recognition test fixture"
+                >
+                  Save scan capture
+                </button>
+              <% end %>
             <% end %>
           </div>
         </div>
@@ -1262,19 +1499,53 @@ defmodule TabletopWeb.GameComponents do
     <% end %>
 
     <script :type={ColocatedHook} name=".DraggableCardPopout">
-      import { isDebugEnabled } from "@/js/card_scanner/debug.js"
+      import {
+        isDebugEnabled,
+        hasScanCapture,
+        forgetScanCapture,
+        onScanCaptureChange,
+        saveScanCapture,
+      } from "@/js/card_scanner/debug.js"
+
+      const SAVE_LABEL = "Save scan capture"
 
       export default {
         mounted() {
           const el = this.el
           const header = el.querySelector(".card-popout-header")
           const container = el.parentElement
+          const cardId = el.dataset.cardId
 
-          // Show debug section if debug mode is enabled
-          const debugSection = el.querySelector(".card-popout-debug")
-          if (debugSection && isDebugEnabled()) {
+          // Show the debug block (and its "Save scan capture" button) when
+          // debug mode is on. Server re-renders restore the static markup —
+          // `hidden` back on, the button back to disabled — so this reapplies
+          // after every patch, not just at mount.
+          const syncDebugSection = () => {
+            const debugSection = el.querySelector(".card-popout-debug")
+            if (!debugSection || !isDebugEnabled()) return
             debugSection.classList.remove("hidden")
+
+            const saveBtn = debugSection.querySelector(".card-popout-save-capture")
+            if (!saveBtn) return
+
+            // Only scans park a capture, and it is gone after a reconnect or
+            // once evicted — nothing to export then.
+            saveBtn.textContent = SAVE_LABEL
+            saveBtn.disabled = !hasScanCapture(cardId)
+            // `onclick` rather than addEventListener: assigning is idempotent,
+            // so re-running this after a patch can't stack handlers.
+            saveBtn.onclick = async () => {
+              saveBtn.disabled = true
+              const base = await saveScanCapture(cardId)
+              saveBtn.textContent = base ? "Saved ✓" : "Nothing to save"
+              clearTimeout(this._saveFeedbackTimer)
+              this._saveFeedbackTimer = setTimeout(syncDebugSection, 2000)
+            }
           }
+
+          syncDebugSection()
+          // The capture lands after this mount — see onScanCaptureChange.
+          this._unsubCapture = onScanCaptureChange(syncDebugSection)
 
           const initX = parseFloat(el.dataset.x || "10")
           const initY = parseFloat(el.dataset.y || "10")
@@ -1311,9 +1582,7 @@ defmodule TabletopWeb.GameComponents do
             // Reapply the last known position so the popout doesn't jump on pitch switch.
             el.style.left = this._currentLeft
             el.style.top = this._currentTop
-            // Re-apply debug visibility after re-render
-            const dbg = el.querySelector(".card-popout-debug")
-            if (dbg && isDebugEnabled()) dbg.classList.remove("hidden")
+            syncDebugSection()
           }
 
           header.addEventListener("pointerdown", (e) => {
@@ -1351,6 +1620,14 @@ defmodule TabletopWeb.GameComponents do
 
           header.addEventListener("pointerup", onPointerEnd)
           header.addEventListener("pointercancel", onPointerEnd)
+        },
+
+        destroyed() {
+          // Closing the popout releases its held capture — each one pins a
+          // full-size canvas.
+          clearTimeout(this._saveFeedbackTimer)
+          if (this._unsubCapture) this._unsubCapture()
+          forgetScanCapture(this.el.dataset.cardId)
         },
       }
     </script>

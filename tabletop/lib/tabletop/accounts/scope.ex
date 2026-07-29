@@ -30,4 +30,13 @@ defmodule Tabletop.Accounts.Scope do
   end
 
   def for_user(nil), do: nil
+
+  @doc """
+  Returns true if the scope's user is listed in `:admin_emails` config.
+  """
+  def admin?(%__MODULE__{user: %User{email: email}}) when is_binary(email) do
+    email in Application.get_env(:tabletop, :admin_emails, [])
+  end
+
+  def admin?(_), do: false
 end

@@ -2,28 +2,39 @@ defmodule Tabletop.Games.Game do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Tabletop.Heroes
+
   @primary_key {:id, Ecto.UUID, autogenerate: true}
 
   @valid_formats %{
     classic_constructed: "Classic Constructed",
     silver_age: "Silver Age",
-    living_legend: "Living Legend"
+    living_legend: "Living Legend",
+    blitz: "Blitz"
   }
 
   schema "games" do
     field :title, :string
     field :format, Ecto.Enum, values: Map.keys(@valid_formats), default: :classic_constructed
+
+    field :language, Ecto.Enum,
+      values: Tabletop.Languages.keys(),
+      default: Tabletop.Languages.default()
+
     field :hero, :string
+    field :user2_hero, :string
     field :decklist, :string
     field :status, Ecto.Enum, values: [:waiting, :active, :finished], default: :waiting
     field :user1_left_at, :utc_datetime_usec
     field :user2_left_at, :utc_datetime_usec
     field :joining_expires_at, :utc_datetime_usec
     field :private, :boolean, default: false
+    field :competitive, :boolean, default: false
 
     belongs_to :user, Tabletop.Accounts.User, type: Ecto.UUID
     belongs_to :user2, Tabletop.Accounts.User, type: Ecto.UUID
     belongs_to :joining_user, Tabletop.Accounts.User, type: Ecto.UUID
+    has_one :game_state, Tabletop.Games.GameState
 
     timestamps(type: :utc_datetime)
   end
@@ -43,13 +54,61 @@ defmodule Tabletop.Games.Game do
   @doc false
   def changeset(game, attrs, user_scope) do
     game
-    |> cast(attrs, [:title, :format, :hero, :decklist, :private])
-    |> validate_required([:title, :format])
+    |> cast(attrs, [:title, :format, :language, :hero, :decklist, :private, :competitive])
+    |> validate_required([:title, :format, :language, :hero])
     |> validate_inclusion(:format, Map.keys(@valid_formats))
+    |> validate_inclusion(:language, Tabletop.Languages.keys())
+    |> validate_hero_legal()
     |> put_change(:user_id, user_scope.user.id)
+    |> put_active_game_constraints()
+  end
+
+  @doc """
+  Builds a game row for a tournament match (both players known up front).
+  Declares the same one-active-game-per-user constraints as `changeset/3` so a
+  collision surfaces as a changeset error rather than a raw `Ecto.ConstraintError`.
+  """
+  def match_changeset(game, attrs) do
+    game
+    |> cast(attrs, [:title, :format, :status, :user_id, :user2_id])
+    |> validate_required([:title, :format, :user_id, :user2_id])
+    |> validate_inclusion(:format, Map.keys(@valid_formats))
+    |> put_active_game_constraints()
+  end
+
+  # Both partial unique indexes from the `one_active_game_per_user` migration:
+  # a user may be user1 of at most one live game, and user2 of at most one.
+  defp put_active_game_constraints(changeset) do
+    changeset
     |> unique_constraint(:user_id,
       name: :games_one_active_per_user1,
       message: "you are already in a game"
     )
+    |> unique_constraint(:user2_id,
+      name: :games_one_active_per_user2,
+      message: "your opponent is already in a game"
+    )
   end
+
+  # Hero is required on created/edited games (see `validate_required` above) and
+  # must be a recognised hero legal in the selected format. This helper adds the
+  # legality/recognition errors on top of the required check; a blank hero is left
+  # to `validate_required`. Tournament games use `match_changeset/2`, which does
+  # not set or require a hero (their heroes come from registrations). Legacy
+  # free-text heroes on already-saved games predate this and aren't re-validated
+  # unless the game is edited.
+  defp validate_hero_legal(changeset) do
+    hero = get_field(changeset, :hero)
+    format = get_field(changeset, :format)
+
+    cond do
+      blank?(hero) -> changeset
+      is_nil(format) -> changeset
+      Heroes.legal?(hero, format) -> changeset
+      Heroes.known?(hero) -> add_error(changeset, :hero, "is not legal in this format")
+      true -> add_error(changeset, :hero, "is not a recognized hero")
+    end
+  end
+
+  defp blank?(value), do: is_nil(value) or (is_binary(value) and String.trim(value) == "")
 end

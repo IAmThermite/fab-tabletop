@@ -360,7 +360,8 @@ defmodule Tabletop.Fab.Effects do
       description_html: "You are <b>marked</b> until an opponent hits you.",
       card_img_src:
         "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/AAC031.webp",
-      for_opponent: true
+      for_opponent: true,
+      singleton: true
     },
     frostbite: %{
       name: "Frostbite",
@@ -373,7 +374,7 @@ defmodule Tabletop.Fab.Effects do
         "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/ELE111.webp",
       for_opponent: true
     },
-    # you can generate a gold for your opponent so lets add it here too
+    # you can generate a gold for your opponent (as well as yourself) so let's add it here too
     gold_2: %{
       name: "Gold",
       icon: "hero-currency-dollar",
@@ -407,6 +408,14 @@ defmodule Tabletop.Fab.Effects do
 
   def valid_token?(name) do
     Enum.any?(@tokens_map, fn {_k, t} -> t.name == name end)
+  end
+
+  @doc """
+  Returns true if the named token is a singleton — a token a player can only
+  ever have one of (e.g. Mark). Singleton tokens are capped at a count of 1.
+  """
+  def singleton_token?(name) do
+    Enum.any?(@tokens_map, fn {_k, t} -> t.name == name and Map.get(t, :singleton, false) end)
   end
 
   @inline_icons %{

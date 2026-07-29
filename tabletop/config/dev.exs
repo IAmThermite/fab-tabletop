@@ -5,8 +5,9 @@ config :tabletop, Tabletop.Repo,
   username: "postgres",
   password: "postgres",
   hostname: "localhost",
-  database: "tabletop_dev",
-  port: 5555,
+  # DEV_DATABASE lets each git worktree run against an isolated database
+  # (see tabletop/bin/dev). Defaults to the shared dev database.
+  database: System.get_env("DEV_DATABASE", "tabletop_dev"),
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
@@ -22,7 +23,7 @@ config :tabletop, TabletopWeb.Endpoint,
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   http: [ip: {0, 0, 0, 0}],
   https: [
-    port: 4001,
+    port: String.to_integer(System.get_env("HTTPS_PORT", "4001")),
     cipher_suite: :strong,
     certfile: "priv/cert/selfsigned.pem",
     keyfile: "priv/cert/selfsigned_key.pem"
@@ -60,9 +61,6 @@ config :tabletop, TabletopWeb.Endpoint,
 # If desired, both `http:` and `https:` keys can be
 # configured to run both http and https servers on
 # different ports.
-
-# Local coturn (docker-compose). Secret must match infrastructure/coturn/coturn.dev.conf.
-config :tabletop, Tabletop.Turn, secret: "dev_turn_secret", urls: ["turn:localhost:3478"]
 
 # Reload browser tabs when matching files change.
 config :tabletop, TabletopWeb.Endpoint,
@@ -102,3 +100,5 @@ config :phoenix_live_view,
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
+
+config :tabletop, :admin_emails, ["admin@test.com"]

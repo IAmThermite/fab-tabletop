@@ -4,14 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <link rel="icon" type="image/png" href={~p"/images/logo.png"} />
+    <link rel="icon" type="image/svg+xml" href={~p"/images/logo-mark.svg"} />
     <.live_title default="Tabletop" suffix=" · FaB Tabletop">
       {assigns[:page_title]}
     </.live_title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600;700&display=swap"
+    />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
-    <script>
+    <script nonce={@csp_nonce}>
       (() => {
         const setTheme = (theme) => {
           if (theme === "system") {
@@ -27,32 +33,18 @@
         }
         window.addEventListener("storage", (e) => e.key === "phx:theme" && setTheme(e.newValue || "system"));
         
-        window.addEventListener("phx:set-theme", (e) => setTheme(e.target.dataset.phxTheme));
+        // Native delegated click handler rather than a LiveView JS.dispatch command:
+        // the theme toggle also renders on dead views (e.g. /about) where LiveSocket
+        // never connects, so a phx-click would be inert there. closest() handles
+        // clicks that land on the button's inner icon.
+        document.addEventListener("click", (e) => {
+          const button = e.target.closest("[data-phx-theme]");
+          if (button) setTheme(button.dataset.phxTheme);
+        });
       })();
     </script>
   </head>
   <body>
-    <ul class="menu menu-horizontal w-full relative z-10 flex items-center gap-4 px-4 sm:px-6 lg:px-8 justify-end">
-      <.theme_toggle />
-      <%= if @current_scope do %>
-        <li>
-          {@current_scope.user.name}
-        </li>
-        <li>
-          <.link href={~p"/users/settings"}>Settings</.link>
-        </li>
-        <li>
-          <.link href={~p"/users/log-out"} method="delete">Log out</.link>
-        </li>
-      <% else %>
-        <li>
-          <.link href={~p"/users/register"}>Register</.link>
-        </li>
-        <li>
-          <.link href={~p"/users/log-in"}>Log in</.link>
-        </li>
-      <% end %>
-    </ul>
     {@inner_content}
   </body>
 </html>

@@ -1,6 +1,14 @@
 // Debug preview panel — shows the deskewed card and one preview per pHash region.
+//
+// Also holds the deskewed capture behind each open popout so the popout's
+// "Save scan capture" button can export it as a recognition-test fixture
+// (see `saveScanCapture`).
 
 const DEBUG_KEY = "tabletop:card-debug"
+
+// Where the exported fixture files are meant to end up — quoted in the
+// console hint so the tester doesn't have to go looking.
+const FIXTURE_DIR_HINT = "tabletop/test/tabletop/cards/fixtures/recognition/"
 
 export function isDebugEnabled() {
   return localStorage.getItem(DEBUG_KEY) === "true"
@@ -15,8 +23,6 @@ let _debugPanel = null
 const HASH_KIND_COLORS = {
   art: "#8cf",
   art_flipped: "#c8f",
-  art_left: "#fa6",
-  art_right: "#fc6",
   full: "#9d9",
 }
 
@@ -87,14 +93,11 @@ export function showDebugPanel(result) {
   // Deskewed card capture — what OpenCV produced.
   if (result.cardCanvas) {
     const angle = result.angle ? ` ${Math.abs(result.angle).toFixed(1)}°` : ""
-    const layout = result.layout ? ` (${result.layout})` : ""
+    const rotated = result.originalLayout && result.originalLayout !== result.layout
+      ? ` ↻ from ${result.originalLayout}`
+      : ""
+    const layout = result.layout ? ` (${result.layout}${rotated})` : ""
     addPreview(row, result.cardCanvas, `Deskewed card${layout}${angle}`, { maxWidth: 180, maxHeight: 240 })
-  }
-
-  // Title-bar capture — the region fed to OCR (vertical layout only).
-  if (result.titleCanvas) {
-    const ocrText = result.text ? ` "${result.text.slice(0, 40)}"` : ""
-    addPreview(row, result.titleCanvas, `Title (OCR)${ocrText}`, { maxWidth: 220, maxHeight: 60 })
   }
 
   // One preview per pHash region.
@@ -119,7 +122,10 @@ export function showDebugPanel(result) {
   let html = `<div style="font-weight: 600; margin-bottom: 3px; opacity: 0.8;">Detection signals</div>`
 
   if (result.layout) {
-    html += `<div style="margin-left: 8px;"><span style="color:#8cf">●</span> Layout: <b>${result.layout}</b></div>`
+    const rotated = result.originalLayout && result.originalLayout !== result.layout
+      ? ` (rotated from ${result.originalLayout})`
+      : ""
+    html += `<div style="margin-left: 8px;"><span style="color:#8cf">●</span> Layout: <b>${result.layout}</b>${rotated}</div>`
   }
 
   if (result.orientation) {
@@ -148,18 +154,202 @@ export function showDebugPanel(result) {
   document.body.appendChild(_debugPanel)
 }
 
+// --- fixture export ----------------------------------------------------
+
+// Deskewed captures for the popouts currently on screen, keyed by the popout's
+// card id. A scan can't know whether its capture is worth keeping — that call
+// is made later, by clicking "Save scan capture" in the popout — so the pixels
+// are parked here until the popout closes.
+//
+// Each entry holds a canvas (a few hundred KB), so the store is dropped on
+// popout close and hard-capped besides: a LiveView reconnect can swap the DOM
+// without the popout hook's `destroyed` ever running.
+const MAX_REMEMBERED_CAPTURES = 20
+const _captures = new Map()
+const _captureListeners = new Set()
+
 /**
- * Draw a quadrilateral outline over the detected card corners.
- * quad: array of 4 {x, y} points in the detect-region's canvas pixel space.
- * detectRegion: {sx, sy} offset of the detect region in canvas pixels.
+ * Subscribe to changes in the held-capture set. Returns an unsubscribe fn.
+ *
+ * A popout can't just read the store once at mount: LiveView applies the
+ * render diff (mounting the popout) *before* it runs the `open_card` reply
+ * callback that parks the capture, so at mount time there is nothing there
+ * yet. Subscribing makes the button's enabled state order-independent, and
+ * also lets it disable itself if the capture is later evicted.
  */
-export function showCardQuad(canvasRect, quad, detectRegion, scaleX, scaleY, isFlipped) {
+export function onScanCaptureChange(listener) {
+  _captureListeners.add(listener)
+  return () => _captureListeners.delete(listener)
+}
+
+function notifyCaptureChange() {
+  for (const listener of _captureListeners) listener()
+}
+
+export function rememberScanCapture(cardId, result, match, meta = {}) {
+  if (cardId == null || !result?.cardCanvas) return
+  _captures.set(String(cardId), { result, match, meta })
+  while (_captures.size > MAX_REMEMBERED_CAPTURES) {
+    // Map iterates in insertion order, so this evicts the oldest.
+    _captures.delete(_captures.keys().next().value)
+  }
+  notifyCaptureChange()
+}
+
+export function forgetScanCapture(cardId) {
+  if (_captures.delete(String(cardId))) notifyCaptureChange()
+}
+
+export function hasScanCapture(cardId) {
+  return _captures.has(String(cardId))
+}
+
+function slug(value, fallback) {
+  const s = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+  return s || fallback
+}
+
+// 2026-07-29T11:24:05.123Z → "20260729-112405"
+function fileStamp() {
+  const iso = new Date().toISOString()
+  return `${iso.slice(0, 10).replace(/-/g, "")}-${iso.slice(11, 19).replace(/:/g, "")}`
+}
+
+function canvasToPngBlob(canvas) {
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"))
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  a.style.display = "none"
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  // Firefox cancels an in-flight download if the object URL dies too early.
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+}
+
+/**
+ * Export a remembered scan as a `recognition.test.mjs` fixture.
+ *
+ * Downloads two files sharing one basename:
+ *
+ *   * `<name>-<set>-<stamp>.png`  — the deskewed card exactly as it was hashed
+ *   * `<name>-<set>-<stamp>.json` — the sidecar the test replays it with
+ *
+ * Dropping both into `test/tabletop/cards/fixtures/recognition/` is the whole
+ * workflow: the test globs `*.json` in that directory, so there is no manifest
+ * to hand-edit. The sidecar records the capture-time art rect and hashes (so a
+ * replay is exact, not ratio-dependent) alongside the matched print's stored
+ * hashes (so the test can assert the match still lands).
+ *
+ * Browsers prompt once per site before allowing a second automatic download —
+ * allow it, or only the PNG arrives.
+ *
+ * @param {string} cardId - Popout card id the capture was remembered under.
+ * @returns {Promise<string|null>} The basename written, or null if nothing was saved.
+ */
+export async function saveScanCapture(cardId) {
+  const stored = _captures.get(String(cardId))
+  if (!stored) return null
+
+  const { result, match, meta } = stored
+  const blob = await canvasToPngBlob(result.cardCanvas)
+  if (!blob) {
+    console.warn("[CardScanner] Capture save failed: canvas produced no PNG blob")
+    return null
+  }
+
+  const base = [
+    slug(match?.card_name, "card"),
+    slug(match?.set_code, "set"),
+    fileStamp(),
+  ].join("-")
+
+  const computed = {}
+  for (const { kind, value } of result.phashes || []) {
+    computed[kind] = value.toString()
+  }
+
+  const regionScale = meta.regionScale ?? 1
+  const scenario = [
+    match?.card_name || "unmatched",
+    match?.set_code ? `(${match.set_code})` : null,
+    result.detectMethod,
+    regionScale > 1 ? `region ${(regionScale * 100).toFixed(0)}%` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+
+  const entry = {
+    scenario,
+    image: `${base}.png`,
+    expected_face_id: match?.face_id ?? null,
+    expected_card_name: match?.card_name ?? null,
+    // `layout` is what the recognition pipeline branches on. Horizontal
+    // captures are rotated to portrait upstream, so this is "vertical" for
+    // everything the scanner emits.
+    layout: result.layout || "vertical",
+    // The exact crop that was hashed — replaying with this makes the fixture
+    // independent of any later change to the fallback ratios.
+    art: result.artRect || null,
+    capture: {
+      width: result.cardCanvas.width,
+      height: result.cardCanvas.height,
+      region_scale: regionScale,
+      detect_method: result.detectMethod || null,
+      angle: result.angle ?? null,
+      orientation: result.orientation || null,
+      detected_pitch: result.detectedPitch ?? null,
+    },
+    computed_phashes: computed,
+    stored_phashes: match
+      ? {
+        image_phash: match.image_phash ?? null,
+        image_phash_full: match.image_phash_full ?? null,
+      }
+      : null,
+  }
+
+  downloadBlob(blob, `${base}.png`)
+  downloadBlob(new Blob([JSON.stringify(entry, null, 2)], { type: "application/json" }), `${base}.json`)
+
+  if (!match) {
+    console.warn(
+      `[CardScanner] Saved ${base}.* without stored hashes — the server sent no match details, ` +
+      "so the fixture can only be used once `stored_phashes` is filled in.",
+    )
+  } else {
+    console.log(`[CardScanner] Saved scan fixture ${base}.{png,json} → move both into ${FIXTURE_DIR_HINT}`)
+  }
+
+  return base
+}
+
+/**
+ * Draw a rounded-corner outline over the detected card quad. Shown for every
+ * scan (not gated on debug mode) — gives the player visual confirmation of
+ * what region was recognised, including any expansion from retry attempts.
+ *
+ *   quad: 4 {x, y} points in the detect-region's canvas pixel space (the
+ *         post-expansion source corners — i.e. the actual region warped).
+ *   detectRegion: {sx, sy} offset of the detect region in canvas pixels.
+ */
+export function drawCardBorder(canvasRect, quad, detectRegion, scaleX, scaleY, isFlipped) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
   svg.style.cssText = `
     position: fixed;
     left: ${canvasRect.left}px; top: ${canvasRect.top}px;
     width: ${canvasRect.width}px; height: ${canvasRect.height}px;
     pointer-events: none; z-index: 9998; overflow: visible;
+    transition: opacity 1s ease-out;
   `
 
   const points = quad.map(({ x, y }) => {
@@ -169,33 +359,51 @@ export function showCardQuad(canvasRect, quad, detectRegion, scaleX, scaleY, isF
       cx = canvasRect.width - cx
       cy = canvasRect.height - cy
     }
-    return `${cx},${cy}`
-  }).join(" ")
+    return { x: cx, y: cy }
+  })
 
-  const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon")
-  poly.setAttribute("points", points)
-  poly.setAttribute("fill", "none")
-  poly.setAttribute("stroke", "oklch(0.85 0.20 145)")
-  poly.setAttribute("stroke-width", "2")
-  poly.setAttribute("stroke-linejoin", "round")
-  svg.appendChild(poly)
-
-  const label = document.createElementNS("http://www.w3.org/2000/svg", "text")
-  const firstPt = quad[0]
-  let lx = (firstPt.x + detectRegion.sx) / scaleX
-  const ly = (firstPt.y + detectRegion.sy) / scaleY - 6
-  if (isFlipped) lx = canvasRect.width - lx
-  label.setAttribute("x", lx)
-  label.setAttribute("y", ly)
-  label.setAttribute("fill", "oklch(0.85 0.20 145)")
-  label.setAttribute("font-size", "10")
-  label.setAttribute("font-weight", "600")
-  label.setAttribute("font-family", "monospace")
-  label.textContent = "Card"
-  svg.appendChild(label)
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path")
+  path.setAttribute("d", roundedQuadPath(points, 12))
+  path.setAttribute("fill", "none")
+  path.setAttribute("stroke", "oklch(0.85 0.20 145)")
+  path.setAttribute("stroke-width", "2")
+  path.setAttribute("stroke-linejoin", "round")
+  svg.appendChild(path)
 
   document.body.appendChild(svg)
   return svg
+}
+
+// Build an SVG `d` attribute that traces the four-corner `quad` with rounded
+// corners of approximately `radius` px (clamped to half the shorter adjacent
+// edge so adjacent corners can't overlap). Each corner is replaced by a
+// quadratic Bezier between two points placed `radius` along each adjacent edge.
+function roundedQuadPath(quad, radius) {
+  const corners = quad.map((cur, i) => {
+    const prev = quad[(i + 3) % 4]
+    const next = quad[(i + 1) % 4]
+    const vIn = { x: prev.x - cur.x, y: prev.y - cur.y }
+    const vOut = { x: next.x - cur.x, y: next.y - cur.y }
+    const lenIn = Math.hypot(vIn.x, vIn.y) || 1
+    const lenOut = Math.hypot(vOut.x, vOut.y) || 1
+    const rIn = Math.min(radius, lenIn / 2)
+    const rOut = Math.min(radius, lenOut / 2)
+    return {
+      cur,
+      pIn: { x: cur.x + (vIn.x / lenIn) * rIn, y: cur.y + (vIn.y / lenIn) * rIn },
+      pOut: { x: cur.x + (vOut.x / lenOut) * rOut, y: cur.y + (vOut.y / lenOut) * rOut },
+    }
+  })
+
+  const fmt = (n) => n.toFixed(1)
+  let d = `M ${fmt(corners[0].pIn.x)} ${fmt(corners[0].pIn.y)}`
+  for (let i = 0; i < 4; i++) {
+    const c = corners[i]
+    d += ` Q ${fmt(c.cur.x)} ${fmt(c.cur.y)} ${fmt(c.pOut.x)} ${fmt(c.pOut.y)}`
+    const next = corners[(i + 1) % 4]
+    d += ` L ${fmt(next.pIn.x)} ${fmt(next.pIn.y)}`
+  }
+  return d + " Z"
 }
 
 export function showBoundingBox(_container, canvasRect, cssX, cssY, cssW, cssH, isFlipped, color, label) {

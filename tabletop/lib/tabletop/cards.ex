@@ -8,8 +8,8 @@ defmodule Tabletop.Cards do
     * `CardPrint` is a physical printing/face (image, art_type, orientation,
       pHashes).
 
-  pHash matching queries `card_prints`; OCR/text matching queries `cards` and
-  surfaces a canonical print for display.
+  pHash matching queries `card_prints`; the manual name search queries `cards`
+  and surfaces a canonical print for display.
   """
 
   import Ecto.Query, warn: false
@@ -59,20 +59,18 @@ defmodule Tabletop.Cards do
   pHashes from the client.
 
   `phashes` is a map of `%{kind => integer | nil}` with kinds:
-    * `:art`           — vertical art crop
-    * `:art_flipped`   — vertical art crop, 180-rotated (orientation-uncertain)
-    * `:art_left`      — horizontal half (one of two)
-    * `:art_right`     — horizontal half (the other)
+    * `:art`           — art crop
+    * `:art_flipped`   — art crop, 180-rotated (orientation-uncertain)
     * `:full`          — whole-card hash
 
+  Horizontal (landscape) cards are rotated to portrait by the scanner and
+  matched the same way as vertical cards; the `:art`/`:art_flipped` pair
+  absorbs the player's 180° flip.
+
   Per-kind thresholds:
-    * `:art`, `:art_flipped`, `:art_left`, `:art_right` — Hamming distance < 15
+    * `:art`, `:art_flipped` — Hamming distance < 15
     * `:full` — Hamming distance < 8 (whole-card hashes are generous due to
       shared frame/border content)
-
-  For horizontal cards the test is 4-way (`art_left` × `art_right` against
-  stored `image_phash_left` × `image_phash_right`) so the player's 180° flip
-  is absorbed.
 
   Returns up to 5 `%CardPrint{}` rows preloaded with `:card`, ordered by the
   best (lowest) raw Hamming distance across all qualifying arms.
@@ -80,8 +78,6 @@ defmodule Tabletop.Cards do
   def find_by_p_hash_similarity(phashes) when is_map(phashes) do
     art = phashes[:art]
     art_flipped = phashes[:art_flipped]
-    art_left = phashes[:art_left]
-    art_right = phashes[:art_right]
     full = phashes[:full]
 
     miss = @miss_sentinel
@@ -93,14 +89,6 @@ defmodule Tabletop.Cards do
         fragment(
           """
           (? IS NOT NULL AND ?::bigint IS NOT NULL
-              AND bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) < ?)
-          OR (? IS NOT NULL AND ?::bigint IS NOT NULL
-              AND bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) < ?)
-          OR (? IS NOT NULL AND ?::bigint IS NOT NULL
-              AND bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) < ?)
-          OR (? IS NOT NULL AND ?::bigint IS NOT NULL
-              AND bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) < ?)
-          OR (? IS NOT NULL AND ?::bigint IS NOT NULL
               AND bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) < ?)
           OR (? IS NOT NULL AND ?::bigint IS NOT NULL
               AND bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) < ?)
@@ -119,30 +107,6 @@ defmodule Tabletop.Cards do
           cp.image_phash,
           type(^art_flipped, :integer),
           ^art_t,
-          # art_left vs image_phash_left
-          cp.image_phash_left,
-          type(^art_left, :integer),
-          cp.image_phash_left,
-          type(^art_left, :integer),
-          ^art_t,
-          # art_left vs image_phash_right
-          cp.image_phash_right,
-          type(^art_left, :integer),
-          cp.image_phash_right,
-          type(^art_left, :integer),
-          ^art_t,
-          # art_right vs image_phash_left
-          cp.image_phash_left,
-          type(^art_right, :integer),
-          cp.image_phash_left,
-          type(^art_right, :integer),
-          ^art_t,
-          # art_right vs image_phash_right
-          cp.image_phash_right,
-          type(^art_right, :integer),
-          cp.image_phash_right,
-          type(^art_right, :integer),
-          ^art_t,
           # full vs image_phash_full
           cp.image_phash_full,
           type(^full, :integer),
@@ -154,18 +118,6 @@ defmodule Tabletop.Cards do
         fragment(
           """
           LEAST(
-            CASE WHEN ? IS NOT NULL AND ?::bigint IS NOT NULL
-                      AND bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) < ?
-                 THEN bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) ELSE ? END,
-            CASE WHEN ? IS NOT NULL AND ?::bigint IS NOT NULL
-                      AND bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) < ?
-                 THEN bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) ELSE ? END,
-            CASE WHEN ? IS NOT NULL AND ?::bigint IS NOT NULL
-                      AND bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) < ?
-                 THEN bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) ELSE ? END,
-            CASE WHEN ? IS NOT NULL AND ?::bigint IS NOT NULL
-                      AND bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) < ?
-                 THEN bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) ELSE ? END,
             CASE WHEN ? IS NOT NULL AND ?::bigint IS NOT NULL
                       AND bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) < ?
                  THEN bit_count((?::bit(64) # ?::bigint::bit(64))::bit(64)) ELSE ? END,
@@ -194,42 +146,6 @@ defmodule Tabletop.Cards do
           ^art_t,
           cp.image_phash,
           type(^art_flipped, :integer),
-          ^miss,
-          # art_left × image_phash_left
-          cp.image_phash_left,
-          type(^art_left, :integer),
-          cp.image_phash_left,
-          type(^art_left, :integer),
-          ^art_t,
-          cp.image_phash_left,
-          type(^art_left, :integer),
-          ^miss,
-          # art_left × image_phash_right
-          cp.image_phash_right,
-          type(^art_left, :integer),
-          cp.image_phash_right,
-          type(^art_left, :integer),
-          ^art_t,
-          cp.image_phash_right,
-          type(^art_left, :integer),
-          ^miss,
-          # art_right × image_phash_left
-          cp.image_phash_left,
-          type(^art_right, :integer),
-          cp.image_phash_left,
-          type(^art_right, :integer),
-          ^art_t,
-          cp.image_phash_left,
-          type(^art_right, :integer),
-          ^miss,
-          # art_right × image_phash_right
-          cp.image_phash_right,
-          type(^art_right, :integer),
-          cp.image_phash_right,
-          type(^art_right, :integer),
-          ^art_t,
-          cp.image_phash_right,
-          type(^art_right, :integer),
           ^miss,
           # full
           cp.image_phash_full,
@@ -276,7 +192,7 @@ defmodule Tabletop.Cards do
     |> Enum.uniq_by(& &1.pitch)
   end
 
-  # --- Fuzzy text match against Card (OCR fallback) ---
+  # --- Fuzzy text match against Card (manual name search) ---
 
   # Scoring formula:
   # - Trigram similarity of the full normalized name
@@ -294,13 +210,13 @@ defmodule Tabletop.Cards do
      ) s) * 2
   """
 
-  def fuzzy_match_name(ocr_text) do
-    normalized = OcrNormalizer.normalize(ocr_text)
+  def fuzzy_match_name(query_text) do
+    normalized = OcrNormalizer.normalize(query_text)
 
     if String.length(normalized) < 3 || String.length(normalized) > 100 do
       []
     else
-      fuzzy_match_normalized(normalized, OcrNormalizer.tokens(ocr_text))
+      fuzzy_match_normalized(normalized, OcrNormalizer.tokens(query_text))
     end
   end
 

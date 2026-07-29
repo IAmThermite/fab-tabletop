@@ -1,6 +1,7 @@
 defmodule TabletopWeb.CameraSetupLive do
   use TabletopWeb, :live_view
   use TabletopWeb.CardLookup
+  use TabletopWeb.GameControls
 
   alias Tabletop.Fab.GameState
   alias Tabletop.Games
@@ -174,13 +175,21 @@ defmodule TabletopWeb.CameraSetupLive do
     </Layouts.game>
 
     <script :type={ColocatedHook} name=".CameraSetup">
-      import { setupCardLookup, preloadTesseract } from "@/js/card_scanner/liveview_hook.js"
+      import { setupCardLookup, preloadScanner } from "@/js/card_scanner/liveview_hook.js"
       import { isDebugEnabled, setDebugEnabled } from "@/js/card_scanner/debug.js"
       import CameraRelayReceiver from "@/js/camera_relay_receiver.js"
 
       export default {
         mounted() {
           const el = this.el
+
+          // Mark this game's camera confirmed only once the server confirms the
+          // user is a participant — never optimistically on click — so a failed
+          // join can't set the flag and trap the user out of the join flow.
+          this.handleEvent("camera_confirmed", ({ game_id }) => {
+            localStorage.setItem(`tabletop:camera-confirmed:${game_id}`, "true")
+          })
+
           const videoEl = document.getElementById("test-local-video")
           const canvasEl = document.getElementById("test-canvas")
           const noCameraEl = document.getElementById("test-no-camera")
@@ -212,7 +221,10 @@ defmodule TabletopWeb.CameraSetupLive do
           debugToggle.checked = isDebugEnabled()
           debugToggle.addEventListener("change", () => setDebugEnabled(debugToggle.checked))
 
-          // Flip toggle (load preference but no canvas to flip on setup page)
+          // Flip toggle. This only affects the opponent's board in-game; the
+          // setup canvas shows your own camera and is never flipped here. The
+          // toggle defaults to off — in-game the opponent's board is rotated
+          // 180° by default, and turning this on rotates it back to upright.
           const FLIP_KEY = "tabletop:flip-opponent"
           flipToggle.checked = localStorage.getItem(FLIP_KEY) === "true"
           flipToggle.addEventListener("change", () => {
@@ -383,10 +395,11 @@ defmodule TabletopWeb.CameraSetupLive do
 
             const gameId = el.dataset.gameId
             if (gameId) {
-              // When invoked from a game's pre-join flow, jump straight into
-              // the game (joining if needed) instead of bouncing back through
-              // pre-join.
-              localStorage.setItem(`tabletop:camera-confirmed:${gameId}`, "true")
+              // When invoked from a game's pre-join flow: a creator (already a
+              // participant) jumps straight into the game; a not-yet-joined user is
+              // routed back to pre-join to pick their hero before joining. The
+              // server decides which — see `save_and_join`. The `camera-confirmed`
+              // flag is set by the server's "camera_confirmed" event, not here.
               localStorage.setItem("tabletop:camera-source", this._usingPhone ? "phone" : "webcam")
               this.pushEvent("save_and_join", {})
             } else {
@@ -397,9 +410,9 @@ defmodule TabletopWeb.CameraSetupLive do
 
           start()
 
-          // Card lookup — click on canvas to OCR card name
+          // Card lookup — click on canvas to identify the card via pHash
           const gameArea = document.getElementById("game-area")
-          preloadTesseract()
+          preloadScanner()
           setupCardLookup(this, canvasEl, gameArea)
 
           // --- Phone Camera Relay ---
@@ -526,121 +539,39 @@ defmodule TabletopWeb.CameraSetupLive do
     with %{user: %{id: _}} <- scope,
          {:ok, game} <- fetch_game_for_setup(scope, game_id) do
       if Games.user_part_of_game?(scope, game) do
-        {:noreply, push_navigate(socket, to: ~p"/games/#{game}")}
+        {:noreply,
+         socket
+         |> push_event("camera_confirmed", %{game_id: game.id})
+         |> push_navigate(to: ~p"/games/#{game}")}
       else
-        case Games.join_game(scope, game) do
-          {:ok, game} ->
-            {:noreply,
-             socket
-             |> put_flash(:info, "Joined game successfully")
-             |> push_navigate(to: ~p"/games/#{game}")}
-
-          {:error, :already_in_game} ->
-            {:noreply,
-             socket
-             |> put_flash(
-               :error,
-               "You're already in a game. Finish or leave it before joining another."
-             )
-             |> push_navigate(to: ~p"/")}
-
-          {:error, _reason} ->
-            {:noreply,
-             socket
-             |> put_flash(:error, "Unable to join game. It may no longer be available.")
-             |> push_navigate(to: ~p"/")}
-        end
+        # A not-yet-joined user must declare their hero in pre-join before joining,
+        # so route them there rather than joining directly here. Camera setup is
+        # marked done (localStorage set before this event fires), so pre-join now
+        # shows the hero picker + camera preview instead of bouncing back here.
+        {:noreply, push_navigate(socket, to: ~p"/games/#{game}/pre-join")}
       end
     else
       _ -> {:noreply, push_navigate(socket, to: ~p"/")}
     end
   end
 
-  def handle_event("toggle_damage", %{"type" => type}, socket) do
-    apply_action(socket, GameState.toggle_damage(my(socket), validate_damage_type(type)))
-  end
-
-  def handle_event("change_damage", %{"type" => type, "delta" => delta}, socket) do
-    apply_action(
-      socket,
-      GameState.change_damage(my(socket), validate_damage_type(type), String.to_integer(delta))
-    )
-  end
-
-  def handle_event("toggle_goagain", _params, socket) do
-    apply_action(socket, GameState.toggle_goagain(my(socket)))
-  end
-
-  def handle_event("toggle_effect", %{"type" => type, "category" => category}, socket) do
-    apply_action(socket, GameState.toggle_effect(my(socket), category, type))
-  end
-
-  def handle_event(
-        "change_effect_count",
-        %{"type" => type, "category" => category, "delta" => delta},
-        socket
-      ) do
-    apply_action(
-      socket,
-      GameState.change_effect_count(my(socket), category, type, String.to_integer(delta))
-    )
-  end
-
-  def handle_event("change_life", %{"delta" => delta}, socket) do
-    apply_action(socket, GameState.change_life(my(socket), String.to_integer(delta)))
-  end
-
-  def handle_event("reset_chain", _params, socket) do
-    apply_action(socket, GameState.reset_chain(my(socket)))
-  end
-
-  def handle_event(
-        "move_tile",
-        %{"tile_id" => tile_id, "x" => x, "y" => y, "owner" => _owner},
-        socket
-      ) do
-    apply_action(socket, GameState.move_tile(my(socket), tile_id, to_float(x), to_float(y)))
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "abilities"}, socket) do
-    {:noreply, assign(socket, :abilities_open, !socket.assigns.abilities_open)}
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "on_hits"}, socket) do
-    new_open = !socket.assigns.on_hits_open
-
-    socket =
-      socket
-      |> assign(:on_hits_open, new_open)
-      |> assign(:create_token_open, new_open && socket.assigns.create_token_open)
-
-    {:noreply, socket}
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "create_token"}, socket) do
-    {:noreply, assign(socket, :create_token_open, !socket.assigns.create_token_open)}
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "create_proxy_token"}, socket) do
-    {:noreply, assign(socket, :create_proxy_token_open, !socket.assigns.create_proxy_token_open)}
-  end
-
-  def handle_event("toggle_dropdown", %{"name" => "proxy_tokens_panel"}, socket) do
-    {:noreply, assign(socket, :proxy_tokens_expanded, !socket.assigns.proxy_tokens_expanded)}
-  end
-
-  def handle_event("add_proxy_token", %{"type" => name}, socket) do
-    apply_action(socket, GameState.add_proxy_token(my(socket), name))
-  end
-
-  def handle_event("remove_proxy_token", %{"type" => name}, socket) do
-    apply_action(socket, GameState.remove_proxy_token(my(socket), name))
+  # Callback for `TabletopWeb.GameControls`: apply the action to this page's
+  # local preview state. There is only one player on the setup screen, so
+  # `move_tile`'s owner is irrelevant (`GameState.transform/2` ignores it).
+  def apply_game_action(socket, action) do
+    apply_action(socket, GameState.transform(my(socket), action))
   end
 
   defp my(socket), do: socket.assigns.game_state.my
 
   defp fetch_game_for_setup(_scope, nil), do: {:error, :not_found}
-  defp fetch_game_for_setup(scope, id), do: Games.get_game(scope, id)
+
+  # Unscoped lookup: a user reaching camera setup from the join flow is not yet
+  # a participant (they're about to join via `save_and_join`), so the
+  # participant-scoped `Games.get_game/2` would reject them and the join branch
+  # would be unreachable. Possession of the UUID is the invitation — same
+  # rationale as `GameLive.PreJoin.mount/3`.
+  defp fetch_game_for_setup(_scope, id), do: Games.fetch_game(id)
 
   defp apply_action(socket, {:ok, new_player, _broadcast_msg}) do
     {:noreply, assign(socket, :game_state, %{socket.assigns.game_state | my: new_player})}
@@ -652,18 +583,5 @@ defmodule TabletopWeb.CameraSetupLive do
 
   defp new_preview_state do
     %{my: GameState.default_player(), opponent: GameState.default_player()}
-  end
-
-  defp validate_damage_type("physical"), do: :physical
-  defp validate_damage_type("arcane"), do: :arcane
-
-  defp to_float(val) when is_float(val), do: val
-  defp to_float(val) when is_integer(val), do: val * 1.0
-
-  defp to_float(val) when is_binary(val) do
-    case Float.parse(val) do
-      {f, _} -> f
-      :error -> 0.0
-    end
   end
 end

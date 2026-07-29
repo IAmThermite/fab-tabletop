@@ -1,12 +1,19 @@
-// Frontend recognition test — mirrors the backend recognition_test.exs but
-// exercises the JS post-deskew pipeline. For each fixture entry, runs the
-// same hashing logic that scan-time uses and asserts the computed hashes
-// come within Hamming 15 of the Elixir-stored hashes for the expected
-// face_id (the same LEAST < 15 the SQL query enforces).
+// Frontend recognition test — exercises the JS post-deskew pipeline. For each
+// fixture entry, runs the same hashing logic that scan-time uses and asserts
+// the computed hashes land inside the per-kind Hamming thresholds against the
+// Elixir-stored hashes for the expected face_id (the same LEAST < threshold
+// the SQL query enforces).
+//
+// Fixtures come from the app itself: enable "Card scan debug overlay" in the
+// in-game settings dialog, scan a card, and click "Save scan capture" at the
+// bottom of the popout's debug block — the browser downloads a `<name>.png` +
+// `<name>.json` pair. Drop both into
+// `test/tabletop/cards/fixtures/recognition/` and they run from the next
+// `mix test.assets`.
 
 import test from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync, existsSync } from "node:fs"
+import { readFileSync, readdirSync, existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { PNG } from "pngjs"
@@ -15,8 +22,7 @@ import { computePhashesForLayout } from "../js/card_scanner/recognition_pipeline
 import { hammingDistance } from "../js/card_scanner/p_hash.js"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const FIXTURES_DIR = join(__dirname, "..", "..", "test", "fab_tabletop", "cards", "fixtures", "recognition")
-const MANIFEST_PATH = join(FIXTURES_DIR, "expected.json")
+const FIXTURES_DIR = join(__dirname, "..", "..", "test", "tabletop", "cards", "fixtures", "recognition")
 
 // Mirror cards.ex per-kind thresholds. `:full` is stricter because whole-card
 // hashes share frame/border content across cards.
@@ -27,15 +33,30 @@ function thresholdFor(kind) {
   return kind === "full" ? FULL_THRESHOLD : ART_THRESHOLD
 }
 
+// Every `*.json` in the fixtures directory contributes entries — either one
+// entry object or an array of them. That is what makes the in-app "Save scan
+// capture" button a one-step workflow: it downloads `<name>.png` +
+// `<name>.json`, you drop both in here, and the fixture is live with no
+// manifest to hand-edit.
+//
+// Fixtures are opt-in; with the directory absent the whole file is a no-op
+// (matches the empty-array branch below).
 function loadManifest() {
-  // Fixtures are opt-in: generate them with `mix run scripts/snapshot_recognition_fixtures.exs`.
-  // Until then the manifest is treated as empty so the test passes as a no-op
-  // (matches the empty-array branch below).
-  if (!existsSync(MANIFEST_PATH)) return []
-  const raw = readFileSync(MANIFEST_PATH, "utf-8")
-  const parsed = JSON.parse(raw)
-  if (!Array.isArray(parsed)) throw new Error(`Expected array in ${MANIFEST_PATH}, got ${typeof parsed}`)
-  return parsed
+  if (!existsSync(FIXTURES_DIR)) return []
+
+  const entries = []
+  for (const file of readdirSync(FIXTURES_DIR).sort()) {
+    if (!file.endsWith(".json")) continue
+
+    const parsed = JSON.parse(readFileSync(join(FIXTURES_DIR, file), "utf-8"))
+    for (const entry of Array.isArray(parsed) ? parsed : [parsed]) {
+      if (!entry || typeof entry !== "object" || typeof entry.image !== "string") {
+        throw new Error(`${file}: every fixture entry needs a string "image" field`)
+      }
+      entries.push({ ...entry, sourceFile: file })
+    }
+  }
+  return entries
 }
 
 function loadImageData(imagePath) {
@@ -67,16 +88,6 @@ function leastDistance(computed, stored) {
       if (stored.image_phash != null) {
         recordPairing(kind, "image_phash",
           Number(hammingDistance(v, BigInt(stored.image_phash))))
-      }
-    } else if (kind === "art_left" || kind === "art_right") {
-      // 4-way cross-product: client {left, right} × stored {left, right}
-      if (stored.image_phash_left != null) {
-        recordPairing(kind, "image_phash_left",
-          Number(hammingDistance(v, BigInt(stored.image_phash_left))))
-      }
-      if (stored.image_phash_right != null) {
-        recordPairing(kind, "image_phash_right",
-          Number(hammingDistance(v, BigInt(stored.image_phash_right))))
       }
     } else if (kind === "full") {
       if (stored.image_phash_full != null) {
@@ -110,16 +121,38 @@ for (const entry of manifest) {
     const image = loadImageData(imagePath)
 
     const computed = computePhashesForLayout(image, {
-      layout: entry.expected_orientation,
-      // Fixtures are treated as already-deskewed; let the pipeline use its
-      // fallback art ratios for vertical cards.
-      art: null,
+      // What the pipeline branches on. Horizontal captures are rotated to
+      // portrait by the worker, so every saved capture is "vertical".
+      layout: entry.layout || "vertical",
+      // Fixtures are already deskewed. A capture exported from the app carries
+      // the exact art rect it hashed; without one, fall back to the pipeline's
+      // ratios.
+      art: entry.art || null,
+      // Ignored by the pipeline (it always hashes both orientations) and the
+      // capture is already de-rotated — passed for documentation only.
       orientation: "upright",
     })
 
+    // The saved PNG must be a byte-faithful copy of the pixels the browser
+    // hashed at scan time, otherwise the fixture proves nothing about the
+    // live scanner. PNG is lossless, so these are expected to be identical.
+    if (entry.computed_phashes) {
+      for (const { kind, value } of computed) {
+        const captured = entry.computed_phashes[kind]
+        if (captured == null) continue
+        assert.equal(
+          value.toString(),
+          String(captured),
+          `${label}: replayed ${kind} hash ${value} != the ${captured} computed in-browser at ` +
+          `capture time — the fixture image is not the pixels that were scanned`,
+        )
+      }
+    }
+
     if (!entry.stored_phashes) {
       console.warn(
-        `  ⚠  ${label}: no stored_phashes in manifest. Run \`mix run scripts/snapshot_recognition_fixtures.exs\` to populate.`,
+        `  ⚠  ${label}: no stored_phashes in ${entry.sourceFile}. Re-export it with the ` +
+        `popout's "Save scan capture" button so the matched print's hashes are recorded.`,
       )
       // Print computed values to help the user verify.
       for (const { kind, value } of computed) {

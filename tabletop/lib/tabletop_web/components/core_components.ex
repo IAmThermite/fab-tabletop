@@ -91,11 +91,15 @@ defmodule TabletopWeb.CoreComponents do
   """
   attr(:rest, :global, include: ~w(href navigate patch method download name value disabled))
   attr(:class, :any)
-  attr(:variant, :string, values: ~w(primary))
+  attr(:variant, :string, values: ~w(primary danger))
   slot(:inner_block, required: true)
 
   def button(%{rest: rest} = assigns) do
-    variants = %{"primary" => "btn-primary", nil => "btn-primary btn-soft"}
+    variants = %{
+      "primary" => "btn-primary",
+      "danger" => "btn-error",
+      nil => "btn-primary btn-soft"
+    }
 
     assigns =
       assign_new(assigns, :class, fn ->
@@ -116,6 +120,40 @@ defmodule TabletopWeb.CoreComponents do
       """
     end
   end
+
+  @doc """
+  Renders persistent, clickable banners for a player's outstanding actions
+  (check in, play your match, …). Items come from
+  `Tabletop.Tournaments.player_action_items/1` (maps with `:type`, `:message`,
+  and `:path`). Renders nothing when there's nothing to act on.
+
+  ## Examples
+
+      <.notification_banners items={@notification_items} />
+  """
+  attr(:items, :list, default: [])
+
+  def notification_banners(assigns) do
+    ~H"""
+    <div :if={@items != []} class="space-y-2 mb-4">
+      <.link
+        :for={item <- @items}
+        navigate={item.path}
+        class="flex items-center justify-between gap-3 border-2 border-primary rounded-lg p-3 bg-primary/10 hover:bg-primary/20"
+      >
+        <div class="flex items-center gap-2">
+          <.icon name={notification_icon(item.type)} class="size-5 shrink-0 text-primary" />
+          <span class="font-medium">{item.message}</span>
+        </div>
+        <.icon name="hero-arrow-right" class="size-4 shrink-0 opacity-60" />
+      </.link>
+    </div>
+    """
+  end
+
+  defp notification_icon(:check_in), do: "hero-clipboard-document-check"
+  defp notification_icon(:match), do: "hero-play"
+  defp notification_icon(_), do: "hero-bell"
 
   @doc """
   Renders an input with label and error messages.
@@ -329,6 +367,83 @@ defmodule TabletopWeb.CoreComponents do
       </div>
       <div class="flex-none">{render_slot(@actions)}</div>
     </header>
+    """
+  end
+
+  @doc """
+  Renders a UTC datetime in the viewer's *local* timezone, with an optional
+  live "in X days Y hours Z minutes" countdown until that moment.
+
+  The server only ever stores/holds UTC and there is no server-side timezone
+  database here, so the actual timezone formatting happens in the browser
+  (mirroring the round-deadline countdown in the tournament views). Pass a
+  `%DateTime{}` (assumed UTC) or `nil` as `:at`.
+
+  ## Examples
+
+      <.local_datetime id="starts" at={@tournament.starts_at} countdown />
+  """
+  attr(:id, :string, required: true)
+  attr(:at, :any, default: nil, doc: "a %DateTime{} in UTC, or nil")
+  attr(:countdown, :boolean, default: false, doc: "show a live countdown until `at`")
+  attr(:class, :any, default: nil)
+  attr(:placeholder, :string, default: "Not scheduled")
+
+  def local_datetime(assigns) do
+    ~H"""
+    <span
+      :if={@at}
+      id={@id}
+      class={@class}
+      phx-hook=".LocalDateTime"
+      data-at={@at |> DateTime.truncate(:second) |> DateTime.to_iso8601()}
+      data-countdown={to_string(@countdown)}
+    >
+      <span data-local>…</span><span :if={@countdown} data-until class="opacity-70"></span>
+    </span>
+    <span :if={is_nil(@at)} class={@class}>{@placeholder}</span>
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".LocalDateTime">
+      export default {
+        mounted() { this.render(); this.schedule(); },
+        updated() { this.render(); this.schedule(); },
+        destroyed() { clearInterval(this.timer); },
+        schedule() {
+          clearInterval(this.timer);
+          if (this.el.dataset.countdown === "true") {
+            this.timer = setInterval(() => this.render(), 1000);
+          }
+        },
+        render() {
+          const at = this.el.dataset.at;
+          if (!at) return;
+          const d = new Date(at);
+          if (isNaN(d.getTime())) return;
+          const localEl = this.el.querySelector("[data-local]");
+          if (localEl) {
+            localEl.textContent = d.toLocaleString(undefined, {
+              dateStyle: "medium",
+              timeStyle: "short"
+            });
+          }
+          const untilEl = this.el.querySelector("[data-until]");
+          if (untilEl) untilEl.textContent = " · " + this.until(d);
+        },
+        until(d) {
+          const ms = d.getTime() - Date.now();
+          if (ms <= 0) return "starting now";
+          let mins = Math.floor(ms / 60000);
+          const days = Math.floor(mins / (60 * 24));
+          mins -= days * 60 * 24;
+          const hours = Math.floor(mins / 60);
+          mins -= hours * 60;
+          const parts = [];
+          if (days) parts.push(days + (days === 1 ? " day" : " days"));
+          if (hours) parts.push(hours + (hours === 1 ? " hour" : " hours"));
+          if (mins || parts.length === 0) parts.push(mins + (mins === 1 ? " minute" : " minutes"));
+          return "in " + parts.join(" ");
+        }
+      }
+    </script>
     """
   end
 

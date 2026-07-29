@@ -15,6 +15,11 @@ alias Tabletop.Games
 alias Tabletop.Games.Game
 alias Tabletop.Repo
 
+{:ok, admin_user} =
+  Accounts.register_user(%{email: "admin@test.com", password: "password", name: "Admin User"})
+
+Repo.update(User.confirm_changeset(admin_user))
+
 {:ok, user1} =
   Accounts.register_user(%{email: "user1@test.com", password: "password", name: "User 1"})
 
@@ -37,14 +42,16 @@ user2_scope = Scope.for_user(user2)
   Games.create_game(user1_scope, %{
     title: "Game 1",
     description: "A test game created by user 1",
-    format: :classic_constructed
+    format: :classic_constructed,
+    hero: hd(Tabletop.Heroes.legal_for(:classic_constructed)).slug
   })
 
 {:ok, _game2} =
   Games.create_game(user2_scope, %{
     title: "Game 2",
     description: "A test game created by user 2",
-    format: :silver_age
+    format: :silver_age,
+    hero: hd(Tabletop.Heroes.legal_for(:silver_age)).slug
   })
 
 # populate card database

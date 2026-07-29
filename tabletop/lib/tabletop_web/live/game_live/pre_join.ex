@@ -3,6 +3,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
 
   alias Tabletop.Games
   alias Tabletop.Games.Game
+  alias Tabletop.Heroes
 
   on_mount {TabletopWeb.UserAuth, :require_authenticated}
 
@@ -19,6 +20,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
         data-user-token={@user_token}
         data-ice-servers={Jason.encode!(@ice_servers)}
         data-camera-relay-token={@camera_relay_token}
+        data-skip-allowed={to_string(@mode == :creator)}
         class="flex flex-col h-full"
       >
         <%!-- Share-code prompt (one-time, after creating a private game) --%>
@@ -79,6 +81,58 @@ defmodule TabletopWeb.GameLive.PreJoin do
             </p>
           </div>
           <.share_code_button id="pre-join-banner-share-btn" code={@game.id} label="Share code" />
+        </div>
+
+        <%!-- Hero selection (joiner only) — a prominent required step. Made large
+              and colour-highlighted so it's obvious you must pick a hero before you
+              can continue. Server-driven (value from @selected_hero); the plain
+              form fires phx-change. The client-driven camera controls in the bottom
+              bar are static markup, so this re-render doesn't reset them. --%>
+        <div
+          :if={@mode == :joiner}
+          id="pre-join-hero-picker"
+          class={[
+            "px-4 py-3 border-b-2 flex flex-wrap items-center gap-x-5 gap-y-3",
+            if(@selected_hero,
+              do: "bg-success/10 border-success/40",
+              else: "bg-warning/15 border-warning/50"
+            )
+          ]}
+        >
+          <div class="flex items-center gap-3 min-w-0">
+            <.hero_portrait hero={@selected_hero} class="size-14 ring-2 ring-base-100" />
+            <div class="min-w-0">
+              <p class="font-bold text-lg leading-tight">
+                <span :if={@selected_hero}>Playing {Heroes.name(@selected_hero)}</span>
+                <span :if={is_nil(@selected_hero)}>Choose your hero</span>
+              </p>
+              <p class="text-sm opacity-80">
+                <span :if={@selected_hero}>Change it below, or continue to join.</span>
+                <span :if={is_nil(@selected_hero)}>
+                  Pick the hero you're playing before you can join this game.
+                </span>
+              </p>
+            </div>
+          </div>
+
+          <form phx-change="select_hero" class="ml-auto shrink-0">
+            <select
+              name="hero"
+              class="select select-lg select-bordered w-72 max-w-full font-semibold"
+              aria-label="Select the hero you're playing"
+            >
+              <option value="" disabled selected={is_nil(@selected_hero)}>
+                — Select your hero —
+              </option>
+              <option
+                :for={{name, slug} <- @hero_options}
+                value={slug}
+                selected={@selected_hero == slug}
+              >
+                {name}
+              </option>
+            </select>
+          </form>
         </div>
 
         <%!-- Main area --%>
@@ -163,6 +217,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
                 id="pre-join-continue-btn"
                 type="button"
                 phx-click="continue"
+                disabled={@mode == :joiner and is_nil(@selected_hero)}
                 class="btn btn-sm btn-primary"
               >
                 Continue
@@ -200,6 +255,14 @@ defmodule TabletopWeb.GameLive.PreJoin do
 
           console.log("[PreJoin] mounted, gameId:", gameId)
 
+          // Mark this game's camera confirmed only once the server confirms the
+          // user is a participant (creator, or a successful join) — never
+          // optimistically on click — so a failed join can't set the flag and
+          // make this screen skip itself (and the join) on the next visit.
+          this.handleEvent("camera_confirmed", ({ game_id }) => {
+            localStorage.setItem(`tabletop:camera-confirmed:${game_id}`, "true")
+          })
+
           // Require camera setup before pre-join
           if (localStorage.getItem("tabletop:camera-setup-done") !== "true") {
             console.log("[PreJoin] camera setup not done, redirecting")
@@ -207,8 +270,14 @@ defmodule TabletopWeb.GameLive.PreJoin do
             return
           }
 
-          // Skip pre-join if camera already confirmed for this game
-          if (localStorage.getItem(`tabletop:camera-confirmed:${gameId}`) === "true") {
+          // Skip pre-join only for a user already in the game who has confirmed
+          // their camera for it. Never skip for a not-yet-joined user: skipping
+          // bypasses the join (which happens on "Continue") and would dead-end
+          // them on the game page as a non-participant. `skipAllowed` is driven
+          // by the server (true only when the user is already a participant), so
+          // a stale `camera-confirmed` flag can't strand them.
+          const skipAllowed = el.dataset.skipAllowed === "true"
+          if (skipAllowed && localStorage.getItem(`tabletop:camera-confirmed:${gameId}`) === "true") {
             console.log("[PreJoin] already confirmed, skipping to game")
             window.location.href = `/games/${gameId}`
             return
@@ -407,11 +476,12 @@ defmodule TabletopWeb.GameLive.PreJoin do
             }
           })
 
-          // Store camera settings on continue so the game show page
-          // knows the user confirmed their camera and which source to use
+          // Store the chosen camera source on continue. The `camera-confirmed`
+          // flag is set by the server's "camera_confirmed" event only once it
+          // confirms participation, not here, so a failed join never marks the
+          // game confirmed.
           const continueBtn = document.getElementById("pre-join-continue-btn")
           continueBtn.addEventListener("click", () => {
-            localStorage.setItem(`tabletop:camera-confirmed:${gameId}`, "true")
             localStorage.setItem("tabletop:camera-source", usingPhone ? "phone" : "webcam")
           })
 
@@ -492,6 +562,8 @@ defmodule TabletopWeb.GameLive.PreJoin do
     |> assign(:camera_relay_token, camera_relay_token)
     |> assign(:ice_servers, Tabletop.Turn.ice_servers(scope.user.id))
     |> assign(:qr_svg, qr_svg)
+    |> assign(:hero_options, [])
+    |> assign(:selected_hero, nil)
   end
 
   defp mount_pre_join(socket, game, :joiner, scope) do
@@ -518,6 +590,8 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:camera_relay_token, camera_relay_token)
         |> assign(:ice_servers, Tabletop.Turn.ice_servers(scope.user.id))
         |> assign(:qr_svg, qr_svg)
+        |> assign(:hero_options, Heroes.options_for(game.format))
+        |> assign(:selected_hero, nil)
 
       {:error, reason} ->
         message =
@@ -537,6 +611,8 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:user_token, "")
         |> assign(:camera_relay_token, "")
         |> assign(:qr_svg, "")
+        |> assign(:hero_options, [])
+        |> assign(:selected_hero, nil)
     end
   end
 
@@ -544,15 +620,27 @@ defmodule TabletopWeb.GameLive.PreJoin do
   def handle_event("continue", _params, socket) do
     case socket.assigns.mode do
       :creator ->
-        {:noreply, push_navigate(socket, to: ~p"/games/#{socket.assigns.game}")}
+        game = socket.assigns.game
+
+        {:noreply,
+         socket
+         |> push_event("camera_confirmed", %{game_id: game.id})
+         |> push_navigate(to: ~p"/games/#{game}")}
 
       :joiner ->
-        case Games.join_game(socket.assigns.current_scope, socket.assigns.game) do
+        scope = socket.assigns.current_scope
+
+        case Games.join_game(scope, socket.assigns.game, socket.assigns.selected_hero) do
           {:ok, game} ->
             {:noreply,
              socket
              |> put_flash(:info, "Joined game successfully")
+             |> push_event("camera_confirmed", %{game_id: game.id})
              |> push_navigate(to: ~p"/games/#{game}")}
+
+          {:error, :invalid_hero} ->
+            {:noreply,
+             put_flash(socket, :error, "Choose the hero you're playing before joining.")}
 
           {:error, :already_in_game} ->
             {:noreply,
@@ -570,6 +658,17 @@ defmodule TabletopWeb.GameLive.PreJoin do
              |> push_navigate(to: ~p"/")}
         end
     end
+  end
+
+  def handle_event("select_hero", %{"hero" => slug}, socket) do
+    # Accept only a hero present in the offered (format-legal) options; ignore the
+    # blank prompt or any tampered value.
+    selected =
+      if Enum.any?(socket.assigns.hero_options, fn {_name, s} -> s == slug end),
+        do: slug,
+        else: nil
+
+    {:noreply, assign(socket, :selected_hero, selected)}
   end
 
   def handle_event("dismiss_share_prompt", _params, socket) do

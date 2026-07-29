@@ -23,6 +23,12 @@ end
 config :tabletop, TabletopWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+if admin_emails = System.get_env("ADMIN_EMAILS") do
+  config :tabletop,
+         :admin_emails,
+         admin_emails |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

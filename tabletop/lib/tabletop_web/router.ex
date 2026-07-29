@@ -57,7 +57,10 @@ defmodule TabletopWeb.Router do
     pipe_through([:browser, :require_authenticated_user])
 
     live_session :require_authenticated_user,
-      on_mount: [{TabletopWeb.UserAuth, :require_authenticated}] do
+      on_mount: [
+        {TabletopWeb.UserAuth, :require_authenticated},
+        {TabletopWeb.UserNotifications, :default}
+      ] do
       live("/users/settings", UserLive.Settings, :edit)
     end
 
@@ -79,8 +82,21 @@ defmodule TabletopWeb.Router do
   scope "/", TabletopWeb do
     pipe_through([:browser])
 
+    live_session :tournaments_admin,
+      on_mount: [
+        {TabletopWeb.UserAuth, :require_admin},
+        {TabletopWeb.UserNotifications, :default}
+      ] do
+      live "/tournaments/new", TournamentLive.Form, :new
+      live "/tournaments/:id/edit", TournamentLive.Form, :edit
+      live "/tournaments/:id/admin", TournamentLive.Admin, :admin
+    end
+
     live_session :current_user,
-      on_mount: [{TabletopWeb.UserAuth, :mount_current_scope}] do
+      on_mount: [
+        {TabletopWeb.UserAuth, :mount_current_scope},
+        {TabletopWeb.UserNotifications, :default}
+      ] do
       live("/users/register", UserLive.Registration, :new)
       live("/users/log-in", UserLive.Login, :new)
       live("/users/confirmation-pending", UserLive.ConfirmationPending, :new)
@@ -90,6 +106,9 @@ defmodule TabletopWeb.Router do
       live "/games/:id/edit", GameLive.Form, :edit
       live "/games/:id/pre-join", GameLive.PreJoin, :pre_join
       live "/camera-setup", CameraSetupLive, :index
+
+      live "/tournaments", TournamentLive.Index, :index
+      live "/tournaments/:id", TournamentLive.Show, :show
     end
 
     get("/users/confirm/:token", UserSessionController, :confirm)

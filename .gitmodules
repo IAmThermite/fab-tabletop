@@ -1,0 +1,4 @@
+[submodule "vendor/flesh-and-blood-cards"]
+	path = vendor/flesh-and-blood-cards
+	url = https://github.com/IAmThermite/flesh-and-blood-cards
+	branch = feature/card-art-hashes

@@ -1341,6 +1341,7 @@ defmodule TabletopWeb.GameComponents do
       <div
         id={"card-popout-#{card.id}"}
         phx-hook=".DraggableCardPopout"
+        data-card-id={card.id}
         data-x={card.x}
         data-y={card.y}
         class="absolute z-30 w-80 bg-base-100 border border-base-300 rounded-lg shadow-xl overflow-hidden"
@@ -1477,6 +1478,20 @@ defmodule TabletopWeb.GameComponents do
                   <% end %>
                 </div>
               <% end %>
+              <%!-- Exports this scan as a recognition.test.mjs fixture. Only
+                   offered for popouts a scan opened — a name-searched card has
+                   no capture behind it. The button starts disabled and the
+                   popout hook enables it once it finds the held capture. --%>
+              <%= if debug.match_method == "phash" do %>
+                <button
+                  type="button"
+                  disabled
+                  class="card-popout-save-capture btn btn-xs btn-outline w-full mt-2 disabled:opacity-40"
+                  title="Download the deskewed capture + sidecar as a recognition test fixture"
+                >
+                  Save scan capture
+                </button>
+              <% end %>
             <% end %>
           </div>
         </div>
@@ -1484,19 +1499,53 @@ defmodule TabletopWeb.GameComponents do
     <% end %>
 
     <script :type={ColocatedHook} name=".DraggableCardPopout">
-      import { isDebugEnabled } from "@/js/card_scanner/debug.js"
+      import {
+        isDebugEnabled,
+        hasScanCapture,
+        forgetScanCapture,
+        onScanCaptureChange,
+        saveScanCapture,
+      } from "@/js/card_scanner/debug.js"
+
+      const SAVE_LABEL = "Save scan capture"
 
       export default {
         mounted() {
           const el = this.el
           const header = el.querySelector(".card-popout-header")
           const container = el.parentElement
+          const cardId = el.dataset.cardId
 
-          // Show debug section if debug mode is enabled
-          const debugSection = el.querySelector(".card-popout-debug")
-          if (debugSection && isDebugEnabled()) {
+          // Show the debug block (and its "Save scan capture" button) when
+          // debug mode is on. Server re-renders restore the static markup —
+          // `hidden` back on, the button back to disabled — so this reapplies
+          // after every patch, not just at mount.
+          const syncDebugSection = () => {
+            const debugSection = el.querySelector(".card-popout-debug")
+            if (!debugSection || !isDebugEnabled()) return
             debugSection.classList.remove("hidden")
+
+            const saveBtn = debugSection.querySelector(".card-popout-save-capture")
+            if (!saveBtn) return
+
+            // Only scans park a capture, and it is gone after a reconnect or
+            // once evicted — nothing to export then.
+            saveBtn.textContent = SAVE_LABEL
+            saveBtn.disabled = !hasScanCapture(cardId)
+            // `onclick` rather than addEventListener: assigning is idempotent,
+            // so re-running this after a patch can't stack handlers.
+            saveBtn.onclick = async () => {
+              saveBtn.disabled = true
+              const base = await saveScanCapture(cardId)
+              saveBtn.textContent = base ? "Saved ✓" : "Nothing to save"
+              clearTimeout(this._saveFeedbackTimer)
+              this._saveFeedbackTimer = setTimeout(syncDebugSection, 2000)
+            }
           }
+
+          syncDebugSection()
+          // The capture lands after this mount — see onScanCaptureChange.
+          this._unsubCapture = onScanCaptureChange(syncDebugSection)
 
           const initX = parseFloat(el.dataset.x || "10")
           const initY = parseFloat(el.dataset.y || "10")
@@ -1533,9 +1582,7 @@ defmodule TabletopWeb.GameComponents do
             // Reapply the last known position so the popout doesn't jump on pitch switch.
             el.style.left = this._currentLeft
             el.style.top = this._currentTop
-            // Re-apply debug visibility after re-render
-            const dbg = el.querySelector(".card-popout-debug")
-            if (dbg && isDebugEnabled()) dbg.classList.remove("hidden")
+            syncDebugSection()
           }
 
           header.addEventListener("pointerdown", (e) => {
@@ -1573,6 +1620,14 @@ defmodule TabletopWeb.GameComponents do
 
           header.addEventListener("pointerup", onPointerEnd)
           header.addEventListener("pointercancel", onPointerEnd)
+        },
+
+        destroyed() {
+          // Closing the popout releases its held capture — each one pins a
+          // full-size canvas.
+          clearTimeout(this._saveFeedbackTimer)
+          if (this._unsubCapture) this._unsubCapture()
+          forgetScanCapture(this.el.dataset.cardId)
         },
       }
     </script>

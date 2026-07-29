@@ -87,8 +87,19 @@ defmodule TabletopWeb.CardLookup do
             {:reply, %{matched: false}, socket}
 
           new_card ->
-            {:reply, %{matched: true},
-             assign(socket, :open_cards, socket.assigns.open_cards ++ [new_card])}
+            reply =
+              if Map.get(params, "debug_capture") == true do
+                # Debug-only: lets the client hold this scan's capture against
+                # the popout it just opened, for the "Save scan capture" button.
+                # Reports the print the pHash query actually hit — not the
+                # popout's displayed print, which may have been swapped for a
+                # pitch variant or canonical printing.
+                Map.put(%{matched: true}, :match, capture_match_info(possible_pairs, new_card.id))
+              else
+                %{matched: true}
+              end
+
+            {:reply, reply, assign(socket, :open_cards, socket.assigns.open_cards ++ [new_card])}
         end
       end
 
@@ -279,6 +290,26 @@ defmodule TabletopWeb.CardLookup do
       end
 
       defp text_match_pairs(_), do: []
+
+      # Identity + stored hashes of the print the scan matched, for the debug
+      # capture export. Hashes go over the wire as strings — they are 63-bit
+      # and would lose precision as JS numbers.
+      defp capture_match_info([%{card: card, card_print: print} | _], card_id) do
+        %{
+          card_id: card_id,
+          face_id: print.face_id,
+          card_name: card.name,
+          set_code: print.set_code,
+          pitch: card.pitch,
+          image_phash: stringify_phash(print.image_phash),
+          image_phash_full: stringify_phash(print.image_phash_full)
+        }
+      end
+
+      defp capture_match_info(_, _), do: nil
+
+      defp stringify_phash(nil), do: nil
+      defp stringify_phash(value) when is_integer(value), do: Integer.to_string(value)
 
       defp build_open_card([], _x, _y, _detected_pitch, _debug_info), do: nil
 

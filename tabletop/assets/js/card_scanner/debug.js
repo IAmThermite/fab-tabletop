@@ -1,6 +1,14 @@
 // Debug preview panel — shows the deskewed card and one preview per pHash region.
+//
+// Also holds the deskewed capture behind each open popout so the popout's
+// "Save scan capture" button can export it as a recognition-test fixture
+// (see `saveScanCapture`).
 
 const DEBUG_KEY = "tabletop:card-debug"
+
+// Where the exported fixture files are meant to end up — quoted in the
+// console hint so the tester doesn't have to go looking.
+const FIXTURE_DIR_HINT = "tabletop/test/tabletop/cards/fixtures/recognition/"
 
 export function isDebugEnabled() {
   return localStorage.getItem(DEBUG_KEY) === "true"
@@ -144,6 +152,185 @@ export function showDebugPanel(result) {
   _debugPanel.appendChild(signals)
 
   document.body.appendChild(_debugPanel)
+}
+
+// --- fixture export ----------------------------------------------------
+
+// Deskewed captures for the popouts currently on screen, keyed by the popout's
+// card id. A scan can't know whether its capture is worth keeping — that call
+// is made later, by clicking "Save scan capture" in the popout — so the pixels
+// are parked here until the popout closes.
+//
+// Each entry holds a canvas (a few hundred KB), so the store is dropped on
+// popout close and hard-capped besides: a LiveView reconnect can swap the DOM
+// without the popout hook's `destroyed` ever running.
+const MAX_REMEMBERED_CAPTURES = 20
+const _captures = new Map()
+const _captureListeners = new Set()
+
+/**
+ * Subscribe to changes in the held-capture set. Returns an unsubscribe fn.
+ *
+ * A popout can't just read the store once at mount: LiveView applies the
+ * render diff (mounting the popout) *before* it runs the `open_card` reply
+ * callback that parks the capture, so at mount time there is nothing there
+ * yet. Subscribing makes the button's enabled state order-independent, and
+ * also lets it disable itself if the capture is later evicted.
+ */
+export function onScanCaptureChange(listener) {
+  _captureListeners.add(listener)
+  return () => _captureListeners.delete(listener)
+}
+
+function notifyCaptureChange() {
+  for (const listener of _captureListeners) listener()
+}
+
+export function rememberScanCapture(cardId, result, match, meta = {}) {
+  if (cardId == null || !result?.cardCanvas) return
+  _captures.set(String(cardId), { result, match, meta })
+  while (_captures.size > MAX_REMEMBERED_CAPTURES) {
+    // Map iterates in insertion order, so this evicts the oldest.
+    _captures.delete(_captures.keys().next().value)
+  }
+  notifyCaptureChange()
+}
+
+export function forgetScanCapture(cardId) {
+  if (_captures.delete(String(cardId))) notifyCaptureChange()
+}
+
+export function hasScanCapture(cardId) {
+  return _captures.has(String(cardId))
+}
+
+function slug(value, fallback) {
+  const s = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+  return s || fallback
+}
+
+// 2026-07-29T11:24:05.123Z → "20260729-112405"
+function fileStamp() {
+  const iso = new Date().toISOString()
+  return `${iso.slice(0, 10).replace(/-/g, "")}-${iso.slice(11, 19).replace(/:/g, "")}`
+}
+
+function canvasToPngBlob(canvas) {
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"))
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  a.style.display = "none"
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  // Firefox cancels an in-flight download if the object URL dies too early.
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+}
+
+/**
+ * Export a remembered scan as a `recognition.test.mjs` fixture.
+ *
+ * Downloads two files sharing one basename:
+ *
+ *   * `<name>-<set>-<stamp>.png`  — the deskewed card exactly as it was hashed
+ *   * `<name>-<set>-<stamp>.json` — the sidecar the test replays it with
+ *
+ * Dropping both into `test/tabletop/cards/fixtures/recognition/` is the whole
+ * workflow: the test globs `*.json` in that directory, so there is no manifest
+ * to hand-edit. The sidecar records the capture-time art rect and hashes (so a
+ * replay is exact, not ratio-dependent) alongside the matched print's stored
+ * hashes (so the test can assert the match still lands).
+ *
+ * Browsers prompt once per site before allowing a second automatic download —
+ * allow it, or only the PNG arrives.
+ *
+ * @param {string} cardId - Popout card id the capture was remembered under.
+ * @returns {Promise<string|null>} The basename written, or null if nothing was saved.
+ */
+export async function saveScanCapture(cardId) {
+  const stored = _captures.get(String(cardId))
+  if (!stored) return null
+
+  const { result, match, meta } = stored
+  const blob = await canvasToPngBlob(result.cardCanvas)
+  if (!blob) {
+    console.warn("[CardScanner] Capture save failed: canvas produced no PNG blob")
+    return null
+  }
+
+  const base = [
+    slug(match?.card_name, "card"),
+    slug(match?.set_code, "set"),
+    fileStamp(),
+  ].join("-")
+
+  const computed = {}
+  for (const { kind, value } of result.phashes || []) {
+    computed[kind] = value.toString()
+  }
+
+  const regionScale = meta.regionScale ?? 1
+  const scenario = [
+    match?.card_name || "unmatched",
+    match?.set_code ? `(${match.set_code})` : null,
+    result.detectMethod,
+    regionScale > 1 ? `region ${(regionScale * 100).toFixed(0)}%` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+
+  const entry = {
+    scenario,
+    image: `${base}.png`,
+    expected_face_id: match?.face_id ?? null,
+    expected_card_name: match?.card_name ?? null,
+    // `layout` is what the recognition pipeline branches on. Horizontal
+    // captures are rotated to portrait upstream, so this is "vertical" for
+    // everything the scanner emits.
+    layout: result.layout || "vertical",
+    // The exact crop that was hashed — replaying with this makes the fixture
+    // independent of any later change to the fallback ratios.
+    art: result.artRect || null,
+    capture: {
+      width: result.cardCanvas.width,
+      height: result.cardCanvas.height,
+      region_scale: regionScale,
+      detect_method: result.detectMethod || null,
+      angle: result.angle ?? null,
+      orientation: result.orientation || null,
+      detected_pitch: result.detectedPitch ?? null,
+    },
+    computed_phashes: computed,
+    stored_phashes: match
+      ? {
+        image_phash: match.image_phash ?? null,
+        image_phash_full: match.image_phash_full ?? null,
+      }
+      : null,
+  }
+
+  downloadBlob(blob, `${base}.png`)
+  downloadBlob(new Blob([JSON.stringify(entry, null, 2)], { type: "application/json" }), `${base}.json`)
+
+  if (!match) {
+    console.warn(
+      `[CardScanner] Saved ${base}.* without stored hashes — the server sent no match details, ` +
+      "so the fixture can only be used once `stored_phashes` is filled in.",
+    )
+  } else {
+    console.log(`[CardScanner] Saved scan fixture ${base}.{png,json} → move both into ${FIXTURE_DIR_HINT}`)
+  }
+
+  return base
 }
 
 /**

@@ -5,7 +5,13 @@
 // was removed — recognition is pHash-only; users type a name to search instead.
 
 import { imageDataToCanvas } from "./preprocessing"
-import { showDebugPanel, showBoundingBox, drawCardBorder, isDebugEnabled } from "./debug"
+import {
+  showDebugPanel,
+  showBoundingBox,
+  drawCardBorder,
+  isDebugEnabled,
+  rememberScanCapture,
+} from "./debug"
 import { computePhashesForLayout } from "./recognition_pipeline"
 
 const LOG = "[CardScanner]"
@@ -130,7 +136,11 @@ export function setupCardLookup(hook, canvasEl, gameArea, opts = {}) {
       let matched = false
       let lastResult = null
       let matchedScale = null
+      let matchInfo = null
       const attemptedScales = []
+
+      // Read once per click so a mid-scan settings change can't half-apply.
+      const debugScan = isDebugEnabled()
 
       if (captured) {
         // Retry on a detected-but-unmatched card, growing the deskew region
@@ -157,10 +167,19 @@ export function setupCardLookup(hook, canvasEl, gameArea, opts = {}) {
           if (result.detectedPitch != null) {
             payload.detected_pitch = result.detectedPitch
           }
+          // Asks the server to include the new popout's id plus the matched
+          // print's identity + stored hashes in its reply — what the popout's
+          // "Save scan capture" button needs to write a fixture. Debug-only,
+          // so a normal scan's reply stays a bare `{matched: bool}`.
+          if (debugScan) {
+            payload.debug_capture = true
+          }
 
-          matched = await pushOpenCard(hook, payload)
+          const reply = await pushOpenCard(hook, payload)
+          matched = reply.matched
           if (matched) {
             matchedScale = regionScale
+            matchInfo = reply.match || null
             if (attempt > 0) {
               console.log(
                 `${LOG} ✓ Matched via expanded capture region: ` +
@@ -190,7 +209,17 @@ export function setupCardLookup(hook, canvasEl, gameArea, opts = {}) {
         fadeBox(drawCardBorder(captured.rect, lastResult.quad, captured, captured.scaleX, captured.scaleY, isFlipped()))
       }
 
-      if (isDebugEnabled() && lastResult) {
+      // Park the winning capture against the popout the server just opened, so
+      // its "Save scan capture" button can export it as a recognition-test
+      // fixture. Only on a match — an unmatched scan opens no popout, and has
+      // no expected face_id to assert against.
+      if (matched && matchInfo?.card_id && lastResult) {
+        rememberScanCapture(matchInfo.card_id, lastResult, matchInfo, {
+          regionScale: matchedScale,
+        })
+      }
+
+      if (debugScan && lastResult) {
         showDebugPanel({ ...lastResult, matchedScale, attemptedScales })
       }
       if (!matched) showToast("Could not detect card, try again.")
@@ -211,9 +240,10 @@ function captureRegion(ctx, canvasEl, canvasX, canvasY, w, h) {
   return { imageData: ctx.getImageData(sx, sy, sw, sh), sx, sy, sw, sh }
 }
 
-// Push `open_card` and resolve with whether the server matched a card. The
-// server always replies `{matched: bool}`; a timeout guards against a missing
-// reply so the retry loop / spinner can't hang.
+// Push `open_card` and resolve with the server's reply, normalised to at least
+// `{matched: bool}`. The server always replies `{matched: bool}` (plus `match`
+// details when `debug_capture` was requested); a timeout guards against a
+// missing reply so the retry loop / spinner can't hang.
 function pushOpenCard(hook, payload) {
   return new Promise((resolve) => {
     let settled = false
@@ -222,10 +252,10 @@ function pushOpenCard(hook, payload) {
       settled = true
       resolve(v)
     }
-    const timer = setTimeout(() => finish(false), 4000)
+    const timer = setTimeout(() => finish({ matched: false }), 4000)
     hook.pushEvent("open_card", payload, (reply) => {
       clearTimeout(timer)
-      finish(reply?.matched === true)
+      finish(reply?.matched === true ? reply : { matched: false })
     })
   })
 }
@@ -373,6 +403,9 @@ export async function detectAndHash(captured, regionScale, container, isFlipped,
     originalLayout,
     quad,
     phashes,
+    // The art crop that was actually hashed — recorded verbatim in an exported
+    // fixture so a replay doesn't depend on the fallback ratios.
+    artRect: art || null,
     detectMethod: phashes.length > 0 ? "card_art" : "none",
   }
   if (pitchResult) {

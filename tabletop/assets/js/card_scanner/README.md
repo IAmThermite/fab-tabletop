@@ -25,7 +25,7 @@ User Click → LiveView Hook → OpenCV Worker → Recognition Pipeline → Back
 - **`recognition_pipeline.js`** - Post-deskew processing and perceptual hashing
 - **`preprocessing.js`** - `imageDataToCanvas` helper (bridges the pipeline's duck-typed ImageData to real canvases for the debug panel)
 - **`p_hash.js`** - DCT-based 64-bit perceptual hashing algorithm
-- **`debug.js`** - Debug visualization panel
+- **`debug.js`** - Debug visualization panel and the scan-capture fixture export
 
 ## End-to-End Flow
 
@@ -221,6 +221,8 @@ const payload = {
     { kind: "full", value: "..." },
   ],
   detected_pitch: 1, // or 2, 3, or omitted
+  region_scale: 1, // >1 on an expanded-region retry
+  debug_capture: true, // omitted unless debug mode is on
   x: e.clientX - rect.left + 10, // For UI positioning
   y: e.clientY - rect.top - 50,
 }
@@ -230,11 +232,11 @@ const payload = {
 - pHashes are compared against stored card hashes using Hamming distance
 - The backend ranks candidates with a `LEAST` query over the `art`, `art_flipped`, and `full` arms
 - Pitch is used to pick the default pitch variant of the matched card
-- `open_card` always replies `{matched: boolean}` so the client knows whether to retry with a larger capture region (see Overview)
+- `open_card` always replies `{matched: boolean}` so the client knows whether to retry with a larger capture region (see Overview); with `debug_capture: true` a matched reply also carries `match` (the new popout's `card_id` plus the matched print's identity + stored hashes) for the fixture export
 
 ## Debug Visualization
 
-Enable debug mode by setting `localStorage.setItem("tabletop:card-debug", "true")`.
+Enable debug mode from the in-game settings dialog ("Card scan debug overlay"), or by setting `localStorage.setItem("tabletop:card-debug", "true")`.
 
 The debug panel shows:
 - Deskewed card capture with layout and angle
@@ -242,6 +244,30 @@ The debug panel shows:
 - Detection signals (layout, orientation, pitch, angle)
 
 Bounding boxes and card quads are overlaid on the canvas to show what was detected.
+
+### Saving scan captures as test fixtures
+
+Every recognised card's popout carries a **Save scan capture** button at the bottom of its debug block — so it only appears when debug mode is on, and only on popouts a *scan* opened (a name-searched card has no capture behind it, so the button isn't rendered for `match_method: "search"`).
+
+Clicking it downloads two files sharing a basename:
+
+| File | Contents |
+| --- | --- |
+| `<name>-<set>-<stamp>.png` | The deskewed card, exactly the pixels that were hashed |
+| `<name>-<set>-<stamp>.json` | Sidecar: `layout`, the capture-time `art` rect, the `computed_phashes`, the matched print's `expected_face_id`, and its `stored_phashes` from the DB |
+
+Move both into `tabletop/test/tabletop/cards/fixtures/recognition/` and `mix test.assets` picks them up on the next run — `recognition.test.mjs` globs every `*.json` in that directory, so there is no manifest to hand-edit.
+
+Two things make the exported fixture a faithful replay:
+
+- The sidecar carries the **exact art rect** used at scan time, so the test doesn't depend on the fallback ratios staying put.
+- It carries the **capture-time hashes**, which the test asserts the replay reproduces bit-for-bit. If a fixture image were ever re-encoded lossily, that assertion catches it before the threshold check can pass for the wrong reason.
+
+The stored hashes come from the server: while debug mode is on the client sets `debug_capture: true` on `open_card`, and the reply carries the new popout's `card_id` plus the matched print's `face_id`, name, set code and both pHashes (as strings — they are 63-bit and would lose precision as JS numbers). The reported print is the one the pHash query actually hit, not the popout's displayed print, which may have been swapped for a pitch variant or the canonical printing.
+
+**How the capture reaches the button.** The decision to keep a scan is made after the fact, so `debug.js` parks the deskewed canvas in a module-level map keyed by that `card_id`. The popout hook drops its entry in `destroyed()`, and the map is hard-capped at 20 besides — each entry pins a full-size canvas, and a LiveView reconnect can swap the DOM without `destroyed` ever running. The button starts disabled and enables itself via `onScanCaptureChange`: LiveView applies the render diff (mounting the popout) *before* it runs the `open_card` reply callback that parks the capture, so a one-shot read at mount would always find nothing. That subscription also disables the button again if its capture is evicted.
+
+Browsers ask once per site before allowing a second automatic download; allow it or only the PNG arrives.
 
 ## Testing
 
@@ -252,7 +278,7 @@ cd tabletop
 mix test.assets
 ```
 
-Tests use fixture images and compare computed hashes against Elixir-stored hashes, asserting Hamming distance is within threshold (15 for art, 8 for full).
+Tests use fixture images and compare computed hashes against Elixir-stored hashes, asserting Hamming distance is within threshold (15 for art, 8 for full). Fixtures are opt-in and come from the "Save scan capture" button above; with the fixtures directory absent the file is a single passing no-op.
 
 ## Limitations
 

@@ -73,5 +73,8 @@ COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/tabletop ./
 USER nobody
 
 EXPOSE 4000
+# Prometheus scrape endpoint. Reachable only over Fly's private 6PN network —
+# it is not part of [http_service] in fly.toml, so it is never public.
+EXPOSE 9091
 
 CMD ["bin/tabletop", "start"]

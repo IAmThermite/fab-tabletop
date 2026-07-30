@@ -11,9 +11,11 @@ defmodule TabletopWeb.CameraRelayChannel do
     # already authenticated in UserSocket; here we just confirm the joining
     # socket belongs to the user whose relay topic this is.
     if socket.assigns.user_id == relay_user_id do
+      Tabletop.Telemetry.camera_relay_join(:ok)
       send(self(), :after_join)
       {:ok, assign(socket, :relay_user_id, relay_user_id)}
     else
+      Tabletop.Telemetry.camera_relay_join(:unauthorized)
       {:error, %{reason: "unauthorized"}}
     end
   end
@@ -35,16 +37,19 @@ defmodule TabletopWeb.CameraRelayChannel do
 
   @impl true
   def handle_in("offer", %{"sdp" => sdp}, socket) do
+    Tabletop.Telemetry.camera_relay_signal(:offer)
     broadcast_from!(socket, "offer", %{sdp: sdp})
     {:noreply, socket}
   end
 
   def handle_in("answer", %{"sdp" => sdp}, socket) do
+    Tabletop.Telemetry.camera_relay_signal(:answer)
     broadcast_from!(socket, "answer", %{sdp: sdp})
     {:noreply, socket}
   end
 
   def handle_in("ice_candidate", %{"candidate" => candidate}, socket) do
+    Tabletop.Telemetry.camera_relay_signal(:ice_candidate)
     broadcast_from!(socket, "ice_candidate", %{candidate: candidate})
     {:noreply, socket}
   end

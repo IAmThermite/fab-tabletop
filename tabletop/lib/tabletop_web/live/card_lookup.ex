@@ -26,6 +26,40 @@ defmodule TabletopWeb.CardLookup do
       use TabletopWeb.CardLookup
   """
 
+  @doc """
+  Emits the card-scan telemetry event for one `open_card` attempt.
+
+  Lives on the module rather than inside `__using__/1` so the logic is defined
+  once instead of being injected into every host LiveView. `region_scale` is
+  `1.0` on the scanner's first attempt and larger once it has started growing
+  the capture region, so `first_try` separates clean reads from ones that only
+  landed after a retry — a hit rate that depends on retries is a different
+  problem from one that doesn't.
+  """
+  def record_card_scan(phashes, possible_pairs, started_at, region_scale) do
+    duration = System.monotonic_time() - started_at
+    first_try? = region_scale <= 1.0
+
+    case possible_pairs do
+      [%{card_print: card_print} | _] when not is_nil(card_print) ->
+        case Tabletop.Cards.best_phash_match(phashes, card_print) do
+          {arm, distance} ->
+            Tabletop.Telemetry.card_scan(duration, :match, first_try?, distance, arm)
+
+          nil ->
+            # Matched via an arm we can't reconstruct (e.g. the popout swapped in
+            # a pitch variant's print). Still a match — just no distance to report.
+            Tabletop.Telemetry.card_scan(duration, :match, first_try?)
+        end
+
+      [_ | _] ->
+        Tabletop.Telemetry.card_scan(duration, :match, first_try?)
+
+      [] ->
+        Tabletop.Telemetry.card_scan(duration, :miss, first_try?)
+    end
+  end
+
   defmacro __using__(_opts) do
     quote do
       alias Tabletop.Cards
@@ -49,6 +83,8 @@ defmodule TabletopWeb.CardLookup do
           end
 
         # Recognition is pHash-only — no OCR. (Manual name search uses `search_card`.)
+        scan_started_at = System.monotonic_time()
+
         possible_pairs =
           if has_phash?(phashes) do
             Cards.find_by_p_hash_similarity(phashes)
@@ -57,6 +93,13 @@ defmodule TabletopWeb.CardLookup do
           else
             []
           end
+
+        TabletopWeb.CardLookup.record_card_scan(
+          phashes,
+          possible_pairs,
+          scan_started_at,
+          region_scale
+        )
 
         # Sort pitch-matched cards to front
         possible_pairs =

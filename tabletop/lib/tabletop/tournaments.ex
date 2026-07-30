@@ -743,7 +743,9 @@ defmodule Tabletop.Tournaments do
     matches = list_confirmed_matches(t.id)
     players = to_pairing_players(regs, matches)
 
-    {:ok, %{pairings: pairings, bye: bye_id}} = Swiss.pair(players, number)
+    # Timed here rather than inside `Swiss` so the pairing engine stays a pure,
+    # side-effect-free library (see the Tournaments notes in CLAUDE.md).
+    {:ok, %{pairings: pairings, bye: bye_id}} = timed_swiss_pair(players, number)
 
     round =
       %TournamentRound{}
@@ -790,6 +792,26 @@ defmodule Tabletop.Tournaments do
     end
 
     {:ok, round}
+  end
+
+  # Records how long a pairing round took and how big the field was. The result
+  # is passed through untouched — including `{:error, :no_valid_pairing}`, which
+  # the caller still matches strictly — so instrumentation cannot change pairing
+  # behaviour.
+  defp timed_swiss_pair(players, number) do
+    started_at = System.monotonic_time()
+    result = Swiss.pair(players, number)
+    duration = System.monotonic_time() - started_at
+
+    outcome =
+      case result do
+        {:ok, _} -> :ok
+        _ -> :error
+      end
+
+    Tabletop.Telemetry.swiss_pair(duration, Enum.count(players, &(not &1.dropped)), outcome)
+
+    result
   end
 
   def generate_top_cut(%Scope{} = scope, %Tournament{} = t) do

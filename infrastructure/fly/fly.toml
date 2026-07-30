@@ -30,6 +30,17 @@ primary_region = 'iad'
     hard_limit = 1000
     soft_limit = 1000
 
+# Prometheus scrape target. Fly polls this every 15s over the private 6PN
+# network and stores the result in its managed Prometheus, queryable at
+# https://api.fly.io/prometheus/<org-slug>/ from any Grafana instance.
+#
+# Deliberately NOT part of [http_service] — the port is unreachable from the
+# public internet, so the metrics need no auth of their own. Served by
+# Tabletop.PromEx.MetricsServer; keep in sync with :metrics_port in runtime.exs.
+[metrics]
+  port = 9091
+  path = "/metrics"
+
 [[vm]]
   size = 'shared-cpu-1x'
   memory = '512mb'

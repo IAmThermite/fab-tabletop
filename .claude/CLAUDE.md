@@ -113,6 +113,32 @@ Swiss-into-top-cut tournament running on top of the normal game stack. The data 
 
 [tabletop_web/router.ex](tabletop/lib/tabletop_web/router.ex) — three `live_session` scopes: anonymous-friendly (`/`, `/games/:id`, `/camera-setup`), authenticated (`/users/settings`), and sudo-mode (password confirm). `/phone-camera/:token` is in its own session — used by the phone when scanning the QR code from desktop. `/dev/dashboard` and `/dev/mailbox` exist only when `:dev_routes` is set.
 
+### Metrics & observability
+
+Prometheus metrics via **PromEx**, scraped by Fly's managed Prometheus. Three moving parts — keep them in sync or metrics silently stop.
+
+- **[Tabletop.PromEx](tabletop/lib/tabletop/prom_ex.ex)** — the PromEx module. Stock plugins (Application, Beam, Phoenix, Ecto, PhoenixLiveView) each have a matching pre-built Grafana dashboard listed in `dashboards/0`; export with `mix prom_ex.dashboard.export --dashboard <name> --stdout`. `grafana: :disabled` — dashboards are imported by hand, not pushed on boot.
+- **[Tabletop.PromEx.MetricsServer](tabletop/lib/tabletop/prom_ex/metrics_server.ex)** — a Bandit listener on its own port (`:metrics_port`, default 9091), **not** part of `TabletopWeb.Endpoint`. PromEx's built-in metrics server is `Plug.Cowboy`-based; serving the plug on Bandit avoids a second web server in the release. Binds `{0,0,0,0,0,0,0,0}` because Fly's private network is IPv6. Set `:metrics_port` to `nil` to disable (the test env does — a fixed port would collide across concurrent suites).
+- **[Tabletop.Telemetry](tabletop/lib/tabletop/telemetry.ex)** — the single source of truth for the app's own `:telemetry` event names *and* the emit helpers that normalise metadata. Metric definitions live in [Tabletop.PromEx.GamePlugin](tabletop/lib/tabletop/prom_ex/game_plugin.ex); both sides reference the name functions here.
+
+**The rule that matters:** a `:telemetry` event with no attached handler fails *silently*. Renaming an event, or reading a measurement key the emitter doesn't send, produces no error — just a metric that stays permanently empty in Grafana. [telemetry_test.exs](tabletop/test/tabletop/telemetry_test.exs) exists to turn that silence into a test failure; when you add an event, add it to `@event_names` **and** `events/0` there.
+
+**Tag cardinality:** Prometheus creates one series per label combination, and Fly drops high-cardinality custom metrics outright. Never tag with a `game_id`, `user_id`, card name, or raw exit reason. `Telemetry.session_action/2` tags only the action *name* (never its payload) and `session_stop/1` collapses unbounded exit reasons to `:abnormal` for exactly this reason.
+
+**Domain metrics** (`tabletop_prom_ex_game_*`) cover what stock dashboards can't: card-scan hit rate + Hamming-distance distribution (is `@art_threshold`/`@full_threshold` in [cards.ex](tabletop/lib/tabletop/cards.ex) still right against real sleeves?), game-session count and abnormal stops, leave-timer outcomes, camera-relay joins/signalling, and `Swiss.pair/3` duration. Pairing is timed at the **context** boundary in [tournaments.ex](tabletop/lib/tabletop/tournaments.ex), not inside `Swiss`, so the pairing engine stays pure.
+
+`Cards.best_phash_match/2` mirrors the arm ranking inside `find_by_p_hash_similarity/1`'s SQL so a match's distance can be reported without a second query — if you change the thresholds or the arms, change both.
+
+Metrics are per-machine and in-memory, and `fly.toml` sets `auto_stop_machines = 'stop'`: counters reset on cold start and gauges gap while stopped. Query with `rate()`/`increase()`; don't read a gap as a zero.
+
+**Tracing** is separate from the above: OpenTelemetry spans **pushed** over OTLP to Grafana Tempo (push, not scrape — the only model that works on a sleeping machine). [Tabletop.Tracing](tabletop/lib/tabletop/tracing.ex) attaches the handlers from `Application.start/2` before the endpoint serves; spans come from Bandit, Phoenix (including LiveView `mount`/`handle_event` — where most of this app's behaviour actually lives) and Ecto. No application code emits spans directly.
+
+Two things to know before touching it:
+- **Order in `setup/0` matters** — Bandit first, so its span parents the Phoenix span instead of becoming a sibling.
+- **Disabled unless configured.** The exporter defaults to `http://localhost:4318` and logs every failed batch, so `config.exs` ships `traces_exporter: :none` and `runtime.exs` flips it to `:otlp` only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Handlers attach regardless, so the instrumented path is identical either way. `Tabletop.Tracing.exporting?/0` distinguishes "off" from "on but rejected".
+
+`OpentelemetryEcto` runs with `db_statement: :enabled` — safe because Ecto parameterises queries, so the recorded SQL holds `$1`/`$2` placeholders and never user values. To inspect spans locally, set `traces_exporter: {:otel_exporter_stdout, []}` in `dev.exs`.
+
 ## Conventions worth knowing
 
 - The Elixir app is a sub-directory (`tabletop/`), not the repo root. Run `mix` from there.

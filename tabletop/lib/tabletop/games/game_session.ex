@@ -108,9 +108,12 @@ defmodule Tabletop.Games.GameSession do
       new_state = Map.put(state, target_side, new_player)
       new_state = schedule_save(new_state)
       broadcast_update(new_state.game_id, target_side, delta, actor_user_id)
+      Tabletop.Telemetry.session_action(action, :ok)
       {:reply, :ok, new_state}
     else
-      {:error, _} = error -> {:reply, error, state}
+      {:error, _} = error ->
+        Tabletop.Telemetry.session_action(action, :error)
+        {:reply, error, state}
     end
   end
 
@@ -127,7 +130,11 @@ defmodule Tabletop.Games.GameSession do
   end
 
   @impl true
-  def terminate(_reason, state) do
+  def terminate(reason, state) do
+    # An abnormal reason means this session's in-memory state was lost and
+    # connected LiveViews will be reset by the restarted session's
+    # `{:session_reset, _}` broadcast — worth alerting on.
+    Tabletop.Telemetry.session_stop(reason)
     Tabletop.Games.update_game_state(state.game_id, snapshot(state))
   end
 

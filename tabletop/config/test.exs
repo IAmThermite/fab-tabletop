@@ -46,3 +46,8 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# No metrics listener under test — a fixed port would collide between
+# concurrently running suites. PromEx itself still starts, so the telemetry
+# handlers are attached and the emit calls are exercised.
+config :tabletop, :metrics_port, nil

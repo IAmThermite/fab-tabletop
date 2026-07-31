@@ -5,6 +5,8 @@ defmodule TabletopWeb.CameraSetupLive do
 
   alias Tabletop.Fab.GameState
   alias Tabletop.Games
+  alias TabletopWeb.CameraRelayToken
+  alias TabletopWeb.Plugs.AnonymousId
 
   @impl true
   def render(assigns) do
@@ -16,7 +18,6 @@ defmodule TabletopWeb.CameraSetupLive do
         data-redirect={@redirect_to}
         data-game-id={@game_id}
         data-user-token={@user_token}
-        data-camera-relay-token={@camera_relay_token}
         data-relay-user-id={@relay_user_id}
         class="flex flex-col h-full"
       >
@@ -496,18 +497,18 @@ defmodule TabletopWeb.CameraSetupLive do
   end
 
   @impl true
-  def mount(params, _session, socket) do
+  def mount(params, session, socket) do
     scope = socket.assigns.current_scope
 
+    # Anonymous ids come from the session (see TabletopWeb.Plugs.AnonymousId) —
+    # minting one here would hand the dead render and the connected render
+    # different ids, and the phone would join a relay topic the desktop is not in.
     user_id =
       if scope && scope.user,
         do: scope.user.id,
-        else: "anon:#{Base.encode64(:crypto.strong_rand_bytes(16))}"
+        else: session[AnonymousId.session_key()] || AnonymousId.generate()
 
     user_token = Phoenix.Token.sign(socket, "user socket", user_id)
-    camera_relay_token = Phoenix.Token.sign(socket, "camera relay", user_id)
-    qr_url = "#{TabletopWeb.Endpoint.url()}/phone-camera/#{camera_relay_token}"
-    qr_svg = qr_url |> EQRCode.encode() |> EQRCode.svg(width: 200)
 
     {:ok,
      socket
@@ -515,9 +516,8 @@ defmodule TabletopWeb.CameraSetupLive do
      |> assign(:redirect_to, params["redirect"])
      |> assign(:game_id, params["game_id"])
      |> assign(:user_token, user_token)
-     |> assign(:camera_relay_token, camera_relay_token)
      |> assign(:relay_user_id, user_id)
-     |> assign(:qr_svg, qr_svg)
+     |> assign(:qr_svg, CameraRelayToken.qr_svg(socket, user_id))
      |> assign(:game_state, new_preview_state())
      |> assign(:abilities_open, false)
      |> assign(:on_hits_open, false)

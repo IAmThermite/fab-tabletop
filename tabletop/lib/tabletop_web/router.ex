@@ -11,6 +11,7 @@ defmodule TabletopWeb.Router do
     plug(:protect_from_forgery)
     plug(:put_secure_browser_headers)
     plug(TabletopWeb.Plugs.SecurityHeaders)
+    plug(TabletopWeb.Plugs.AnonymousId)
     plug(:fetch_current_scope_for_user)
   end
 

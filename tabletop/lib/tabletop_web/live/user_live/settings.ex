@@ -45,6 +45,7 @@ defmodule TabletopWeb.UserLive.Settings do
           label="New password"
           autocomplete="new-password"
           required
+          minlength={Accounts.User.min_password_length()}
         />
         <.input
           field={@password_form[:password_confirmation]}
@@ -156,18 +157,6 @@ defmodule TabletopWeb.UserLive.Settings do
   end
 
   @impl true
-  def handle_event("validate_email", params, socket) do
-    %{"user" => user_params} = params
-
-    email_form =
-      socket.assigns.current_scope.user
-      |> Accounts.User.changeset(user_params)
-      |> Map.put(:action, :validate)
-      |> to_form()
-
-    {:noreply, assign(socket, email_form: email_form)}
-  end
-
   def handle_event("validate_password", params, socket) do
     %{"user" => user_params} = params
 

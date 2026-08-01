@@ -77,7 +77,13 @@ defmodule TabletopWeb.Layouts do
     >
     </div>
     <div class="flex min-h-screen flex-col">
-      <header class="navbar gap-2 border-b border-base-300 bg-base-100/40 backdrop-blur px-4 sm:px-6 lg:px-8">
+      <%!-- `relative z-30` is load-bearing. `backdrop-blur` makes this header its
+           own stacking context, which traps the user-menu dropdown inside it —
+           the dropdown's z-index is then only ever compared against the header's
+           other children, never against the page. The main content panel below
+           is a stacking context for the same reason and comes later in the DOM,
+           so without an explicit z-index here it paints over the open dropdown. --%>
+      <header class="navbar relative z-30 gap-2 border-b border-base-300 bg-base-100/40 backdrop-blur px-4 sm:px-6 lg:px-8">
         <div class="flex-1">
           <.link navigate={~p"/"} class="inline-flex items-center gap-3">
             <img src={~p"/images/banner.png"} alt="FaB Tabletop" class="h-12 w-auto" />

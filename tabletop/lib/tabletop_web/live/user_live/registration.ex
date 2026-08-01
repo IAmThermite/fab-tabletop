@@ -47,8 +47,12 @@ defmodule TabletopWeb.UserLive.Registration do
             label="Password"
             autocomplete="new-password"
             required
+            minlength={User.min_password_length()}
             phx-mounted={JS.focus()}
           />
+          <p class="text-sm text-zinc-500 mt-1">
+            At least {User.min_password_length()} characters.
+          </p>
 
           <.button phx-disable-with="Creating account..." class="btn btn-primary w-full">
             Create an account

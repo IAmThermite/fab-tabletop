@@ -39,4 +39,27 @@ defmodule Tabletop.Accounts.UserNotifier do
     ==============================
     """)
   end
+
+  @doc """
+  Deliver instructions to reset a user's password.
+  """
+  def deliver_reset_password_instructions(user, url) do
+    deliver(user.email, "Reset password instructions", """
+
+    ==============================
+
+    Hi #{user.name},
+
+    You can reset your password by visiting the URL below:
+
+    #{url}
+
+    This link expires in 24 hours.
+
+    If you didn't request this change, please ignore this. Your password has
+    not changed.
+
+    ==============================
+    """)
+  end
 end

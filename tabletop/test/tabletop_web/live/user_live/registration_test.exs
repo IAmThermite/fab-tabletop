@@ -65,6 +65,30 @@ defmodule TabletopWeb.UserLive.RegistrationTest do
 
       assert result =~ "has already been taken"
     end
+
+    test "renders an error for a duplicated username", %{conn: conn} do
+      user = user_fixture()
+
+      {:ok, lv, _html} = live(conn, ~p"/users/register")
+
+      result =
+        lv
+        |> form("#registration_form", user: valid_user_attributes(name: user.name))
+        |> render_submit()
+
+      assert result =~ "has already been taken"
+    end
+
+    test "renders an error for a too-short password", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/users/register")
+
+      result =
+        lv
+        |> element("#registration_form")
+        |> render_change(user: valid_user_attributes(password: "abc"))
+
+      assert result =~ "should be at least 4 character(s)"
+    end
   end
 
   describe "registration navigation" do

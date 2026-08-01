@@ -115,6 +115,8 @@ Swiss-into-top-cut tournament running on top of the normal game stack. The data 
 
 [tabletop_web/router.ex](tabletop/lib/tabletop_web/router.ex) — three `live_session` scopes: anonymous-friendly (`/`, `/games/:id`, `/camera-setup`), authenticated (`/users/settings`), and sudo-mode (password confirm). `/phone-camera/:token` is in its own session — used by the phone when scanning the QR code from desktop. `/dev/dashboard` and `/dev/mailbox` exist only when `:dev_routes` is set.
 
+**Password reset.** `/users/reset-password` ([ForgotPassword](tabletop/lib/tabletop_web/live/user_live/forgot_password.ex)) mails a `"reset_password"` `UserToken` (24 h validity); `/users/reset-password/:token` ([ResetPassword](tabletop/lib/tabletop_web/live/user_live/reset_password.ex)) verifies it on both the dead and connected mount. `Accounts.reset_user_password/2` deletes *every* token for the user (burns the link, kills existing sessions — the LiveView also calls `UserAuth.disconnect_sessions/1`) and confirms an unconfirmed account, since completing a reset proves mailbox control. The minimum password length lives in one place, `User.min_password_length/0`, and every path (register / settings / reset) validates through `validate_password/2`.
+
 ## Conventions worth knowing
 
 - The Elixir app is a sub-directory (`tabletop/`), not the repo root. Run `mix` from there.

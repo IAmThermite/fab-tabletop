@@ -596,16 +596,28 @@ defmodule Tabletop.Games do
   def get_current_game_for_user(nil), do: nil
 
   @doc """
-  Returns the most recent game *created* by the scoped user (any status), or
-  `nil` if they have never created one. Powers the lobby's "quick match" button,
-  which re-seeds the create form from a previous game's settings. Only games the
-  user created are considered, since the hero/decklist on a joined game belong to
-  the other player.
+  Returns the most recent game the scoped user *created through the create form*
+  (any status), or `nil` if they have never created one. Powers the lobby's
+  "quick match" button, which re-seeds that form from a previous game's settings.
+
+  Only games the user created are considered, since the hero/decklist on a joined
+  game belong to the other player.
+
+  Tournament matches are excluded even though they are stored as ordinary `Game`
+  rows with player 1 as `user_id`: `Tournaments.create_match_game!/5` builds them
+  with `Game.match_changeset/2`, which carries no hero, decklist or language of
+  its own. Seeding from one hands the player a blank hero and decklist under a
+  machine-generated title, and the form then fails its own `validate_required`.
+  `hero` is the discriminator — `changeset/3` requires it, `match_changeset/2`
+  never sets it — which keeps this query out of the Tournaments schemas.
   """
   def get_last_created_game(%Scope{user: user}) do
     from(g in Game,
       where: g.user_id == ^user.id,
-      order_by: [desc: g.inserted_at],
+      where: not is_nil(g.hero),
+      # `inserted_at` is second-precision, so two rows can tie; the id keeps the
+      # pick stable rather than leaving it to the query plan.
+      order_by: [desc: g.inserted_at, desc: g.id],
       limit: 1
     )
     |> Repo.one()

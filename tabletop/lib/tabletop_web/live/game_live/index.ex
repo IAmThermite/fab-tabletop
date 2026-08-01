@@ -604,33 +604,42 @@ defmodule TabletopWeb.GameLive.Index do
         </div>
       </div>
 
-      <dialog :if={@show_join_private} id="join-private-dialog" class="modal modal-open">
-        <div class="modal-box">
-          <h3 class="text-lg font-bold mb-4">Join private game</h3>
-          <.form
-            for={%{}}
-            as={:join_private}
-            phx-submit="join_private"
-            class="space-y-3"
-          >
-            <.input
-              name="code"
-              value=""
-              type="text"
-              label="Game code or link"
-              placeholder="Paste a game code or link"
-              autocomplete="off"
-            />
-            <div class="modal-action">
-              <button type="button" phx-click="close_join_private" class="btn">
-                Cancel
-              </button>
-              <.button variant="primary" type="submit">Join</.button>
-            </div>
-          </.form>
-        </div>
-        <div class="modal-backdrop" phx-click="close_join_private"></div>
-      </dialog>
+      <%!-- Teleported to <body>. daisyUI's `.modal` is `position: fixed`, but the
+           content panel in `Layouts.app` sets `backdrop-filter`, which makes it
+           the containing block for fixed descendants — rendered in place the
+           modal sizes itself to the panel instead of the viewport, so the
+           backdrop dims only part of the page and click-outside misses the
+           margins. Note for tests: LiveViewTest can't select elements inside a
+           portal; render `#join-private-portal` or drive the event on the view. --%>
+      <.portal id="join-private-portal" target="body">
+        <dialog :if={@show_join_private} id="join-private-dialog" class="modal modal-open">
+          <div class="modal-box">
+            <h3 class="text-lg font-bold mb-4">Join private game</h3>
+            <.form
+              for={%{}}
+              as={:join_private}
+              phx-submit="join_private"
+              class="space-y-3"
+            >
+              <.input
+                name="code"
+                value=""
+                type="text"
+                label="Game code or link"
+                placeholder="Paste a game code or link"
+                autocomplete="off"
+              />
+              <div class="modal-action">
+                <button type="button" phx-click="close_join_private" class="btn">
+                  Cancel
+                </button>
+                <.button variant="primary" type="submit">Join</.button>
+              </div>
+            </.form>
+          </div>
+          <div class="modal-backdrop" phx-click="close_join_private"></div>
+        </dialog>
+      </.portal>
     </Layouts.app>
 
     <script :type={ColocatedHook} name=".GameIndex">
@@ -707,6 +716,9 @@ defmodule TabletopWeb.GameLive.Index do
 
   # Seed the create form from the user's last game so they can rematch with one
   # extra click. We only fill the form — the user still presses Start to create.
+  # The copied fields must stay in sync with `Game.changeset/3`'s cast list: a
+  # castable field missing here silently falls back to the schema default, so a
+  # private game would come back as a public one.
   def handle_event("quick_match", _params, socket) do
     case socket.assigns.last_game do
       nil ->
@@ -722,6 +734,7 @@ defmodule TabletopWeb.GameLive.Index do
           title: last.title,
           hero: last.hero,
           decklist: last.decklist,
+          private: last.private,
           competitive: last.competitive
         }
 

@@ -110,8 +110,12 @@ defmodule TabletopWeb.CameraSetupLive do
             class="flex-1 relative bg-blue-100 flex items-center justify-center overflow-hidden"
             style="container-type: size;"
           >
-            <div class="aspect-video" style="width: min(100cqw, 100cqh * 16 / 9);">
+            <%!-- Tiles are positioned in board coordinates (percentages of the
+                 camera frame), so they live inside the preview box rather than
+                 the letterboxed area around it. --%>
+            <div class="relative aspect-video" style="width: min(100cqw, 100cqh * 16 / 9);">
               <canvas id="test-canvas" class="w-full h-full block"></canvas>
+              <.game_tiles game_state={@game_state} context={:setup} />
             </div>
 
             <%!-- No camera overlay --%>
@@ -161,8 +165,6 @@ defmodule TabletopWeb.CameraSetupLive do
                 <span id="zoom-value" class="text-xs w-8">1.0x</span>
               </div>
             </div>
-
-            <.game_tiles game_state={@game_state} context={:setup} />
 
             <.proxy_tokens_panel game_state={@game_state} expanded={@proxy_tokens_expanded} />
 

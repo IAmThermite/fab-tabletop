@@ -67,6 +67,17 @@ defmodule TabletopWeb.CameraSetupLiveTest do
     end
   end
 
+  describe "tile layer" do
+    test "overlays the preview canvas, not the letterboxed area around it", %{conn: conn} do
+      {:ok, live_view, _html} = live(conn, ~p"/camera-setup")
+
+      # Tile coordinates are percentages of the camera frame. The preview box is
+      # centred inside #game-area with bars either side, so a layer covering the
+      # whole area would offset every tile the opponent sees.
+      assert has_element?(live_view, "#test-canvas + #tile-layer-setup")
+    end
+  end
+
   defp relay_user_id(html) do
     [_, id] = Regex.run(~r/data-relay-user-id="([^"]*)"/, html)
     id

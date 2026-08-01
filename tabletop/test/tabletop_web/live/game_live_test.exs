@@ -396,6 +396,30 @@ defmodule TabletopWeb.GameLiveTest do
       # resets it.
       assert html =~ ~r/id="opponent-volume-control"[^>]*phx-update="ignore"/
     end
+
+    test "renders tiles in board coordinates inside a tile layer", %{conn: conn, game: game} do
+      {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
+
+      show_live
+      |> element("input[phx-click='toggle_damage'][phx-value-type='physical']")
+      |> render_click()
+
+      # The tile appears via the game session's broadcast, so re-render once the
+      # LiveView has handled it.
+      html = render(show_live)
+
+      # Tiles carry their board position on --tile-x/--tile-y rather than
+      # left/top so a viewer whose board is drawn rotated 180° can mirror them
+      # in CSS (the server never sees that client-side flip toggle). Baking
+      # left/top in pins every tile to the side of the player who placed it.
+      assert html =~ ~s(id="tile-layer-local")
+      assert html =~ ~r/--tile-x: [\d.]+%; --tile-y: [\d.]+%/
+      refute html =~ ~r/style="left: [\d.]+%/
+
+      # The overlay the game hook sizes to the letterboxed remote canvas and
+      # marks flipped; tiles are positioned against it, not against #game-area.
+      assert has_element?(show_live, "#game-area > #tile-layer-remote")
+    end
   end
 
   describe "Show (tournament match)" do

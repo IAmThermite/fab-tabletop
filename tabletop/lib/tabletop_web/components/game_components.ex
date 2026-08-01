@@ -21,11 +21,19 @@ defmodule TabletopWeb.GameComponents do
     desc = Map.get(assigns.tile, :description_html)
 
     # Anchor the popover on the side with more room so it never gets clipped.
+    # The side is picked from the tile's *board* coordinates; on a flipped board
+    # the tile is drawn mirrored, so the `tile-popover-*` marker classes let
+    # app.css mirror the anchor to match (the server never sees the client-side
+    # flip toggle, so it can't decide this on its own).
     horizontal_class =
-      if assigns.tile.x > 50, do: "right-full mr-2", else: "left-full ml-2"
+      if assigns.tile.x > 50,
+        do: "tile-popover-x-left right-full mr-2",
+        else: "tile-popover-x-right left-full ml-2"
 
     vertical_class =
-      if assigns.tile.y > 50, do: "bottom-0", else: "top-0"
+      if assigns.tile.y > 50,
+        do: "tile-popover-y-bottom bottom-0",
+        else: "tile-popover-y-top top-0"
 
     assigns =
       assigns
@@ -601,114 +609,137 @@ defmodule TabletopWeb.GameComponents do
     assigns = assign(assigns, :tiles, tiles)
 
     ~H"""
-    <%= for tile <- @tiles do %>
-      <div
-        class={[
-          "group absolute select-none z-20 rounded-md shadow-lg ring-1 ring-black/10 whitespace-nowrap font-semibold bg-gradient-to-br flex items-center gap-1",
-          case @context do
-            :local ->
-              "pointer-events-none px-1 py-0.5 text-[8px] gap-0.5"
+    <%!-- Tile layer. Tile coordinates are percentages of the *board* — i.e. of
+          the video frame — not of the surrounding box, so the layer has to cover
+          exactly the rect the board is drawn in. For :local/:expanded/:setup the
+          canvas fills its container, so `inset-0` is that rect; for :remote the
+          canvas is letterboxed inside #game-area at a size only known once the
+          stream's dimensions are, so the render loop in webrtc.js sizes this
+          layer to match the canvas (w-full/h-full is the no-video fallback).
+          `data-board-flipped` is set by the game hook when the opponent's board
+          is shown rotated 180°; app.css mirrors the tile coordinates so tiles
+          track the board while their labels stay upright and readable. --%>
+    <div
+      id={"tile-layer-#{@context}"}
+      class={[
+        "absolute z-20 pointer-events-none",
+        if(@context == :remote,
+          do: "top-1/2 left-1/2 w-full h-full -translate-x-1/2 -translate-y-1/2",
+          else: "inset-0"
+        )
+      ]}
+    >
+      <%= for tile <- @tiles do %>
+        <div
+          class={[
+            "game-tile group absolute select-none z-20 rounded-md shadow-lg ring-1 ring-black/10 whitespace-nowrap font-semibold bg-gradient-to-br flex items-center gap-1",
+            case @context do
+              :local ->
+                "px-1 py-0.5 text-[8px] gap-0.5"
 
-            ctx when ctx in [:expanded, :setup] ->
-              "cursor-grab active:cursor-grabbing px-2 py-1 text-xs gap-1.5"
+              ctx when ctx in [:expanded, :setup] ->
+                "pointer-events-auto cursor-grab active:cursor-grabbing px-2 py-1 text-xs gap-1.5"
 
-            _ ->
-              "px-2 py-1 text-xs gap-1.5 #{if has_hover?(tile), do: "cursor-help", else: "pointer-events-none"}"
-          end,
-          tile_color_class(tile)
-        ]}
-        style={"left: #{tile.x}%; top: #{tile.y}%; transform: translate(-50%, -50%);"}
-        data-tile-id={tile.id}
-        data-tile-owner={tile.owner}
-        data-tile-group={tile_group_name(tile)}
-        phx-hook={if @context in [:expanded, :setup], do: "TabletopWeb.GameComponents.DraggableTile"}
-        id={"tile-#{@context}-#{tile.owner}-#{tile.id}"}
-      >
-        <%= cond do %>
-          <% tile.type == :custom_counter and @context in [:expanded, :setup] -> %>
-            <%!-- Interactive custom counter: optional name, then −/value/+ and remove. --%>
-            <span
-              :if={tile.label not in [nil, ""]}
-              class="uppercase tracking-wide leading-none"
-            >
-              {tile.label}
-            </span>
-            <div class="flex items-center gap-0.5">
+              _ ->
+                "px-2 py-1 text-xs gap-1.5 #{if has_hover?(tile), do: "pointer-events-auto cursor-help"}"
+            end,
+            tile_color_class(tile)
+          ]}
+          style={"--tile-x: #{tile.x}%; --tile-y: #{tile.y}%; transform: translate(-50%, -50%);"}
+          data-tile-id={tile.id}
+          data-tile-owner={tile.owner}
+          data-tile-group={tile_group_name(tile)}
+          phx-hook={
+            if @context in [:expanded, :setup], do: "TabletopWeb.GameComponents.DraggableTile"
+          }
+          id={"tile-#{@context}-#{tile.owner}-#{tile.id}"}
+        >
+          <%= cond do %>
+            <% tile.type == :custom_counter and @context in [:expanded, :setup] -> %>
+              <%!-- Interactive custom counter: optional name, then −/value/+ and remove. --%>
+              <span
+                :if={tile.label not in [nil, ""]}
+                class="uppercase tracking-wide leading-none"
+              >
+                {tile.label}
+              </span>
+              <div class="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  class="btn btn-xs btn-circle btn-error"
+                  phx-click="change_custom_counter"
+                  phx-value-id={tile.id}
+                  phx-value-delta="-1"
+                >
+                  -
+                </button>
+                <span class="font-bold leading-none text-sm min-w-3 text-center">{tile.value}</span>
+                <button
+                  type="button"
+                  class="btn btn-xs btn-circle btn-success"
+                  phx-click="change_custom_counter"
+                  phx-value-id={tile.id}
+                  phx-value-delta="1"
+                >
+                  +
+                </button>
+              </div>
               <button
                 type="button"
-                class="btn btn-xs btn-circle btn-error"
-                phx-click="change_custom_counter"
+                class="opacity-50 hover:opacity-100 shrink-0 ml-0.5"
+                phx-click="remove_custom_counter"
                 phx-value-id={tile.id}
-                phx-value-delta="-1"
+                aria-label="Remove counter"
               >
-                -
+                <.icon name="hero-x-mark" class="size-3" />
               </button>
-              <span class="font-bold leading-none text-sm min-w-3 text-center">{tile.value}</span>
-              <button
-                type="button"
-                class="btn btn-xs btn-circle btn-success"
-                phx-click="change_custom_counter"
-                phx-value-id={tile.id}
-                phx-value-delta="1"
-              >
-                +
-              </button>
-            </div>
-            <button
-              type="button"
-              class="opacity-50 hover:opacity-100 shrink-0 ml-0.5"
-              phx-click="remove_custom_counter"
-              phx-value-id={tile.id}
-              aria-label="Remove counter"
-            >
-              <.icon name="hero-x-mark" class="size-3" />
-            </button>
-          <% nameless_counter?(tile) -> %>
-            <%!-- Read-only nameless counter: just the number, larger. --%>
-            <span class={[
-              "font-bold leading-none",
-              case @context do
-                :local -> "text-xs"
-                _ -> "text-base"
-              end
-            ]}>
-              {tile.value}
-            </span>
-          <% true -> %>
-            <span class={[
-              "rounded-full bg-black/25 flex items-center justify-center shrink-0",
-              case @context do
-                :local -> "p-[1px]"
-                _ -> "p-1"
-              end
-            ]}>
-              <.icon
-                name={tile_icon(tile)}
-                class={
-                  case @context do
-                    :local -> "size-2"
-                    _ -> "size-3.5"
-                  end
-                }
-              />
-            </span>
-            <span class="uppercase tracking-wide leading-none">{tile.label}</span>
-            <span
-              :if={Map.get(tile, :value)}
-              class={[
-                "font-bold leading-none ml-0.5",
+            <% nameless_counter?(tile) -> %>
+              <%!-- Read-only nameless counter: just the number, larger. --%>
+              <span class={[
+                "font-bold leading-none",
                 case @context do
-                  :local -> "text-[10px]"
-                  _ -> "text-sm"
+                  :local -> "text-xs"
+                  _ -> "text-base"
                 end
-              ]}
-            >
-              {tile.value}
-            </span>
-        <% end %>
-        <.tile_hover_preview :if={@context != :local} tile={tile} />
-      </div>
-    <% end %>
+              ]}>
+                {tile.value}
+              </span>
+            <% true -> %>
+              <span class={[
+                "rounded-full bg-black/25 flex items-center justify-center shrink-0",
+                case @context do
+                  :local -> "p-[1px]"
+                  _ -> "p-1"
+                end
+              ]}>
+                <.icon
+                  name={tile_icon(tile)}
+                  class={
+                    case @context do
+                      :local -> "size-2"
+                      _ -> "size-3.5"
+                    end
+                  }
+                />
+              </span>
+              <span class="uppercase tracking-wide leading-none">{tile.label}</span>
+              <span
+                :if={Map.get(tile, :value)}
+                class={[
+                  "font-bold leading-none ml-0.5",
+                  case @context do
+                    :local -> "text-[10px]"
+                    _ -> "text-sm"
+                  end
+                ]}
+              >
+                {tile.value}
+              </span>
+          <% end %>
+          <.tile_hover_preview :if={@context != :local} tile={tile} />
+        </div>
+      <% end %>
+    </div>
 
     <%!-- Opponent life (not in local preview) --%>
     <div
@@ -731,15 +762,33 @@ defmodule TabletopWeb.GameComponents do
           let startPosPercent = null
           let siblingStarts = []
 
+          // Positions live in board coordinates (percentages of the video frame)
+          // on the `--tile-x`/`--tile-y` custom properties; app.css turns those
+          // into left/top, mirroring them when the board is drawn flipped.
+          const tilePos = (node) => ({
+            x: parseFloat(node.style.getPropertyValue("--tile-x")) || 0,
+            y: parseFloat(node.style.getPropertyValue("--tile-y")) || 0
+          })
+
+          const setTilePos = (node, x, y) => {
+            node.style.setProperty("--tile-x", x + "%")
+            node.style.setProperty("--tile-y", y + "%")
+          }
+
+          // Pointer position → board coordinates, undoing the 180° mirror when
+          // the layer is showing a flipped board.
           const toPercent = (clientX, clientY) => {
             const container = el.parentElement
             const rect = container.getBoundingClientRect()
             const x = ((clientX - rect.left) / rect.width) * 100
             const y = ((clientY - rect.top) / rect.height) * 100
-            return {
+            const clamped = {
               x: Math.max(0, Math.min(100, x)),
               y: Math.max(0, Math.min(100, y))
             }
+            return container.dataset.boardFlipped === "true"
+              ? { x: 100 - clamped.x, y: 100 - clamped.y }
+              : clamped
           }
 
           let startX = 0, startY = 0
@@ -753,21 +802,14 @@ defmodule TabletopWeb.GameComponents do
 
             startX = e.clientX
             startY = e.clientY
-            startPosPercent = {
-              x: parseFloat(el.style.left) || 0,
-              y: parseFloat(el.style.top) || 0
-            }
+            startPosPercent = tilePos(el)
 
             siblingStarts = []
             if (group) {
               const selector = `[data-tile-group="${group}"][data-tile-owner="${owner}"]`
               const siblings = Array.from(el.parentElement.querySelectorAll(selector))
                 .filter(s => s !== el)
-              siblingStarts = siblings.map(s => ({
-                el: s,
-                left: parseFloat(s.style.left) || 0,
-                top: parseFloat(s.style.top) || 0
-              }))
+              siblingStarts = siblings.map(s => ({ el: s, start: tilePos(s) }))
             }
 
             el.setPointerCapture(e.pointerId)
@@ -787,15 +829,17 @@ defmodule TabletopWeb.GameComponents do
 
             const pos = toPercent(e.clientX, e.clientY)
             currentDragPos = pos
-            el.style.left = pos.x + "%"
-            el.style.top = pos.y + "%"
+            setTilePos(el, pos.x, pos.y)
 
             if (siblingStarts.length > 0 && startPosPercent) {
               const dxPct = pos.x - startPosPercent.x
               const dyPct = pos.y - startPosPercent.y
               for (const s of siblingStarts) {
-                s.el.style.left = Math.max(0, Math.min(100, s.left + dxPct)) + "%"
-                s.el.style.top = Math.max(0, Math.min(100, s.top + dyPct)) + "%"
+                setTilePos(
+                  s.el,
+                  Math.max(0, Math.min(100, s.start.x + dxPct)),
+                  Math.max(0, Math.min(100, s.start.y + dyPct))
+                )
               }
             }
           }
@@ -843,8 +887,8 @@ defmodule TabletopWeb.GameComponents do
           if (this._isDragging && this._isDragging()) {
             const pos = this._currentDragPos()
             if (pos) {
-              this.el.style.left = pos.x + "%"
-              this.el.style.top = pos.y + "%"
+              this.el.style.setProperty("--tile-x", pos.x + "%")
+              this.el.style.setProperty("--tile-y", pos.y + "%")
             }
           }
         },

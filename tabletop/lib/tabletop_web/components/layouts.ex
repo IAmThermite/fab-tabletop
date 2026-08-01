@@ -38,7 +38,7 @@ defmodule TabletopWeb.Layouts do
     doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
   )
 
-  attr(:max_width, :string, default: "max-w-2xl", doc: "the max width class for the main content")
+  attr(:max_width, :string, default: "max-w-4xl", doc: "the max width class for the main content")
 
   slot(:inner_block, required: true)
 

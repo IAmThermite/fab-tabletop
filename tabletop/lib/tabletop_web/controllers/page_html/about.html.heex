@@ -1,4 +1,4 @@
-<Layouts.app flash={@flash} current_scope={@current_scope}>
+<Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-4xl">
   <div class="mx-auto max-w-4xl px-4 py-10 space-y-10">
     <header class="space-y-4">
       <h1 class="text-4xl font-bold">How to use FaB Tabletop</h1>
@@ -24,7 +24,7 @@
       <h2 class="text-3xl font-bold border-b border-base-300 pb-2">1. Camera setup</h2>
       <p class="text-lg">
         Before joining your first game, configure your camera so your opponent
-        can see your playmat and cards clearly. Your zoom, and rotation settings
+        can see your playmat and cards clearly. Your zoom and rotation settings
         are saved in your browser — you only need to do this once.
       </p>
       <p class="text-lg">
@@ -36,120 +36,75 @@
         a physical playmat.
       </p>
 
-      <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-        <%!-- TODO: capture `camera-setup-overview.gif` —
-              end-to-end walkthrough: open camera setup → grant permissions →
-              adjust zoom/rotation → save & continue. --%>
-        <img
-          src={~p"/images/guide/camera-setup-overview.gif"}
-          alt="End-to-end camera setup walkthrough"
-          class="w-full rounded"
-        />
-        <figcaption class="text-sm text-base-content/70 pt-2">
-          Full camera setup, start to finish.
-        </figcaption>
-      </figure>
-
       <%!-- 1.1 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">1.1 Granting camera & mic permissions</h3>
+        <h3 class="text-xl font-semibold">1.1 Framing your play area (zoom & rotation)</h3>
         <p>
-          The first time you open camera setup your browser will ask permission
-          to use your camera and microphone. Allow both. If you ever see
-          "Camera not available," check your browser's site permissions and
-          make sure no other app is currently using the camera.
+          The camera setup screen previews exactly what your opponent will see.
+          Use <strong>Rotate</strong>
+          if your camera is mounted sideways or upside-down — most overhead
+          rigs end up somewhere near 180° — then use <strong>Zoom</strong>
+          to fill the frame with your playmat and crop out the desk around it.
         </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-md">
-          <%!-- TODO: capture `camera-permission-prompt.png` — browser
-                permission prompt (Chrome or Firefox). --%>
+        <p>
+          Aim to have your whole playmat in frame with a little room to spare:
+          your pitch zone, arsenal and hero card should all be readable without
+          your opponent squinting. Both sliders save to your browser when you
+          click <strong>Save & Continue</strong>, so every future game starts
+          with the same framing.
+        </p>
+        <figure class="rounded-box border border-base-300 bg-base-200 p-2">
           <img
-            src={~p"/images/guide/camera-permission-prompt.png"}
-            alt="Browser camera permission prompt"
+            src={~p"/images/about/1-1-camera-setup.gif"}
+            alt="Adjusting rotation and zoom on the camera setup screen"
             class="w-full rounded"
+            loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
-            Allow camera and microphone access when prompted.
+            Camera setup, start to finish — the preview updates as you drag.
           </figcaption>
         </figure>
       </div>
 
       <%!-- 1.2 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">1.2 Framing your play area (zoom & rotation)</h3>
-        <p>
-          <%!-- TODO: explain the 16:9 crop, why centering the playmat matters
-                so the opponent sees your pitch zone and hero clearly, and
-                that zoom/rotation are saved per browser in localStorage. --%>
-          Use the rotation slider if your camera is mounted sideways or upside-down,
-          then use zoom to fill the frame with your playmat. These settings save
-          automatically when you click <strong>Save & Continue</strong>.
-        </p>
-        <div class="grid md:grid-cols-2 gap-4">
-          <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-            <%!-- TODO: capture `camera-zoom-rotate.gif` — dragging the
-                  zoom and rotation sliders with live preview. --%>
-            <img
-              src={~p"/images/guide/camera-zoom-rotate.gif"}
-              alt="Adjusting zoom and rotation sliders"
-              class="w-full rounded"
-            />
-            <figcaption class="text-sm text-base-content/70 pt-2">
-              Drag the sliders — the preview updates in real time.
-            </figcaption>
-          </figure>
-          <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-            <%!-- TODO: capture `playmat-good-framing.jpg` — example of a
-                  well-framed playmat with hero card + pitch zone visible. --%>
-            <img
-              src={~p"/images/guide/playmat-good-framing.jpg"}
-              alt="Well-framed playmat example"
-              class="w-full rounded"
-            />
-            <figcaption class="text-sm text-base-content/70 pt-2">
-              A well-framed playmat: hero card and pitch zone clearly in view.
-            </figcaption>
-          </figure>
-        </div>
-      </div>
-
-      <%!-- 1.3 --%>
-      <div class="space-y-3">
         <h3 class="text-xl font-semibold">
-          1.3 Using your phone as a camera
+          1.2 Using your phone as a camera
           <span class="text-base font-normal text-base-content/60">(optional)</span>
         </h3>
         <p>
-          <%!-- TODO: walk through the phone-as-camera flow — open settings,
-                scan the QR code with your phone, accept the camera permission
-                on the phone, then switch the camera source. Mention this is
-                great when your laptop webcam can't see the table. --%>
           If your laptop webcam can't see the table, or if you'd prefer, you
-          can use your phone as a camera instead. Open the settings dialog,
-          scan the QR code with your phone, accept the camera permission on
-          the phone, then switch the camera source to your phone once it is
-          connected. Please note that this can drain your phones battery, so
-          it's a good idea to have it plugged in during play.
+          can use your phone as a camera instead. Open the settings dialog and
+          scan the QR code under <strong>Phone Camera</strong>
+          with your phone, accept the camera permission on the phone, then
+          switch <strong>Camera Source</strong>
+          to <strong>Phone</strong>
+          once the badge reads "Phone connected".
+        </p>
+        <p>
+          Your phone stays on the relay page for the rest of the match, with
+          its own zoom slider and a button to flip between the front and rear
+          cameras. Streaming video is hard work for a phone, so keep it plugged
+          in — and mount it somewhere it won't get knocked while you play.
         </p>
         <div class="grid md:grid-cols-2 gap-4">
           <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-            <%!-- TODO: capture `phone-camera-qr.png` — settings dialog
-                  showing the phone-camera QR code. --%>
             <img
-              src={~p"/images/guide/phone-camera-qr.png"}
-              alt="Settings dialog with phone camera QR code"
+              src={~p"/images/about/1-2-settings-phone-connected.webp"}
+              alt="Settings dialog with the phone camera QR code and Phone connected badge"
               class="w-full rounded"
+              loading="lazy"
             />
             <figcaption class="text-sm text-base-content/70 pt-2">
-              Scan this QR code with your phone to connect it as a camera.
+              Scan the QR code, then switch the camera source to Phone.
             </figcaption>
           </figure>
           <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-            <%!-- TODO: capture `phone-relay-screen.jpg` — photo of phone
-                  showing the relay page after scanning. --%>
             <img
-              src={~p"/images/guide/phone-relay-screen.jpg"}
-              alt="Phone showing the camera relay page"
+              src={~p"/images/about/1-2-phone-view.webp"}
+              alt="Phone showing the camera relay page with zoom and flip controls"
               class="w-full rounded"
+              loading="lazy"
             />
             <figcaption class="text-sm text-base-content/70 pt-2">
               Your phone shows the relay page — keep it open during your game.
@@ -158,32 +113,32 @@
         </div>
       </div>
 
-      <%!-- 1.4 --%>
+      <%!-- 1.3 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">1.4 Combat chain preview</h3>
+        <h3 class="text-xl font-semibold">1.3 Where your tiles land</h3>
         <p>
-          <%!-- TODO: explain that the Physical, Arcane, and Go Again tiles
-                are draggable overlays on the camera preview. Mention default
-                positions and that you should put each tile somewhere that
-                makes sense for how you arrange your physical playmat —
-                e.g. Physical tile near your attack-card slot so on-hit
-                damage is easy to read. --%>
-          The Physical damage, Arcane damage, and Go Again tiles are draggable
-          overlays on the camera preview. Drop each one somewhere that matches
-          how you arrange your physical playmat — for example, put the
-          Physical tile near the slot where you place attack cards, so on-hit
-          damage is easy to read at a glance.
+          Every tracker you turn on — Physical damage, Arcane damage, Amp, Go
+          Again, on-hit effects, custom counters — appears as a tile drawn over
+          your video feed, and your opponent sees it in the same spot you do.
+          Tiles are draggable, so you can drop each one somewhere that matches
+          how you arrange your physical playmat. Putting the Physical tile near
+          the slot where you place attack cards, for example, makes on-hit
+          damage easy to read at a glance.
         </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-          <%!-- TODO: capture `tile-placement.gif` — dragging Physical,
-                Arcane, and Go Again tiles into position. --%>
+        <p>
+          Tiles stack neatly when several are active at once, which is what a
+          typical attack looks like: the damage on the chain, the on-hit
+          effects riding along with it, and whether the attack has Go Again.
+        </p>
+        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
           <img
-            src={~p"/images/guide/tile-placement.gif"}
-            alt="Dragging tracker tiles into position"
+            src={~p"/images/about/1-3-stacking-effects.webp"}
+            alt="Physical, Bloodrot Pox, Lose Health and Go Again tiles stacked over the playmat"
             class="w-full rounded"
+            loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
-            Drag tiles to match your physical playmat layout.
+            A Kiss of Death with a Spike with Bloodrot reaction: 3 physical, Bloodrot Pox, lose 1 health, and Go Again (Slippy ability).
           </figcaption>
         </figure>
       </div>
@@ -195,24 +150,22 @@
     <section id="lobby" class="space-y-6">
       <h2 class="text-3xl font-bold border-b border-base-300 pb-2">2. The lobby</h2>
       <p class="text-lg">
-        <%!-- TODO: 1-2 sentence intro to the lobby. What can you do here —
-              browse open games, create a new one, join a private game,
-              resume a game in progress. --%>
         The lobby is where you'll start every session. From here you can
         browse open games, create your own, join a private game by code, or
-        rejoin a game already in progress.
+        rejoin a game already in progress. The <strong>Live activity</strong>
+        column on the right shows how busy the site is right now — games
+        waiting for an opponent, what people are playing this week, upcoming
+        tournaments, and recent winners with their decklists.
       </p>
 
       <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-        <%!-- TODO: capture `lobby-overview.png` — full-page screenshot of
-              the lobby with callouts pointing to each major area. --%>
         <img
-          src={~p"/images/guide/lobby-overview.png"}
-          alt="Lobby page overview with annotated regions"
+          src={~p"/images/about/2-0-lobby.webp"}
+          alt="The lobby with Games to join, Create Game and Live activity columns"
           class="w-full rounded"
         />
         <figcaption class="text-sm text-base-content/70 pt-2">
-          The lobby at a glance.
+          The lobby at a glance: games to join, create a game, and live activity.
         </figcaption>
       </figure>
 
@@ -220,18 +173,18 @@
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">2.1 Browsing public games</h3>
         <p>
-          <%!-- TODO: explain that public games are grouped by format
-                (e.g. Classic Constructed). Click a row to join. --%>
-          Public games are grouped by format — Classic Constructed, SAGE,
-          etc. Expand a format to see open games and click a row to join.
+          Public games are grouped by format — Classic Constructed, Blitz, and
+          so on — with a count next to each. Expand a format to see who's
+          waiting: you get the game title, the host's name, their language, and
+          their hero, plus a link to their decklist if they shared one. Hit <strong>Join</strong>
+          and you'll go straight to camera setup, then into the game.
         </p>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
-          <%!-- TODO: capture `public-games-list.png` — expanded Classic
-                Constructed group with a couple of open games. --%>
           <img
-            src={~p"/images/guide/public-games-list.png"}
-            alt="Expanded list of public Classic Constructed games"
+            src={~p"/images/about/2-1-join-a-game.webp"}
+            alt="Expanded list of public Classic Constructed games with a Join button"
             class="w-full rounded"
+            loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
             Open games, grouped by format.
@@ -243,28 +196,26 @@
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">2.2 Creating a game</h3>
         <p>
-          <%!-- TODO: walk through the create-game form fields — format,
-                game title, hero name, decklist URL, private toggle.
-                Note: game title is what other players see in the lobby;
-                hero name is for your opponent's info; decklist URL helps
-                your opponent verify legality. Private = no lobby listing,
-                share the code from in-game settings. --%>
-          To create a game, pick a format, give it a title, enter your hero's
-          name, optionally paste a decklist URL, and choose whether it's
-          public or private. A <strong>public</strong>
-          game appears in the
-          lobby for anyone to join; a <strong>private</strong>
-          game is hidden
-          and only joinable by code (which you can share from the in-game
-          settings dialog).
+          To host, pick a <strong>Format</strong>, give the game a <strong>Title</strong>
+          (this is what other players see in the lobby), choose your <strong>Hero</strong>, and optionally paste a Fabrary
+          <strong>Decklist</strong>
+          link so your opponent can check what you're bringing. Then hit <strong>Start</strong>.
         </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-          <%!-- TODO: capture `create-game.gif` — filling out and submitting
-                the create-game form. --%>
+        <p>
+          Two toggles change who can find you. <strong>Private game</strong>
+          keeps the game out of the public list — share the game code from the
+          in-game settings dialog instead. <strong>Competitive</strong>
+          leaves the game public but hides your hero from the listing, so you
+          don't tip your matchup before the match starts. If you just want to
+          run it back, <strong>Quick match</strong>
+          at the top reuses the settings from your last game.
+        </p>
+        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-md">
           <img
-            src={~p"/images/guide/create-game.gif"}
+            src={~p"/images/about/2-2-create-game.gif"}
             alt="Filling out and submitting the create-game form"
             class="w-full rounded"
+            loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
             Creating a new Classic Constructed game.
@@ -276,24 +227,20 @@
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">2.3 Joining a private game</h3>
         <p>
-          <%!-- TODO: explain how to get a game code from your opponent
-                (they open in-game settings → share code), then enter it
-                in the "Join private game" modal. --%>
-          To join a private game, ask the host for their game code (they can
-          copy it from their in-game settings dialog). Click <strong>Join private
-            game</strong>
-          in the lobby and paste the code.
+          To join a private game, ask the host for their game code — they can
+          copy it from their in-game settings dialog. Click <strong>Join private</strong>
+          in the lobby and paste it in. The full game link works too, so a host
+          can just send you the URL.
         </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-md">
-          <%!-- TODO: capture `join-private.png` — Join private game modal
-                with the code field. --%>
+        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
           <img
-            src={~p"/images/guide/join-private.png"}
-            alt="Join private game modal"
+            src={~p"/images/about/2-3-join-private-game.webp"}
+            alt="Join private game modal with the game code field"
             class="w-full rounded"
+            loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
-            Paste the host's game code to join.
+            Paste the host's game code or link to join.
           </figcaption>
         </figure>
       </div>
@@ -302,19 +249,24 @@
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">2.4 Resuming a game in progress</h3>
         <p>
-          <%!-- TODO: explain the "Game in progress" panel — what it shows,
-                how to rejoin after a disconnect, and how to leave a game. --%>
-          If you're already in a game, a <strong>Game in progress</strong>
-          panel appears at the top of the lobby. Use it to rejoin after a
-          disconnect or to leave a game you don't plan to come back to.
+          If you're already in a game, a <strong>Game in Progress</strong>
+          panel appears at the top of the lobby with the game's title and
+          format. <strong>Rejoin Game</strong>
+          drops you back in — handy after a refresh, a dropped connection, or
+          closing the tab by accident. <strong>Leave Game</strong>
+          bows out for good and frees your opponent up to find someone else.
         </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
-          <%!-- TODO: capture `game-in-progress.png` — the in-progress
-                panel showing rejoin and leave actions. --%>
+        <p>
+          You have a five minute grace period after disconnecting before you're
+          marked as having left, so a browser crash mid-match isn't the end of
+          the game.
+        </p>
+        <figure class="rounded-box border border-base-300 bg-base-200 p-2">
           <img
-            src={~p"/images/guide/game-in-progress.png"}
-            alt="Game in progress panel"
+            src={~p"/images/about/2-4-resume-game.webp"}
+            alt="Game in Progress panel with Rejoin Game and Leave Game buttons"
             class="w-full rounded"
+            loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
             Rejoin or leave a game from the lobby.
@@ -329,50 +281,45 @@
     <section id="in-game" class="space-y-6">
       <h2 class="text-3xl font-bold border-b border-base-300 pb-2">3. In-game screen</h2>
       <p class="text-lg">
-        <%!-- TODO: 1-2 sentence intro. The in-game screen is where you'll
-              spend the match — local + opponent video, your tracker
-              sidebar, and the opponent's board with all their tiles. --%>
-        The in-game screen is where every match happens. It shows your
-        opponent's video and board on the main canvas, your own preview in the
-        corner, and your damage/effect tracker on the side.
+        The in-game screen is where every match happens. Your opponent's
+        playmat fills the middle of the screen, your own preview sits up in the
+        corner, and your tracker sidebar runs down the left — damage, effects,
+        tokens, card search, and your life total.
       </p>
 
       <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-        <%!-- TODO: capture `in-game-overview.png` — annotated full-page
-              screenshot with regions labeled: local preview, opponent
-              canvas, sidebar, proxy tokens, settings. --%>
         <img
-          src={~p"/images/guide/in-game-overview.png"}
-          alt="Annotated in-game screen overview"
+          src={~p"/images/about/3-0-game-board.webp"}
+          alt="The in-game screen with the tracker sidebar and the opponent's playmat"
           class="w-full rounded"
         />
         <figcaption class="text-sm text-base-content/70 pt-2">
-          The in-game screen, with each region labeled.
+          The in-game screen: tracker sidebar on the left, opponent's board in the middle.
         </figcaption>
       </figure>
 
       <%!-- 3.1 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">
-          3.1 Top bar: camera, mic, connection, settings, leave
+          3.1 Top bar: camera, mic, sound, connection, settings, leave
         </h3>
         <p>
-          <%!-- TODO: explain each top-bar control — toggle camera, toggle
-                mic, the Connecting/Connected/Disconnected badge, settings,
-                leave. Also mention the indicators that appear when your
-                opponent mutes or turns off their camera. --%>
-          The top bar holds your camera and mic toggles, the connection status
-          badge (Connecting / Connected / Disconnected), the settings button,
-          and the leave-game button. If your opponent mutes or turns off their
-          camera, you'll see an indicator on their video feed.
+          The top bar holds your own camera preview on the far left, then
+          toggles for your <strong>camera</strong>, your <strong>microphone</strong>, and your
+          <strong>speaker</strong>
+          (mute your opponent without muting yourself). In the middle is the
+          game title and your opponent's hero. On the right sits the connection
+          badge — <strong>Connecting</strong>, <strong>Connected</strong>
+          or <strong>Disconnected</strong>
+          — then the settings gear and the leave-game button. If your opponent
+          turns off their camera or mic, an indicator appears on their feed.
         </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
-          <%!-- TODO: capture `in-game-topbar.png` — close-up of the
-                top bar with controls visible. --%>
+        <figure class="rounded-box border border-base-300 bg-base-200 p-2">
           <img
-            src={~p"/images/guide/in-game-topbar.png"}
+            src={~p"/images/about/3-1-top-bar.webp"}
             alt="In-game top bar controls"
             class="w-full rounded"
+            loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
             The in-game top bar.
@@ -384,215 +331,192 @@
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">3.2 Life total</h3>
         <p>
-          <%!-- TODO: explain the +/- life counter. Real FaB scenario:
-                opponent's Snatch deals 4 damage, tap minus four times to
-                drop from 40 to 36. Mention default starting life is 40. --%>
-          Your life total sits at the bottom of the sidebar with +/- buttons.
-          Every hero starts at 40 life in Classic Constructed — when your
-          opponent's <em>Snatch</em>
-          hits you for 4, click minus four times to
-          drop from 40 to 36.
+          Your life total sits at the bottom of the sidebar with +/- buttons,
+          and your opponent's is mirrored in the corner of their board. Most
+          Classic Constructed heroes start at 40 — when an opponent's <em>Snatch</em>
+          hits you for 4, tap minus four times to drop from 40 to 36. Life is
+          the one thing <strong>Reset Board</strong>
+          never touches, so it carries across the whole match.
         </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
-          <%!-- TODO: capture `life-counter.gif` — using +/- to go from
-                40 → 36 → 35 in response to damage. --%>
-          <img
-            src={~p"/images/guide/life-counter.gif"}
-            alt="Adjusting the life counter"
-            class="w-full rounded"
-          />
-          <figcaption class="text-sm text-base-content/70 pt-2">
-            Tracking damage: 40 → 36 after a 4-damage hit.
-          </figcaption>
-        </figure>
+        <%!-- TODO: capture a life-counter clip — using +/- to go 40 → 36 → 35
+              in response to damage, with the opponent's mirrored total
+              updating at the same time. --%>
       </div>
 
       <%!-- 3.3 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.3 Tracking damage (Physical & Arcane)</h3>
+        <h3 class="text-xl font-semibold">3.3 Combat chain management</h3>
         <p>
-          <%!-- TODO: explain the Physical and Arcane damage tiles in the
-                sidebar — toggle them on when an attack is incoming, set
-                the amount with +/-. Real FaB scenario: 5-power attack
-                defended with 2 block + 0 armor = 3 incoming Physical.
-                Toggle Physical, set to 3, opponent sees the live value.
-                Cover dual damage (e.g. Bravo's arcane on-hit). --%>
-          Toggle the <strong>Physical</strong>
-          and <strong>Arcane</strong>
-          tiles when an attack is incoming and set the amount with +/-. Your
-          opponent sees the value live, so they know how much damage is on the
-          chain before it resolves.
+          The top of the sidebar is your combat chain. Toggle <strong>Physical</strong>
+          or <strong>Arcane</strong>
+          when an attack is incoming and set the amount with +/-; your opponent
+          sees the number update live, so they know exactly what's on the chain
+          before it resolves. A 5-power attack met with 2 block and no armour
+          means you set Physical to 3. Dual-damage chains just use both tiles at
+          once.
         </p>
         <p>
-          <%!-- TODO: add the dual-damage example — e.g. a Bravo turn that
-                deals both Physical and Arcane in the same chain link. --%>
-          For dual-damage chains — say, a Bravo turn that deals both Physical
-          and Arcane — toggle both tiles and set each amount independently.
+          <strong>Amp</strong>
+          carries its own counter for the X in <em>Amp X</em>, and <strong>Go Again</strong>
+          is a straight toggle — flip it when your attack grants it, so your
+          opponent knows another action is coming rather than waiting on you.
+        </p>
+        <p>
+          When the chain closes, <strong>Reset Board</strong>
+          clears everything you had lit up — damage, Amp, Go Again, abilities,
+          on-hit effects and custom counters — in one click. Your life total and
+          proxy tokens survive, since those carry between chains.
         </p>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-          <%!-- TODO: capture `damage-tracking.gif` — toggling Physical to 5,
-                then toggling Arcane to 3. --%>
           <img
-            src={~p"/images/guide/damage-tracking.gif"}
-            alt="Tracking Physical and Arcane damage"
+            src={~p"/images/about/3-3-basic-combat-chain.gif"}
+            alt="Setting physical damage and an on-hit effect, resolving the hit, then resetting the board"
             class="w-full rounded"
+            loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
-            Physical 5 / Arcane 3 on a dual-damage chain.
+            A chain link start to finish: set the damage, resolve the hit, reset the board.
           </figcaption>
         </figure>
       </div>
 
       <%!-- 3.4 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.4 Go Again and chain management</h3>
+        <h3 class="text-xl font-semibold">3.4 On-hit effects</h3>
         <p>
-          <%!-- TODO: explain the Go Again toggle and Reset Chain button.
-                Real FaB scenario: Snatch hits → Go Again stays lit →
-                follow up with Sink Below. End your action phase by
-                clicking Reset Chain to clear pitch/arsenal status. --%>
-          Toggle <strong>Go Again</strong>
-          when you play an attack that grants
-          it, so your opponent knows another action is coming. At the end of
-          your action phase, click <strong>Reset Chain</strong>
-          to clear chain
-          status. Example: <em>Snatch</em>
-          hits with Go Again lit, you follow
-          up with <em>Sink Below</em>, then reset the chain.
+          The <strong>On Hits</strong>
+          dropdown tracks everything that triggers off a successful hit —
+          Bloodrot Pox, Frostbite, Frailty, Inertia, Mark, card draw, discard,
+          banishing from arsenal or graveyard, and plenty more. Effects with a
+          variable amount (Lose Health, Deal Damage, Deal Arcane Damage, Gain
+          Health) have their own +/- so you can set the X; the rest are simple
+          toggles.
         </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-          <%!-- TODO: capture `go-again-reset-chain.gif` — toggle Go Again,
-                play follow-up, then click Reset Chain. --%>
+        <p>
+          Each one you tick becomes a tile on your opponent's view, and hovering
+          it shows the reminder text — useful when they haven't met that card
+          before. <strong>Create Token…</strong>
+          at the bottom opens a second panel for the tokens you make for
+          yourself: Runechants, Embers, Seismic Surge, Spectral Shield, and the
+          rest.
+        </p>
+        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-lg">
           <img
-            src={~p"/images/guide/go-again-reset-chain.gif"}
-            alt="Using Go Again and Reset Chain"
+            src={~p"/images/about/3-4-on-hits.webp"}
+            alt="On Hits dropdown with effects ticked and counters set"
             class="w-full rounded"
+            loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
-            Chain a Go Again attack, then reset at end of turn.
+            Toggle effects on hit, and set the X on the counterable ones.
           </figcaption>
         </figure>
       </div>
 
       <%!-- 3.5 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.5 Abilities</h3>
+        <h3 class="text-xl font-semibold">3.5 Tokens & counters</h3>
         <p>
-          <%!-- TODO: explain the Abilities dropdown — checkboxes for hero
-                abilities. FaB example: Dorinthea's Ironsong Determination —
-                tick the ability so your opponent sees it active. --%>
-          The <strong>Abilities</strong>
-          dropdown holds checkboxes for your
-          hero's abilities. Tick an ability when it's active so your opponent
-          can see it — for example, Dorinthea's <em>Ironsong Determination</em>
-          once she's hit with a sword.
+          <strong>Create Proxy Token</strong>
+          hands your opponent a token they'd otherwise have to remember —
+          Mark, Bloodrot Pox, Frailty, Frostbite, Inertia and Gold. Pick one
+          from the dropdown and it shows up in their proxy token panel as a
+          full card image, so they can read exactly what it does. Counters use
+          +/- for the ones that stack; Mark is a single toggle since you can
+          only ever be marked once.
         </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-md">
-          <%!-- TODO: capture `abilities-dropdown.png` — open Abilities
-                dropdown with checkboxes visible. --%>
-          <img
-            src={~p"/images/guide/abilities-dropdown.png"}
-            alt="Abilities dropdown open with checkboxes"
-            class="w-full rounded"
-          />
-          <figcaption class="text-sm text-base-content/70 pt-2">
-            Tick an ability to mark it active.
-          </figcaption>
-        </figure>
+        <p>
+          For anything the app doesn't have a tile for, type a name into the
+          <strong>Counter…</strong>
+          box and hit +. That drops a named counter onto your board that you can
+          increment, decrement, and drag wherever you like — good for one-off
+          card effects and hero-specific tracking.
+        </p>
+        <div class="grid md:grid-cols-2 gap-4 items-start">
+          <figure class="rounded-box border border-base-300 bg-base-200 p-2">
+            <img
+              src={~p"/images/about/3-5-create-proxy-token.webp"}
+              alt="Create Proxy Token dropdown listing Mark, Frailty, Inertia, Bloodrot Pox, Frostbite and Gold"
+              class="w-full rounded"
+              loading="lazy"
+            />
+            <figcaption class="text-sm text-base-content/70 pt-2">
+              Pick a token to give your opponent.
+            </figcaption>
+          </figure>
+          <figure class="rounded-box border border-base-300 bg-base-200 p-2">
+            <img
+              src={~p"/images/about/3-5-proxy-token.webp"}
+              alt="Proxy token panel showing a Marked token card"
+              class="w-full rounded"
+              loading="lazy"
+            />
+            <figcaption class="text-sm text-base-content/70 pt-2">
+              They see the token as a card, and it stays until dismissed.
+            </figcaption>
+          </figure>
+        </div>
       </div>
 
       <%!-- 3.6 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.6 On-hit effects</h3>
+        <h3 class="text-xl font-semibold">3.6 Click a card to recognise it</h3>
         <p>
-          <%!-- TODO: explain the On Hits dropdown — checkboxes per effect,
-                +/- for counterable ones. List the on-hits available
-                (Bloodrot Pox, Frostbite, Frailty, Mark, etc.) and the
-                scenarios where each fires. --%>
-          The <strong>On Hits</strong>
-          dropdown tracks effects applied by
-          successful attacks — Bloodrot Pox, Frostbite, Frailty, Mark, and
-          more. Counterable effects (like Frostbite stacks) have +/- buttons;
-          others are simple toggles.
+          Can't read a card on your opponent's mat? Click it. FaB Tabletop
+          grabs that frame, finds the card in it, and matches it against the
+          full card database — the high-resolution card image pops out on top
+          of the board a moment later, no typing required.
         </p>
         <p>
-          <%!-- TODO: real FaB scenarios:
-                • Chane lands a Bloodrot Pox attack — toggle Bloodrot Pox.
-                • Oldhim lands two Frostbite triggers in a turn — toggle
-                  Frostbite, then increment to 2. --%>
-          Examples: when Chane lands an attack with <em>Bloodrot Pox</em>,
-          toggle it on so your opponent loses 1 life next turn. When Oldhim
-          stacks two Frostbite triggers in a single turn, toggle Frostbite and
-          increment to 2.
+          Recognition runs entirely in your browser, so it doesn't cost your
+          opponent anything and works while they're mid-turn. Pop-outs are
+          draggable and you can open as many as you like, which makes it easy to
+          line up a couple of cards and compare them. If the match isn't quite
+          right, the dropdown under the image offers the other candidates, and
+          the coloured dots switch between pitch variants. Cards lying sideways
+          on the mat work fine, and so do cards facing away from you.
+        </p>
+        <p>
+          A scan needs a reasonably clear look at the card — heavy glare, a
+          hand covering the art, or a card at a steep angle can all defeat it.
+          If nothing opens, nudge the card into better light and try again, or
+          fall back to the search box below.
         </p>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-          <%!-- TODO: capture `on-hits.gif` — open On Hits, tick Bloodrot
-                Pox and Frostbite, then increment Frostbite to 2. --%>
           <img
-            src={~p"/images/guide/on-hits.gif"}
-            alt="Toggling and stacking on-hit effects"
+            src={~p"/images/about/3-6-card-recognition-search.gif"}
+            alt="Clicking cards on the opponent's playmat to pop out the matching card images"
             class="w-full rounded"
+            loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
-            Toggle effects on hit, and stack the counterable ones.
+            Click a card on the board and it pops out, full size and readable.
           </figcaption>
         </figure>
       </div>
 
       <%!-- 3.7 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.7 Tokens & proxy tokens</h3>
+        <h3 class="text-xl font-semibold">3.7 Card search</h3>
         <p>
-          <%!-- TODO: explain proxy tokens — created for opponent visibility,
-                e.g. Runechants from Briar, Embers, Quicken, Boost tokens.
-                Use +/- to track counts; opponent's panel updates live. --%>
-          <strong>Proxy tokens</strong> let your opponent see counters and
-          tokens that don't have a physical card on the table — Runechants,
-          Embers, Quicken, Boost, etc. Create one, set the count, and your
-          opponent's panel updates live.
+          The <strong>Search card…</strong>
+          box looks up any FaB card by name. It's forgiving of typos and
+          half-remembered names, so "scar for" is enough to find <em>Scar for a Scar</em>. The result pops out the same way a scanned
+          card does — draggable, closable, and readable by both of you.
         </p>
         <p>
-          <%!-- TODO: real FaB scenario — Briar generates 3 Embers. Create
-                an Ember proxy token with count 3, then decrement as you
-                spend them on attack bonuses. --%>
-          Example: Briar generates 3 Embers off her ability — create an <em>Ember</em>
-          proxy token with count 3, then decrement as you spend
-          them.
+          Every pop-out doubles as a search box: edit the name in its header to
+          swap it for a different card without opening another one. The
+          coloured dots underneath jump between pitch variants, so you can show
+          your opponent the red, yellow, and blue versions of a card in a
+          couple of clicks.
         </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-          <%!-- TODO: capture `proxy-tokens.gif` — create a Runechant or
-                Ember token, increment the count, watch opponent's panel
-                update. --%>
+        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
           <img
-            src={~p"/images/guide/proxy-tokens.gif"}
-            alt="Creating and managing a proxy token"
+            src={~p"/images/about/3-7-card-search.gif"}
+            alt="Typing a card name into the search box and popping out the result"
             class="w-full rounded"
-          />
-          <figcaption class="text-sm text-base-content/70 pt-2">
-            Proxy tokens stay visible to your opponent throughout the game.
-          </figcaption>
-        </figure>
-      </div>
-
-      <%!-- 3.8 --%>
-      <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.8 Card search</h3>
-        <p>
-          <%!-- TODO: explain the card search box — type a card name,
-                suggestions appear, click to pop out the card image. --%>
-          Use the <strong>card search</strong>
-          box to look up any FaB card by
-          name — type-ahead suggestions appear as you type, and clicking a
-          result pops out the card image so you and your opponent can read
-          the text together.
-        </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-md">
-          <%!-- TODO: capture `card-search.png` — search box suggesting
-                "Snatch" or similar. --%>
-          <img
-            src={~p"/images/guide/card-search.png"}
-            alt="Card search with live suggestions"
-            class="w-full rounded"
+            loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
             Live card search — type a name to pop out the card.
@@ -600,59 +524,51 @@
         </figure>
       </div>
 
-      <%!-- 3.9 --%>
+      <%!-- 3.8 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.9 Reading your opponent's board</h3>
+        <h3 class="text-xl font-semibold">3.8 In-game settings</h3>
         <p>
-          <%!-- TODO: explain that the opponent's canvas shows draggable
-                tiles for their hero, pitch, arsenal, banished pile, and
-                effects. Tile colors indicate type. Hover a tile to see
-                the underlying card or description. --%>
-          Your opponent's canvas shows tiles for their hero, pitch zone,
-          arsenal, banished pile, and any active effects. Tile colors indicate
-          type at a glance, and hovering a tile reveals the underlying card
-          image or description.
+          The settings dialog covers everything you might need to change
+          mid-match:
         </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2">
-          <%!-- TODO: capture `opponent-board.png` — annotated screenshot
-                of opponent's canvas with hero, pitch, arsenal, banished
-                tiles labeled. --%>
-          <img
-            src={~p"/images/guide/opponent-board.png"}
-            alt="Opponent board with hero, pitch, arsenal, and banished tiles labeled"
-            class="w-full rounded"
-          />
-          <figcaption class="text-sm text-base-content/70 pt-2">
-            Reading the opponent's board — pitch, arsenal, banished, and effects.
-          </figcaption>
-        </figure>
-      </div>
-
-      <%!-- 3.10 --%>
-      <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.10 In-game settings</h3>
-        <p>
-          <%!-- TODO: explain each in-game setting:
-                • Flip opponent's view (useful when their camera is mounted
-                  upside-down).
-                • Share game code (copy for the other player to join).
-                • Camera source — webcam vs. phone.
-                • Reconfigure camera — jump back to camera setup. --%>
-          The in-game settings dialog lets you flip your opponent's view (if
-          their camera is mounted upside-down), copy the game code to share,
-          switch your camera source between webcam and phone, and jump back
-          to camera setup to re-adjust framing.
-        </p>
+        <ul class="list-disc list-inside space-y-1">
+          <li>
+            <strong>Flip opponent's view</strong>
+            — rotate their feed 180° if their camera is mounted the other way up.
+          </li>
+          <li>
+            <strong>Card scan debug overlay</strong>
+            — shows what the card scanner actually sees. Handy if recognition is
+            misbehaving and you want to report why.
+          </li>
+          <li>
+            <strong>Effect volume</strong>
+            and <strong>Opponent volume</strong>
+            — independent sliders for the app's sound effects and your
+            opponent's microphone.
+          </li>
+          <li>
+            <strong>Share game</strong> — copy the game code so someone can join a private game.
+          </li>
+          <li>
+            <strong>Camera Source</strong>
+            — switch between your webcam and your phone, with the QR code and
+            connection badge right below.
+          </li>
+          <li>
+            <strong>Reconfigure Camera</strong>
+            — jump back to camera setup to re-do your zoom and rotation.
+          </li>
+        </ul>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-md">
-          <%!-- TODO: capture `in-game-settings.png` — settings dialog
-                open with all controls visible. --%>
           <img
-            src={~p"/images/guide/in-game-settings.png"}
+            src={~p"/images/about/3-8-settings-dialog.webp"}
             alt="In-game settings dialog"
             class="w-full rounded"
+            loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
-            In-game settings: view flip, share code, camera source, reconfigure.
+            In-game settings: view flip, volumes, share code, camera source.
           </figcaption>
         </figure>
       </div>

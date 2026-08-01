@@ -35,3 +35,8 @@ tabletop-*.tar
 npm-debug.log
 /assets/node_modules/
 
+
+# Source captures for the About guide (raw screen recordings / screenshots).
+# Only the optimised .gif/.webp derivatives are versioned — the originals run to
+# hundreds of MB and two of them exceed GitHub's 100 MB per-file limit.
+/priv/static/images/about/*_orig.*

@@ -245,6 +245,21 @@ defmodule TabletopWeb.UserAuth do
     end
   end
 
+  def on_mount(:require_live_dashboard, _params, session, socket) do
+    socket = mount_current_scope(socket, session)
+
+    if Scope.live_dashboard?(socket.assigns.current_scope) do
+      {:cont, socket}
+    else
+      socket =
+        socket
+        |> Phoenix.LiveView.put_flash(:error, "You do not have access to that page.")
+        |> Phoenix.LiveView.redirect(to: ~p"/")
+
+      {:halt, socket}
+    end
+  end
+
   def on_mount(:require_sudo_mode, _params, session, socket) do
     socket = mount_current_scope(socket, session)
 
@@ -285,6 +300,29 @@ defmodule TabletopWeb.UserAuth do
       |> put_flash(:error, "You must log in to access this page.")
       |> maybe_store_return_to()
       |> redirect(to: ~p"/users/log-in")
+      |> halt()
+    end
+  end
+
+  @doc """
+  Plug for the LiveDashboard routes, gating on `Scope.live_dashboard?/1`.
+
+  Pair this with the `:require_live_dashboard` `on_mount` hook rather than
+  picking one: `live_dashboard/2` mounts its stylesheet and script as ordinary
+  controller routes (`/css-:md5`, `/js-:md5`) that no `on_mount` hook ever runs
+  for, while the hook is what guards the LiveView's connected mount, which
+  arrives over the socket and never passes through this pipeline.
+
+  Expects `:require_authenticated_user` earlier in the pipeline, so an
+  anonymous visitor is sent to log in rather than being told they lack access.
+  """
+  def require_live_dashboard_access(conn, _opts) do
+    if Scope.live_dashboard?(conn.assigns.current_scope) do
+      conn
+    else
+      conn
+      |> put_flash(:error, "You do not have access to that page.")
+      |> redirect(to: ~p"/")
       |> halt()
     end
   end

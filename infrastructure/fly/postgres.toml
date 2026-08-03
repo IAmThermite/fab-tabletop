@@ -9,6 +9,20 @@ primary_region = 'iad'
 [build]
   image = 'postgres:18-alpine'
 
+# `pg_stat_statements` has to be loaded at server start — it allocates shared
+# memory — so it cannot be switched on with a plain `CREATE EXTENSION`. This
+# overrides the image's CMD; the official entrypoint passes the extra `-c` flags
+# straight through to `postgres`. Enabling it is what lights up the "Calls" and
+# "Outliers" tabs of the LiveDashboard Ecto Stats page (see the app router);
+# without it `ecto_psql_extras` just omits those two tabs.
+#
+# Kept here rather than as an `ALTER SYSTEM` on the volume so that a rebuilt
+# volume comes back with the setting intact. The process group name must stay
+# `app` — that is the existing machine's group, and renaming it would replace
+# the machine instead of updating it, orphaning the pg_data volume.
+[processes]
+  app = 'postgres -c shared_preload_libraries=pg_stat_statements'
+
 [env]
   PGDATA = '/data/postgresql'
   POSTGRES_DB = 'fabtabletop'
@@ -26,6 +40,9 @@ primary_region = 'iad'
   auto_stop_machines = 'off'
   auto_start_machines = true
   ports = []
+  # Required once `[processes]` exists: a service must say which process groups
+  # it belongs to, or config validation rejects the app outright.
+  processes = ['app']
 
 [[vm]]
   size = 'shared-cpu-1x'

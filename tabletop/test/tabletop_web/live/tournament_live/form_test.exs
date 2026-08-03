@@ -5,7 +5,7 @@ defmodule TabletopWeb.TournamentLive.FormTest do
 
   setup %{conn: conn} do
     user = Tabletop.AccountsFixtures.user_fixture()
-    Application.put_env(:tabletop, :admin_emails, [user.email])
+    Application.put_env(:tabletop, :admin_ids, [user.id])
     %{conn: log_in_user(conn, user), user: user}
   end
 

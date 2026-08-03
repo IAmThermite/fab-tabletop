@@ -1424,13 +1424,21 @@ defmodule TabletopWeb.GameComponents do
             alt={card.card.name}
             class="w-full rounded"
           />
-          <%= if length(Map.get(card, :alternate_matches, [])) > 0 do %>
+          <%!-- Every candidate is listed, in a fixed order, with the displayed
+               one marked selected — switching must not remove the option the
+               user just picked. LiveView keeps a focused select's value across
+               the patch, so a value with no matching option renders blank. --%>
+          <%= if length(Map.get(card, :matches, [])) > 1 do %>
             <form phx-change="switch_match" class="pt-1">
               <input type="hidden" name="card_id" value={card.id} />
               <select name="normalized_name" class="select select-bordered select-xs w-full">
-                <option value="" selected>{card.card.name}</option>
-                <%= for alt <- card.alternate_matches do %>
-                  <option value={alt.card.normalized_name}>{alt.card.name}</option>
+                <%= for match <- card.matches do %>
+                  <option
+                    value={match.card.normalized_name}
+                    selected={match.card.normalized_name == card.card.normalized_name}
+                  >
+                    {match.card.name}
+                  </option>
                 <% end %>
               </select>
             </form>

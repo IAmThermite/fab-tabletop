@@ -23,6 +23,9 @@ defmodule TabletopWeb.Router do
     pipe_through(:browser)
 
     get("/about", PageController, :about)
+    get("/privacy", PageController, :privacy)
+    get("/terms", PageController, :terms)
+    get("/code-of-conduct", PageController, :code_of_conduct)
     get("/health", PageController, :health)
 
     live_session :phone_camera do

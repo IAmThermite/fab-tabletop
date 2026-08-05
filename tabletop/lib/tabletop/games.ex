@@ -352,6 +352,10 @@ defmodule Tabletop.Games do
            game
            |> Game.changeset(attrs, scope)
            |> Repo.update() do
+      # Subscribers (the game page renders both players' names) expect an
+      # {:updated, game} payload with :user/:user2 loaded — the caller's struct
+      # may not have them, and every other broadcast site preloads.
+      game = Repo.preload(game, [:user, :user2])
       broadcast_game(scope, {:updated, game})
       {:ok, game}
     end

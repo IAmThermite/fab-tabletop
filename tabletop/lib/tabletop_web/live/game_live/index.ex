@@ -947,10 +947,26 @@ defmodule TabletopWeb.GameLive.Index do
   # Screenshots shown in the anonymous intro header
   defp intro_screenshots do
     [
-      %{src: ~p"/images/home/join-or-create-game.webp", alt: "Join or create a game to play", caption: "Join or create a game"},
-      %{src: ~p"/images/home/game-board.webp", alt: "Live webcam play against your opponent", caption: "Webcam play"},
-      %{src: ~p"/images/home/effect-stacking.webp", alt: "Combat-chain tracking", caption: "Built-in trackers"},
-      %{src: ~p"/images/home/card-search.gif", alt: "Scan a card to look it up", caption: "Card scanning"}
+      %{
+        src: ~p"/images/home/join-or-create-game.webp",
+        alt: "Join or create a game to play",
+        caption: "Join or create a game"
+      },
+      %{
+        src: ~p"/images/home/game-board.webp",
+        alt: "Live webcam play against your opponent",
+        caption: "Webcam play"
+      },
+      %{
+        src: ~p"/images/home/card-search.gif",
+        alt: "Scan a card to look it up",
+        caption: "Card scanning"
+      },
+      %{
+        src: ~p"/images/home/effect-stacking.webp",
+        alt: "Combat-chain tracking",
+        caption: "Built-in trackers"
+      }
     ]
   end
 

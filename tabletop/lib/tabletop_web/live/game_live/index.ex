@@ -77,11 +77,11 @@ defmodule TabletopWeb.GameLive.Index do
                   :if={shot.src}
                   src={shot.src}
                   alt={shot.alt}
-                  class="aspect-video w-full object-cover"
+                  class="w-full object-cover"
                 />
                 <div
                   :if={!shot.src}
-                  class="flex aspect-video flex-col items-center justify-center gap-1.5 p-2 text-center"
+                  class="flex flex-col items-center justify-center gap-1.5 p-2 text-center"
                 >
                   <.icon name="hero-photo" class="size-6 text-base-content/30" />
                   <span class="text-xs text-base-content/40">{shot.caption}</span>
@@ -944,16 +944,13 @@ defmodule TabletopWeb.GameLive.Index do
   defp pluralize(1, unit), do: "1 #{unit} ago"
   defp pluralize(n, unit), do: "#{n} #{unit}s ago"
 
-  # Screenshots shown in the anonymous intro header. `src` is nil until real
-  # captures land in priv/static/images/home/ — set each one to its
-  # `~p"/images/home/<file>"` path (e.g. `~p"/images/home/lobby.png"`) to swap
-  # the placeholder for the image.
+  # Screenshots shown in the anonymous intro header
   defp intro_screenshots do
     [
-      %{src: nil, alt: "Lobby — browse and create games", caption: "The lobby"},
-      %{src: nil, alt: "Live webcam play against your opponent", caption: "Webcam play"},
-      %{src: nil, alt: "Life and combat-chain tracking", caption: "Built-in trackers"},
-      %{src: nil, alt: "Scan a card to look it up", caption: "Card scanning"}
+      %{src: ~p"/images/home/join-or-create-game.webp", alt: "Join or create a game to play", caption: "Join or create a game"},
+      %{src: ~p"/images/home/game-board.webp", alt: "Live webcam play against your opponent", caption: "Webcam play"},
+      %{src: ~p"/images/home/effect-stacking.webp", alt: "Combat-chain tracking", caption: "Built-in trackers"},
+      %{src: ~p"/images/home/card-search.gif", alt: "Scan a card to look it up", caption: "Card scanning"}
     ]
   end
 

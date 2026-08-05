@@ -35,3 +35,7 @@ tabletop-*.tar
 npm-debug.log
 /assets/node_modules/
 
+
+# Source captures for the About guide (raw screen recordings / screenshots)
+/priv/static/images/about/*_orig.*
+/priv/static/images/home/*_orig.*

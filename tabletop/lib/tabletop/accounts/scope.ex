@@ -32,11 +32,32 @@ defmodule Tabletop.Accounts.Scope do
   def for_user(nil), do: nil
 
   @doc """
-  Returns true if the scope's user is listed in `:admin_emails` config.
+  Returns true if the scope's user is listed in `:admin_ids` config.
   """
-  def admin?(%__MODULE__{user: %User{email: email}}) when is_binary(email) do
-    email in Application.get_env(:tabletop, :admin_emails, [])
+  def admin?(%__MODULE__{user: %User{id: id}}) when is_binary(id) do
+    id in Application.get_env(:tabletop, :admin_ids, [])
   end
 
   def admin?(_), do: false
+
+  @doc """
+  Returns true if the scope's user id is listed in `:live_dashboard_user_ids`.
+
+  Kept deliberately separate from `admin?/1`: both are id lists, but tournament
+  admin and BEAM introspection are different privileges, so being one does not
+  make you the other.
+
+  Unlike `admin?/1`, comparison is case-insensitive. `user.id` is always a
+  lowercase UUID, but the configured list is hand-written into an env var, so
+  an id pasted in uppercase would otherwise silently fail to match.
+  """
+  def live_dashboard?(%__MODULE__{user: %User{id: id}}) when is_binary(id) do
+    target = String.downcase(id)
+
+    :tabletop
+    |> Application.get_env(:live_dashboard_user_ids, [])
+    |> Enum.any?(&(is_binary(&1) and String.downcase(&1) == target))
+  end
+
+  def live_dashboard?(_), do: false
 end

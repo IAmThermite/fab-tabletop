@@ -82,6 +82,36 @@ To seed the Card database run:
 fly ssh console -c infrastructure/fly/fly.toml -C "/app/bin/tabletop eval 'Tabletop.Release.import_cards()'"
 ```
 
+## Query statistics (pg_stat_statements)
+
+The LiveDashboard "Ecto Stats" page (`/dev/dashboard/ecto_stats`) gets two extra
+tabs — **Calls** and **Outliers**, the slow-query analysis — when the
+`pg_stat_statements` extension is active. `ecto_psql_extras` probes for it and
+silently omits those tabs when it is missing, so this is optional.
+
+It takes two steps, because the module allocates shared memory at server start:
+
+```bash
+# 1. Preload the module. Already declared in postgres.toml; this applies it and
+#    restarts Postgres (brief downtime for the web app).
+fly deploy --config infrastructure/fly/postgres.toml
+
+# 2. Create the extension in the app database (one-off, persists in the volume)
+fly ssh console --app fabtabletop-db \
+  -C "psql -U fabtabletop -d fabtabletop -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'"
+```
+
+Verify:
+
+```bash
+fly ssh console --app fabtabletop-db \
+  -C "psql -U fabtabletop -d fabtabletop -tAc 'show shared_preload_libraries'"
+# => pg_stat_statements
+```
+
+Step 1 is required before step 2 — `CREATE EXTENSION` fails with
+"pg_stat_statements must be loaded via shared_preload_libraries" otherwise.
+
 ## Database Backups
 
 The self-hosted Postgres runs on a persistent volume. To back up manually:

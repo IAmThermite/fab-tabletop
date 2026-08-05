@@ -293,7 +293,7 @@ defmodule TabletopWeb.PhoneCameraLive do
   @impl true
   def mount(%{"token" => token}, _session, socket) do
     {valid, relay_user_id} =
-      case Phoenix.Token.verify(TabletopWeb.Endpoint, "camera relay", token, max_age: 3600) do
+      case TabletopWeb.CameraRelayToken.verify(TabletopWeb.Endpoint, token) do
         {:ok, user_id} -> {true, user_id}
         {:error, _} -> {false, nil}
       end

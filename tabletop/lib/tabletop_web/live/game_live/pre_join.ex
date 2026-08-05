@@ -4,6 +4,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
   alias Tabletop.Games
   alias Tabletop.Games.Game
   alias Tabletop.Heroes
+  alias TabletopWeb.CameraRelayToken
 
   on_mount {TabletopWeb.UserAuth, :require_authenticated}
 
@@ -18,7 +19,6 @@ defmodule TabletopWeb.GameLive.PreJoin do
         phx-hook=".PreJoinCamera"
         data-game-id={@game.id}
         data-user-token={@user_token}
-        data-camera-relay-token={@camera_relay_token}
         data-relay-user-id={@relay_user_id}
         data-skip-allowed={to_string(@mode == :creator)}
         class="flex flex-col h-full"
@@ -550,18 +550,14 @@ defmodule TabletopWeb.GameLive.PreJoin do
     end
 
     user_token = Phoenix.Token.sign(socket, "user socket", scope.user.id)
-    camera_relay_token = Phoenix.Token.sign(socket, "camera relay", scope.user.id)
-    qr_url = "#{TabletopWeb.Endpoint.url()}/phone-camera/#{camera_relay_token}"
-    qr_svg = qr_url |> EQRCode.encode() |> EQRCode.svg(width: 200)
 
     socket
     |> assign(:page_title, "Pre-Join: #{game.title}")
     |> assign(:game, game)
     |> assign(:mode, :creator)
     |> assign(:user_token, user_token)
-    |> assign(:camera_relay_token, camera_relay_token)
     |> assign(:relay_user_id, scope.user.id)
-    |> assign(:qr_svg, qr_svg)
+    |> assign(:qr_svg, CameraRelayToken.qr_svg(socket, scope.user.id))
     |> assign(:hero_options, [])
     |> assign(:selected_hero, nil)
   end
@@ -578,18 +574,14 @@ defmodule TabletopWeb.GameLive.PreJoin do
         end
 
         user_token = Phoenix.Token.sign(socket, "user socket", scope.user.id)
-        camera_relay_token = Phoenix.Token.sign(socket, "camera relay", scope.user.id)
-        qr_url = "#{TabletopWeb.Endpoint.url()}/phone-camera/#{camera_relay_token}"
-        qr_svg = qr_url |> EQRCode.encode() |> EQRCode.svg(width: 200)
 
         socket
         |> assign(:page_title, "Pre-Join: #{game.title}")
         |> assign(:game, game)
         |> assign(:mode, :joiner)
         |> assign(:user_token, user_token)
-        |> assign(:camera_relay_token, camera_relay_token)
         |> assign(:relay_user_id, scope.user.id)
-        |> assign(:qr_svg, qr_svg)
+        |> assign(:qr_svg, CameraRelayToken.qr_svg(socket, scope.user.id))
         |> assign(:hero_options, Heroes.options_for(game.format))
         |> assign(:selected_hero, nil)
 
@@ -609,7 +601,6 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:game, game)
         |> assign(:mode, :joiner)
         |> assign(:user_token, "")
-        |> assign(:camera_relay_token, "")
         |> assign(:relay_user_id, "")
         |> assign(:qr_svg, "")
         |> assign(:hero_options, [])

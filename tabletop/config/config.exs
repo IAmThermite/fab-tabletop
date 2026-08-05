@@ -25,8 +25,14 @@ config :tabletop,
   generators: [timestamp_type: :utc_datetime]
 
 # Emails allowed to access the tournament admin console.
-# Overridable in runtime.exs via the ADMIN_EMAILS env var.
-config :tabletop, :admin_emails, []
+# Overridable in runtime.exs via the FABTABLETOP_ADMIN_IDS env var.
+config :tabletop, :admin_ids, []
+
+# User ids allowed to reach the LiveDashboard (`/dev/dashboard`) outside of
+# development, where the route is open. Overridable in runtime.exs via the
+# LIVE_DASHBOARD_USER_IDS env var. Empty list = nobody, so the dashboard is
+# closed by default on a fresh deploy.
+config :tabletop, :live_dashboard_user_ids, []
 
 config :tabletop, Tabletop.Repo, migration_primary_key: [type: :uuid]
 

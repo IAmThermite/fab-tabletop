@@ -50,4 +50,50 @@
   display: contents
 }
 
+/* Game tiles (life/damage/effect markers pinned to a spot on a player's board).
+   Their coordinates are stored in *board* space — percentages of the video
+   frame, as placed by the player who owns them — and carried on the per-tile
+   `--tile-x`/`--tile-y` custom properties rather than on `left`/`top` directly.
+   That indirection is what lets a viewer whose board is drawn rotated 180°
+   (the default for the opponent's canvas — see the flip toggle in the game
+   settings dialog) mirror the tiles onto the matching side of the board without
+   the server, which never sees that client-side toggle, re-rendering anything.
+   Only the position mirrors: the tile itself stays upright and readable. */
+.game-tile {
+  left: var(--tile-x);
+  top: var(--tile-y);
+}
+
+[data-board-flipped="true"] .game-tile {
+  left: calc(100% - var(--tile-x));
+  top: calc(100% - var(--tile-y));
+}
+
+/* Hover popovers anchor to whichever side of the tile has room, chosen
+   server-side from the tile's board coordinates. A flipped board mirrors the
+   tile's visual position, so the anchor has to mirror with it. */
+[data-board-flipped="true"] .tile-popover-x-left {
+  right: auto;
+  margin-right: 0;
+  left: 100%;
+  margin-left: 0.5rem;
+}
+
+[data-board-flipped="true"] .tile-popover-x-right {
+  left: auto;
+  margin-left: 0;
+  right: 100%;
+  margin-right: 0.5rem;
+}
+
+[data-board-flipped="true"] .tile-popover-y-top {
+  top: auto;
+  bottom: 0;
+}
+
+[data-board-flipped="true"] .tile-popover-y-bottom {
+  bottom: auto;
+  top: 0;
+}
+
 /* This file is for your main application CSS */

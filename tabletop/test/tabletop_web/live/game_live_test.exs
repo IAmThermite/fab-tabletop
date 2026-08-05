@@ -1,6 +1,7 @@
 defmodule TabletopWeb.GameLiveTest do
   use TabletopWeb.ConnCase
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
   import Tabletop.GamesFixtures
   import Tabletop.AccountsFixtures
@@ -184,10 +185,15 @@ defmodule TabletopWeb.GameLiveTest do
 
       live_view |> element("button", "Join private") |> render_click()
 
+      # The dialog is teleported to <body> by `<.portal>`, and LiveViewTest can't
+      # select inside a portal — render the portal to check it opened, then send
+      # the submit to the view itself.
+      assert live_view |> element("#join-private-portal") |> render() =~ "Join private game"
+
       assert {:error, {:live_redirect, %{to: to}}} =
-               live_view
-               |> form("#join-private-dialog form", code: "https://example.com/games/#{game.id}")
-               |> render_submit()
+               render_submit(live_view, "join_private", %{
+                 "code" => "https://example.com/games/#{game.id}"
+               })
 
       assert to == ~p"/games/#{game}/pre-join"
     end
@@ -226,6 +232,130 @@ defmodule TabletopWeb.GameLiveTest do
                |> follow_redirect(conn)
 
       assert html =~ "Game created successfully"
+    end
+
+    test "quick match re-seeds the create form from the last created game", %{
+      conn: conn,
+      scope: scope
+    } do
+      last =
+        game_fixture(scope, %{
+          title: "Rematch Me",
+          format: :blitz,
+          language: :deu,
+          hero: "aurora",
+          decklist: "https://fabrary.net/decks/rematch",
+          private: true,
+          competitive: true
+        })
+
+      # The seeded form is only submittable once the previous game is over —
+      # a user may only be in one live game at a time.
+      Tabletop.Games.terminate_game(scope, last)
+
+      {:ok, live_view, _html} = live(conn, ~p"/")
+
+      live_view |> element("button", "Quick match") |> render_click()
+
+      # Submit with no overrides: the params come straight from the seeded DOM,
+      # so the created game proves what the button actually filled in.
+      {:ok, _show, _html} =
+        live_view
+        |> form("#create-game-form")
+        |> render_submit()
+        |> follow_redirect(conn)
+
+      created = Tabletop.Games.get_current_game_for_user(scope)
+
+      assert created.id != last.id
+      assert created.title == "Rematch Me"
+      assert created.format == :blitz
+      assert created.language == :deu
+      assert created.hero == "aurora"
+      assert created.decklist == "https://fabrary.net/decks/rematch"
+      assert created.private
+      assert created.competitive
+    end
+
+    test "quick match skips tournament matches and reuses the last real game", %{
+      conn: conn,
+      scope: scope
+    } do
+      own =
+        game_fixture(scope, %{
+          title: "My Deck Night",
+          format: :blitz,
+          hero: "aurora",
+          decklist: "https://fabrary.net/decks/mine"
+        })
+
+      Tabletop.Games.terminate_game(scope, own)
+
+      # A tournament match is an ordinary Game row with this user as `user_id`,
+      # but it carries no hero or decklist — seeding from it blanked the form.
+      opponent = user_scope_fixture()
+
+      {:ok, match_game} =
+        %Tabletop.Games.Game{}
+        |> Tabletop.Games.Game.match_changeset(%{
+          title: "Summer Cup — Swiss 1 · Table 3",
+          format: :classic_constructed,
+          status: :active,
+          user_id: scope.user.id,
+          user2_id: opponent.user.id
+        })
+        |> Tabletop.Repo.insert()
+
+      Tabletop.Games.terminate_game(scope, match_game)
+
+      # `inserted_at` is second-precision, so the fixtures above can tie. Push
+      # the tournament row clear of the real game to pin down the ordering.
+      Tabletop.Repo.update_all(
+        from(g in Tabletop.Games.Game, where: g.id == ^match_game.id),
+        set: [inserted_at: DateTime.add(DateTime.utc_now(), 60)]
+      )
+
+      assert Tabletop.Games.get_last_created_game(scope).id == own.id
+
+      {:ok, live_view, _html} = live(conn, ~p"/")
+
+      live_view |> element("button", "Quick match") |> render_click()
+
+      {:ok, _show, _html} =
+        live_view
+        |> form("#create-game-form")
+        |> render_submit()
+        |> follow_redirect(conn)
+
+      created = Tabletop.Games.get_current_game_for_user(scope)
+
+      assert created.title == "My Deck Night"
+      assert created.hero == "aurora"
+      assert created.decklist == "https://fabrary.net/decks/mine"
+    end
+
+    test "quick match button is hidden when the only game is a tournament match", %{
+      conn: conn,
+      scope: scope
+    } do
+      opponent = user_scope_fixture()
+
+      {:ok, match_game} =
+        %Tabletop.Games.Game{}
+        |> Tabletop.Games.Game.match_changeset(%{
+          title: "Summer Cup — Swiss 1 · Table 3",
+          format: :classic_constructed,
+          status: :active,
+          user_id: scope.user.id,
+          user2_id: opponent.user.id
+        })
+        |> Tabletop.Repo.insert()
+
+      Tabletop.Games.terminate_game(scope, match_game)
+
+      {:ok, live_view, _html} = live(conn, ~p"/")
+
+      refute has_element?(live_view, "button", "Quick match")
     end
 
     test "shows joinable games from other users", %{conn: conn} do
@@ -395,6 +525,30 @@ defmodule TabletopWeb.GameLiveTest do
       # so the control must opt out of LiveView DOM patching or a re-render
       # resets it.
       assert html =~ ~r/id="opponent-volume-control"[^>]*phx-update="ignore"/
+    end
+
+    test "renders tiles in board coordinates inside a tile layer", %{conn: conn, game: game} do
+      {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
+
+      show_live
+      |> element("input[phx-click='toggle_damage'][phx-value-type='physical']")
+      |> render_click()
+
+      # The tile appears via the game session's broadcast, so re-render once the
+      # LiveView has handled it.
+      html = render(show_live)
+
+      # Tiles carry their board position on --tile-x/--tile-y rather than
+      # left/top so a viewer whose board is drawn rotated 180° can mirror them
+      # in CSS (the server never sees that client-side flip toggle). Baking
+      # left/top in pins every tile to the side of the player who placed it.
+      assert html =~ ~s(id="tile-layer-local")
+      assert html =~ ~r/--tile-x: [\d.]+%; --tile-y: [\d.]+%/
+      refute html =~ ~r/style="left: [\d.]+%/
+
+      # The overlay the game hook sizes to the letterboxed remote canvas and
+      # marks flipped; tiles are positioned against it, not against #game-area.
+      assert has_element?(show_live, "#game-area > #tile-layer-remote")
     end
   end
 

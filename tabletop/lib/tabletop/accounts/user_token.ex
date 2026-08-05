@@ -8,6 +8,7 @@ defmodule Tabletop.Accounts.UserToken do
 
   @confirm_validity_in_days 7
   @change_email_validity_in_days 7
+  @reset_password_validity_in_days 1
   @session_validity_in_days 14
 
   @primary_key {:id, Ecto.UUID, autogenerate: true}
@@ -116,6 +117,37 @@ defmodule Tabletop.Accounts.UserToken do
             where: token.inserted_at > ago(^@confirm_validity_in_days, "day"),
             where: token.sent_to == user.email,
             select: {user, token}
+          )
+
+        {:ok, query}
+
+      :error ->
+        :error
+    end
+  end
+
+  @doc """
+  Checks if the token is valid and returns its underlying lookup query.
+
+  If found, the query returns the user the reset was requested for.
+
+  The given token is valid if it matches its hashed counterpart in the
+  database and if it has not expired (after @reset_password_validity_in_days).
+  Reset tokens are short-lived because holding one is enough to take over the
+  account. The `sent_to` check invalidates tokens mailed to an address the
+  user no longer owns.
+  """
+  def verify_reset_password_token_query(token) do
+    case Base.url_decode64(token, padding: false) do
+      {:ok, decoded_token} ->
+        hashed_token = :crypto.hash(@hash_algorithm, decoded_token)
+
+        query =
+          from(token in by_token_and_context_query(hashed_token, "reset_password"),
+            join: user in assoc(token, :user),
+            where: token.inserted_at > ago(^@reset_password_validity_in_days, "day"),
+            where: token.sent_to == user.email,
+            select: user
           )
 
         {:ok, query}

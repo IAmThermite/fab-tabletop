@@ -384,6 +384,135 @@ defmodule Tabletop.Fab.GameStateTest do
     end
   end
 
+  describe "tile stacking" do
+    # A tile is a fixed ~30px tall on a board that can be as short as ~640px, so
+    # the gap between stacked tiles has to stay wide enough (~5% of the board)
+    # to clear one there. Tighter than a tile's own height and they overlap.
+    @one_tile_tall 4.0
+
+    test "stacks new tiles clear of each other" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+      {:ok, player, _} = GameState.toggle_goagain(player)
+
+      ys =
+        ~w(physical arcane goagain)
+        |> Enum.map(&player.tile_positions[&1].y)
+        |> Enum.sort()
+
+      for [above, below] <- Enum.chunk_every(ys, 2, 1, :discard) do
+        assert below - above >= @one_tile_tall
+      end
+    end
+
+    test "closes the gap under a tile that leaves the stack" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+      {:ok, player, _} = GameState.toggle_goagain(player)
+
+      %{"physical" => physical, "arcane" => arcane, "goagain" => goagain} = player.tile_positions
+
+      # Sanity: the three stacked into one column, top to bottom.
+      assert physical.y < arcane.y and arcane.y < goagain.y
+
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+
+      # The tile below slides up into the vacated slot; the one above stays.
+      assert player.tile_positions["physical"] == physical
+      assert player.tile_positions["goagain"] == arcane
+    end
+
+    test "keeps the spacing of the tiles that slide up" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+      {:ok, player, _} = GameState.toggle_goagain(player)
+
+      %{"arcane" => arcane, "goagain" => goagain} = player.tile_positions
+      spacing = goagain.y - arcane.y
+
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+
+      assert player.tile_positions["goagain"].y - player.tile_positions["arcane"].y == spacing
+    end
+
+    test "leaves a tile parked away from the stack where it is" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+
+      {:ok, player, {:custom_counter_added, id, _}} =
+        GameState.add_custom_counter(player, "Energy")
+
+      # Same column, but far enough down to be its own thing rather than part
+      # of the stack.
+      column_x = player.tile_positions["physical"].x
+      {:ok, player, _} = GameState.move_tile(player, id, column_x, 80.0)
+
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+
+      assert player.tile_positions[id] == %{x: column_x, y: 80.0}
+    end
+
+    test "closes the gap under a tile dragged out of the column" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+      {:ok, player, _} = GameState.toggle_goagain(player)
+
+      %{"arcane" => arcane} = player.tile_positions
+
+      {:ok, player, _} = GameState.move_tile(player, "arcane", 60.0, 50.0)
+
+      assert player.tile_positions["arcane"] == %{x: 60.0, y: 50.0}
+      assert player.tile_positions["goagain"] == arcane
+    end
+
+    test "leaves the stack alone when a tile is only nudged within its column" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+      {:ok, player, _} = GameState.toggle_goagain(player)
+
+      %{"physical" => physical, "arcane" => arcane, "goagain" => goagain} = player.tile_positions
+
+      # Arranging the stack by hand must not make the tiles below jump.
+      {:ok, player, _} =
+        GameState.move_tile(player, "physical", physical.x + 2.0, physical.y - 2.0)
+
+      assert player.tile_positions["arcane"] == arcane
+      assert player.tile_positions["goagain"] == goagain
+    end
+
+    test "leaves the stack alone when a grouped tile is dragged away" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+      {:ok, player, _} = GameState.toggle_effect(player, "ability", "Dominate")
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+
+      arcane = player.tile_positions["arcane"]
+
+      # A group moves as a unit and keeps its shape, so it leaves no hole.
+      {:ok, player, _} = GameState.move_tile(player, "ability:Dominate", 60.0, 50.0)
+
+      assert player.tile_positions["arcane"] == arcane
+    end
+
+    test "leaves a tile in another column where it is" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+
+      {:ok, player, {:custom_counter_added, id, _}} =
+        GameState.add_custom_counter(player, "Energy")
+
+      {:ok, player, _} = GameState.move_tile(player, id, 70.0, 20.0)
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+
+      assert player.tile_positions[id] == %{x: 70.0, y: 20.0}
+    end
+  end
+
   describe "reset_board/1" do
     test "resets damage, toggles, and effects but preserves life" do
       player = GameState.default_player()

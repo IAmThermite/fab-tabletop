@@ -327,6 +327,25 @@ defmodule Tabletop.Fab.GameState do
 
   def effect_key(category, name), do: "#{category}:#{name}"
 
+  # Tile layout, all in board percentages. `@tile_w`/`@tile_h` are roughly how
+  # much of the board a tile covers, and `@slot_step` is the pitch of a stack.
+  #
+  # A tile is a fixed ~30px tall while a slot is a percentage of the board, so
+  # the step has to clear a tile on the *shortest* board people play on — a
+  # ~640px-high canvas on a 1280-wide window, where 5% is 32px. Anything tighter
+  # (it used to be 3%) stacks fine on a large screen and overlaps on a small one.
+  @tile_w 10.0
+  @tile_h 4.0
+  @slot_step 5.0
+  # Vertical distance beyond which two tiles in a column are separate things
+  # rather than one stack.
+  @max_stack_gap 7.5
+  @max_slots 16
+  @max_y 92.0
+  @min_y 8.0
+  @min_x 5.0
+  @max_x 95.0
+
   def move_tile(player, tile_id, x, y)
       when is_binary(tile_id) and is_number(x) and is_number(y) do
     x = max(0.0, min(100.0, x / 1))
@@ -359,10 +378,32 @@ defmodule Tabletop.Fab.GameState do
           end)
       end
 
+    new_positions = maybe_close_vacated_column(new_positions, tile_id, old_pos, %{x: x, y: y})
+
     new_order = [tile_id | List.delete(Map.get(player, :tile_order, []), tile_id)]
     new_player = %{player | tile_positions: new_positions, tile_order: new_order}
     {:ok, new_player, {:tile_moved, tile_id, x, y}}
   end
+
+  # Dragging a tile clear of its column leaves the same hole in the stack that
+  # removing it would, so close it. A move *within* the column is left alone —
+  # that is someone arranging the stack by hand, and re-flowing under the drag
+  # would fight them. Grouped tiles move as a unit and keep their shape, so
+  # there is no hole for them to leave either.
+  defp maybe_close_vacated_column(positions, tile_id, %{x: old_x} = old_pos, %{x: new_x}) do
+    if is_nil(tile_group(tile_id)) and abs(new_x - old_x) >= @tile_w do
+      moved = Map.fetch!(positions, tile_id)
+
+      positions
+      |> Map.delete(tile_id)
+      |> close_stack_gap(old_pos)
+      |> Map.put(tile_id, moved)
+    else
+      positions
+    end
+  end
+
+  defp maybe_close_vacated_column(positions, _tile_id, _old_pos, _new_pos), do: positions
 
   defp tile_group(tile_id) when is_binary(tile_id) do
     cond do
@@ -419,27 +460,61 @@ defmodule Tabletop.Fab.GameState do
   end
 
   defp remove_tile(player, tile_id) do
+    positions = player.tile_positions
+
     %{
       player
-      | tile_positions: Map.delete(player.tile_positions, tile_id),
+      | tile_positions:
+          positions
+          |> Map.delete(tile_id)
+          |> close_stack_gap(Map.get(positions, tile_id)),
         tile_order: List.delete(Map.get(player, :tile_order, []), tile_id)
     }
   end
 
-  # Stack new tiles in a vertical column directly below the anchor (the most
-  # recently placed or moved tile still on the canvas). We scan slots
-  # downward from the anchor and pick the first one not already occupied, so
-  # when a tile is removed the gap it leaves gets filled by the next tile
-  # added before the column extends further.
-  @tile_w 10.0
-  @tile_h 2.5
-  @slot_step 3.0
-  @max_slots 16
-  @max_y 92.0
-  @min_y 8.0
-  @min_x 5.0
-  @max_x 95.0
+  # Taking a tile out of a stack would otherwise leave a hole in the column, so
+  # the tiles beneath it slide up to close it: the one directly below takes the
+  # removed tile's slot and the rest follow at their existing spacing (a stack
+  # someone has hand-adjusted keeps its shape instead of being re-flowed).
+  defp close_stack_gap(positions, nil), do: positions
 
+  defp close_stack_gap(positions, %{y: removed_y} = removed) do
+    case stack_below(positions, removed) do
+      [] ->
+        positions
+
+      [{_id, %{y: first_y}} | _] = below ->
+        shift = first_y - removed_y
+
+        Enum.reduce(below, positions, fn {id, %{x: x, y: y}}, acc ->
+          Map.put(acc, id, %{x: x, y: y - shift})
+        end)
+    end
+  end
+
+  # The contiguous run of tiles stacked under `removed` in the same column,
+  # nearest first. A tile parked well below the stack is its own thing and is
+  # left where it is, so the run stops at the first larger-than-stack gap.
+  defp stack_below(positions, %{x: removed_x, y: removed_y}) do
+    positions
+    |> Enum.filter(fn {_id, %{x: x, y: y}} -> abs(x - removed_x) < @tile_w and y > removed_y end)
+    |> Enum.sort_by(fn {_id, %{y: y}} -> y end)
+    |> Enum.reduce_while({[], removed_y}, fn {_id, %{y: y}} = tile, {acc, prev_y} ->
+      if y - prev_y <= @max_stack_gap do
+        {:cont, {[tile | acc], y}}
+      else
+        {:halt, {acc, prev_y}}
+      end
+    end)
+    |> elem(0)
+    |> Enum.reverse()
+  end
+
+  # Stack new tiles in a vertical column directly below the anchor (the most
+  # recently placed or moved tile still on the canvas). We scan slots downward
+  # from the anchor and pick the first one not already occupied, so any gap left
+  # in the column — a tile nudged aside, a group dragged off — gets reused
+  # before the column extends further.
   defp next_default_position(player) do
     case anchor_position(player) do
       nil ->

@@ -16,7 +16,7 @@ defmodule TabletopWeb.UserSocket do
   end
 
   def connect(%{"camera_relay_token" => token}, socket, _connect_info) do
-    case Phoenix.Token.verify(socket, "camera relay", token, max_age: 3600) do
+    case TabletopWeb.CameraRelayToken.verify(socket, token) do
       {:ok, user_id} ->
         {:ok, assign(socket, :user_id, user_id)}
 

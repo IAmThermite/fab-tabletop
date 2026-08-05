@@ -53,6 +53,9 @@ defmodule Tabletop.MixProject do
       {:phoenix_live_view, "~> 1.1.0"},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.3"},
+      # Backs the dashboard's "Ecto Stats" page. Not a dev-only dep — the
+      # dashboard is mounted in production too (see router.ex).
+      {:ecto_psql_extras, "~> 0.8"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
       {:heroicons,

@@ -9,7 +9,7 @@ defmodule Tabletop.TournamentsFixtures do
 
   def admin_scope_fixture do
     user = user_fixture()
-    Application.put_env(:tabletop, :admin_emails, [user.email])
+    Application.put_env(:tabletop, :admin_ids, [user.id])
     Scope.for_user(user)
   end
 

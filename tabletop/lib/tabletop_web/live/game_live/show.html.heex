@@ -4,7 +4,6 @@
     phx-hook=".GameVideo"
     data-game-id={@game.id}
     data-user-token={@user_token}
-    data-camera-relay-token={@camera_relay_token}
     data-relay-user-id={@user_id}
     data-mic-enabled={to_string(@game_state.my.mic)}
     data-camera-enabled={to_string(@game_state.my.camera)}
@@ -85,17 +84,30 @@
         </div>
       </div>
 
-      <%!-- Title flanked by both players' hero portraits (user1 left, user2
-            right). @game is reassigned on {:updated, game}, so the opponent's
-            icon fills in live once they join. --%>
-      <div class="flex-1 flex items-center justify-center gap-2 min-w-0">
-        <span class="shrink-0" title={hero_name(@game.hero)}>
-          <.hero_portrait hero={@game.hero} class="size-8" />
-        </span>
+      <%!-- Title flanked by both players' hero portraits and names (user1 left,
+            user2 right). @game is reassigned on {:updated, game} — which
+            preloads :user/:user2 — so the opponent's icon and name fill in live
+            once they join. The two flanking groups are `flex-1 basis-0` so they
+            always take equal width and the title stays dead-centre no matter how
+            long either name is; each group truncates instead of shifting it. --%>
+      <div class="flex-1 flex items-center justify-center gap-4 min-w-0">
+        <div class="flex-1 basis-0 flex items-center justify-end gap-2 min-w-0">
+          <span :if={@game.user} class="font-bold truncate" title={@game.user.name}>
+            {@game.user.name}
+          </span>
+          <span class="shrink-0" title={hero_name(@game.hero)}>
+            <.hero_portrait hero={@game.hero} class="size-8" />
+          </span>
+        </div>
         <span class="font-semibold truncate">{@game.title}</span>
-        <span class="shrink-0" title={hero_name(@game.user2_hero)}>
-          <.hero_portrait hero={@game.user2_hero} class="size-8" />
-        </span>
+        <div class="flex-1 basis-0 flex items-center justify-start gap-2 min-w-0">
+          <span class="shrink-0" title={hero_name(@game.user2_hero)}>
+            <.hero_portrait hero={@game.user2_hero} class="size-8" />
+          </span>
+          <span :if={@game.user2} class="font-bold truncate" title={@game.user2.name}>
+            {@game.user2.name}
+          </span>
+        </div>
       </div>
 
       <div id="connection-status" phx-update="ignore" class="badge badge-sm badge-outline">
@@ -298,10 +310,23 @@
         // The opponent's board is rotated 180° by default (you sit across the
         // table from them), so the resting view is already readable. The toggle
         // defaults to off; turning it on rotates the board back to upright.
+        //
+        // Two layers have to agree on that orientation: the canvas, which is
+        // rotated in CSS, and the tile overlay, whose tiles have to stay the
+        // right way up to stay readable and so mirror their *coordinates*
+        // instead (see .game-tile in app.css). A LiveView patch can drop
+        // either JS-set attribute, so this is re-applied from updated() too.
         const FLIP_KEY = "tabletop:flip-opponent"
-        const flipToggleOn = localStorage.getItem(FLIP_KEY) === "true"
-        flipToggle.checked = flipToggleOn
-        canvasEl.style.transform = flipToggleOn ? "" : "rotate(180deg)"
+        const applyBoardOrientation = () => {
+          const upright = localStorage.getItem(FLIP_KEY) === "true"
+          const canvas = document.getElementById("remote-canvas")
+          const tileLayer = document.getElementById("tile-layer-remote")
+          if (canvas) canvas.style.transform = upright ? "" : "rotate(180deg)"
+          if (tileLayer) tileLayer.dataset.boardFlipped = String(!upright)
+        }
+        flipToggle.checked = localStorage.getItem(FLIP_KEY) === "true"
+        this._applyBoardOrientation = applyBoardOrientation
+        applyBoardOrientation()
 
         // Load debug preference from localStorage (default off)
         debugToggle.checked = isDebugEnabled()
@@ -365,6 +390,7 @@
           localVideoEl,
           remoteVideoEl,
           canvasEl,
+          tileLayerEl: document.getElementById("tile-layer-remote"),
           micEnabled: this.el.dataset.micEnabled === "true",
           cameraEnabled: this.el.dataset.cameraEnabled === "true",
           onStatusChange: (status) => {
@@ -465,9 +491,8 @@
         // Flip opponent toggle. Off (default) keeps the board's default 180°
         // rotation; on rotates it back to upright.
         flipToggle.addEventListener("change", () => {
-          const toggleOn = flipToggle.checked
-          canvasEl.style.transform = toggleOn ? "" : "rotate(180deg)"
-          localStorage.setItem(FLIP_KEY, toggleOn)
+          localStorage.setItem(FLIP_KEY, flipToggle.checked)
+          applyBoardOrientation()
         })
 
         // Debug scan overlay toggle
@@ -671,9 +696,7 @@
       },
 
       updated() {
-        const canvasEl = document.getElementById("remote-canvas")
-        const flipToggleOn = localStorage.getItem("tabletop:flip-opponent") === "true"
-        canvasEl.style.transform = flipToggleOn ? "" : "rotate(180deg)"
+        if (this._applyBoardOrientation) this._applyBoardOrientation()
 
         // Keep the local tracks aligned with the server-authoritative state.
         // Normally these are the same — the click handler updates both — but

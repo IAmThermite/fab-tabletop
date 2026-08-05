@@ -9,6 +9,7 @@ defmodule TabletopWeb.GameLive.Show do
   alias Tabletop.Games.LeaveTimer
   alias Tabletop.Games.GameSession
   alias Tabletop.Tournaments
+  alias TabletopWeb.CameraRelayToken
 
   on_mount {TabletopWeb.UserAuth, :require_authenticated}
 
@@ -58,10 +59,6 @@ defmodule TabletopWeb.GameLive.Show do
         if connected?(socket), do: GameSession.get_state(game.id), else: empty_state()
 
       user_token = Phoenix.Token.sign(socket, "user socket", user_id)
-      camera_relay_token = Phoenix.Token.sign(socket, "camera relay", user_id)
-
-      qr_url = "#{TabletopWeb.Endpoint.url()}/phone-camera/#{camera_relay_token}"
-      qr_svg = qr_url |> EQRCode.encode() |> EQRCode.svg(width: 200)
 
       {:ok,
        socket
@@ -71,8 +68,7 @@ defmodule TabletopWeb.GameLive.Show do
        |> assign(:user_id, user_id)
        |> assign(:user1_id, game.user_id)
        |> assign(:user2_id, game.user2_id)
-       |> assign(:camera_relay_token, camera_relay_token)
-       |> assign(:qr_svg, qr_svg)
+       |> assign(:qr_svg, CameraRelayToken.qr_svg(socket, user_id))
        |> assign(:peer_connected, false)
        |> assign_session_state(session_state)
        |> assign(:abilities_open, false)

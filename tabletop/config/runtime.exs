@@ -29,10 +29,21 @@ config :tabletop, TabletopWeb.Endpoint,
 # `[http_service]` and never publicly reachable.
 config :tabletop, :metrics_port, String.to_integer(System.get_env("METRICS_PORT", "9091"))
 
-if admin_emails = System.get_env("ADMIN_EMAILS") do
+if admin_ids = System.get_env("FABTABLETOP_ADMIN_IDS") do
   config :tabletop,
-         :admin_emails,
-         admin_emails |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+         :admin_ids,
+         admin_ids |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+end
+
+# Comma-separated user ids (UUIDs) allowed to reach the LiveDashboard. Matching
+# is case-insensitive, so pasting an id in either case works.
+if dashboard_user_ids = System.get_env("LIVE_DASHBOARD_USER_IDS") do
+  config :tabletop,
+         :live_dashboard_user_ids,
+         dashboard_user_ids
+         |> String.split(",")
+         |> Enum.map(&String.trim/1)
+         |> Enum.reject(&(&1 == ""))
 end
 
 # --- OpenTelemetry / Grafana Tempo ---

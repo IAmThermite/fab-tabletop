@@ -17,9 +17,17 @@ defmodule TabletopWeb.CardLookup do
         card: %Tabletop.Cards.Card{},        # gameplay identity (name, pitch, normalized_name, tokens)
         card_print: %Tabletop.Cards.CardPrint{},  # printing (image_url, set_code, hashes)
         pitch_variants: [%Card{} preloaded with canonical print],
-        alternate_matches: [%{card: %Card{}, card_print: %CardPrint{}}, ...],
+        matches: [%{card: %Card{}, card_print: %CardPrint{}}, ...],
         debug: %{...}
       }
+
+  `matches` holds *every* candidate the lookup returned, including the one
+  currently displayed, in a fixed order — `switch_match` only moves the
+  selection, never the list. Keep it that way: the `<select>` in
+  `card_popouts/1` is patched while the user has it focused, and LiveView
+  preserves the focused select's value across that patch
+  (`isChangedSelect/2`). Drop the picked option from the list and the select
+  is left pointing at a value that no longer exists, which renders blank.
 
   Usage:
 
@@ -222,54 +230,24 @@ defmodule TabletopWeb.CardLookup do
         {:noreply, assign(socket, :open_cards, cards)}
       end
 
-      def handle_event("switch_match", %{"card_id" => _id, "normalized_name" => ""}, socket) do
-        {:noreply, socket}
-      end
-
       def handle_event("switch_match", %{"card_id" => id, "normalized_name" => name}, socket) do
         cards =
           Enum.map(socket.assigns.open_cards, fn open_card ->
-            if open_card.id == id do
-              case Enum.find(open_card.alternate_matches, &(&1.card.normalized_name == name)) do
-                nil ->
-                  open_card
+            # `matches` stays put — only the selection moves. See the moduledoc.
+            with true <- open_card.id == id,
+                 true <- open_card.card.normalized_name != name,
+                 pair when not is_nil(pair) <-
+                   Enum.find(open_card.matches, &(&1.card.normalized_name == name)) do
+              {selected_card, selected_print, pitch_variants} = resolve_display(pair, nil)
 
-                new_pair ->
-                  # Rotate old card+print back into alternates
-                  old_alt = %{card: open_card.card, card_print: open_card.card_print}
-
-                  new_alternates =
-                    [
-                      old_alt
-                      | Enum.reject(
-                          open_card.alternate_matches,
-                          &(&1.card.normalized_name == name)
-                        )
-                    ]
-                    |> Enum.uniq_by(& &1.card.normalized_name)
-
-                  new_pitch_variants =
-                    Cards.find_pitch_variants(new_pair.card, new_pair.card_print.set_code)
-
-                  selected_card =
-                    if new_pitch_variants != [],
-                      do: Enum.find(new_pitch_variants, new_pair.card, &(&1.pitch == 1)),
-                      else: new_pair.card
-
-                  selected_print =
-                    Card.canonical_print(selected_card, new_pair.card_print.set_code) ||
-                      new_pair.card_print
-
-                  %{
-                    open_card
-                    | card: selected_card,
-                      card_print: selected_print,
-                      pitch_variants: new_pitch_variants,
-                      alternate_matches: new_alternates
-                  }
-              end
+              %{
+                open_card
+                | card: selected_card,
+                  card_print: selected_print,
+                  pitch_variants: pitch_variants
+              }
             else
-              open_card
+              _ -> open_card
             end
           end)
 
@@ -358,30 +336,7 @@ defmodule TabletopWeb.CardLookup do
 
       defp build_open_card(possible_pairs, x, y, detected_pitch, debug_info) do
         first = List.first(possible_pairs)
-
-        pitch_variants =
-          Cards.find_pitch_variants(first.card, first.card_print && first.card_print.set_code)
-
-        selected_card =
-          cond do
-            pitch_variants == [] ->
-              first.card
-
-            detected_pitch ->
-              Enum.find(pitch_variants, first.card, &(&1.pitch == detected_pitch))
-
-            true ->
-              Enum.find(pitch_variants, first.card, &(&1.pitch == 1))
-          end
-
-        selected_print =
-          Card.canonical_print(selected_card, first.card_print && first.card_print.set_code) ||
-            first.card_print
-
-        alternates =
-          possible_pairs
-          |> Enum.reject(&(&1.card.normalized_name == first.card.normalized_name))
-          |> Enum.uniq_by(& &1.card.normalized_name)
+        {selected_card, selected_print, pitch_variants} = resolve_display(first, detected_pitch)
 
         %{
           id: System.unique_integer([:positive]) |> Integer.to_string(),
@@ -390,9 +345,29 @@ defmodule TabletopWeb.CardLookup do
           card: selected_card,
           card_print: selected_print,
           pitch_variants: pitch_variants,
-          alternate_matches: alternates,
+          matches: Enum.uniq_by(possible_pairs, & &1.card.normalized_name),
           debug: debug_info
         }
+      end
+
+      # Given a matched {card, card_print} pair, pick the card + print the
+      # popout should actually show: the pitch the scanner detected when it
+      # detected one, else pitch 1, with that card's canonical print biased
+      # toward the matched print's set.
+      defp resolve_display(pair, detected_pitch) do
+        set_code = pair.card_print && pair.card_print.set_code
+        pitch_variants = Cards.find_pitch_variants(pair.card, set_code)
+
+        selected_card =
+          cond do
+            pitch_variants == [] -> pair.card
+            detected_pitch -> Enum.find(pitch_variants, pair.card, &(&1.pitch == detected_pitch))
+            true -> Enum.find(pitch_variants, pair.card, &(&1.pitch == 1))
+          end
+
+        selected_print = Card.canonical_print(selected_card, set_code) || pair.card_print
+
+        {selected_card, selected_print, pitch_variants}
       end
     end
   end

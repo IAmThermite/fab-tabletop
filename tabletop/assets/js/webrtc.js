@@ -8,12 +8,16 @@ const ICE_SERVERS = [
 ]
 
 export default class WebRTCManager {
-  constructor({ token, gameId, localVideoEl, remoteVideoEl, canvasEl, onStatusChange, micEnabled = true, cameraEnabled = true }) {
+  constructor({ token, gameId, localVideoEl, remoteVideoEl, canvasEl, tileLayerEl, onStatusChange, micEnabled = true, cameraEnabled = true }) {
     this.token = token
     this.gameId = gameId
     this.localVideoEl = localVideoEl
     this.remoteVideoEl = remoteVideoEl
     this.canvasEl = canvasEl
+    // Overlay holding the opponent's tiles. Tile coordinates are percentages of
+    // the board, so the overlay has to track the letterboxed canvas rect rather
+    // than the container it is centred in.
+    this.tileLayerEl = tileLayerEl || null
     this.onStatusChange = onStatusChange || (() => { })
 
     this.socket = null
@@ -434,6 +438,13 @@ export default class WebRTCManager {
         this.canvasEl.style.width = displayW + "px"
         this.canvasEl.style.height = displayH + "px"
 
+        // Re-applied every frame on purpose: a LiveView patch of the tile layer
+        // drops the inline size (the server markup carries none).
+        if (this.tileLayerEl) {
+          this.tileLayerEl.style.width = displayW + "px"
+          this.tileLayerEl.style.height = displayH + "px"
+        }
+
         // Set buffer to native video resolution for sharp card captures
         if (this.canvasEl.width !== vw || this.canvasEl.height !== vh) {
           this.canvasEl.width = vw
@@ -460,5 +471,10 @@ export default class WebRTCManager {
     ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height)
     this.canvasEl.style.width = ""
     this.canvasEl.style.height = ""
+    if (this.tileLayerEl) {
+      // No stream, so no board rect to track — fall back to the full container.
+      this.tileLayerEl.style.width = ""
+      this.tileLayerEl.style.height = ""
+    }
   }
 }

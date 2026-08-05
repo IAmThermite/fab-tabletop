@@ -11,6 +11,18 @@ defmodule TabletopWeb.Layouts do
   @github_url "https://github.com/IAmThermite/fab-tabletop"
   @patreon_url "https://patreon.com/c/FaBTabletop"
 
+  @doc """
+  Invite link for the community Discord — the primary contact channel named by
+  the policy pages, which read it from here rather than hard-coding a copy.
+  """
+  def discord_url, do: @discord_url
+
+  @doc """
+  Public source repository, and the written-record contact channel named by the
+  policy pages.
+  """
+  def github_url, do: @github_url
+
   # Embed all files in layouts/* within this module.
   # The default root.html.heex file contains the HTML
   # skeleton of your application, namely HTML headers
@@ -38,7 +50,7 @@ defmodule TabletopWeb.Layouts do
     doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
   )
 
-  attr(:max_width, :string, default: "max-w-2xl", doc: "the max width class for the main content")
+  attr(:max_width, :string, default: "max-w-4xl", doc: "the max width class for the main content")
 
   slot(:inner_block, required: true)
 
@@ -77,7 +89,13 @@ defmodule TabletopWeb.Layouts do
     >
     </div>
     <div class="flex min-h-screen flex-col">
-      <header class="navbar gap-2 border-b border-base-300 bg-base-100/40 backdrop-blur px-4 sm:px-6 lg:px-8">
+      <%!-- `relative z-30` is load-bearing. `backdrop-blur` makes this header its
+           own stacking context, which traps the user-menu dropdown inside it —
+           the dropdown's z-index is then only ever compared against the header's
+           other children, never against the page. The main content panel below
+           is a stacking context for the same reason and comes later in the DOM,
+           so without an explicit z-index here it paints over the open dropdown. --%>
+      <header class="navbar relative z-30 gap-2 border-b border-base-300 bg-base-100/40 backdrop-blur px-4 sm:px-6 lg:px-8">
         <div class="flex-1">
           <.link navigate={~p"/"} class="inline-flex items-center gap-3">
             <img src={~p"/images/banner.png"} alt="FaB Tabletop" class="h-12 w-auto" />
@@ -214,8 +232,11 @@ defmodule TabletopWeb.Layouts do
         <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
           <span class="font-display font-bold text-base-content/70">FaB Tabletop</span>
 
-          <nav class="flex items-center gap-4 text-base-content/70">
+          <nav class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-base-content/70">
             <.link navigate={~p"/about"} class="link link-hover">About</.link>
+            <.link navigate={~p"/privacy"} class="link link-hover">Privacy</.link>
+            <.link navigate={~p"/terms"} class="link link-hover">Terms</.link>
+            <.link navigate={~p"/code-of-conduct"} class="link link-hover">Code of Conduct</.link>
             <a href={@discord_url} target="_blank" rel="noopener noreferrer" class="link link-hover">
               Discord
             </a>

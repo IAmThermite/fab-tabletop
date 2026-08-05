@@ -91,6 +91,25 @@ defmodule Tabletop.AccountsTest do
       assert "has already been taken" in errors_on(changeset).email
     end
 
+    test "validates name uniqueness" do
+      %{name: name} = user_fixture()
+
+      {:error, changeset} =
+        Accounts.register_user(valid_user_attributes(name: name))
+
+      assert "has already been taken" in errors_on(changeset).name
+    end
+
+    test "rejects a password shorter than the minimum" do
+      {:error, changeset} = Accounts.register_user(valid_user_attributes(password: "abc"))
+
+      assert "should be at least 4 character(s)" in errors_on(changeset).password
+    end
+
+    test "accepts a password at exactly the minimum length" do
+      assert {:ok, _user} = Accounts.register_user(valid_user_attributes(password: "abcd"))
+    end
+
     test "registers users with password" do
       email = unique_user_email()
       {:ok, user} = Accounts.register_user(valid_user_attributes(email: email))
@@ -331,6 +350,106 @@ defmodule Tabletop.AccountsTest do
       assert user_token.user_id == user.id
       assert user_token.sent_to == user.email
       assert user_token.context == "confirm"
+    end
+  end
+
+  describe "deliver_user_reset_password_instructions/2" do
+    setup do
+      %{user: user_fixture()}
+    end
+
+    test "sends token through notification", %{user: user} do
+      token =
+        extract_user_token(fn url ->
+          Accounts.deliver_user_reset_password_instructions(user, url)
+        end)
+
+      {:ok, token} = Base.url_decode64(token, padding: false)
+      assert user_token = Repo.get_by(UserToken, token: :crypto.hash(:sha256, token))
+      assert user_token.user_id == user.id
+      assert user_token.sent_to == user.email
+      assert user_token.context == "reset_password"
+    end
+  end
+
+  describe "get_user_by_reset_password_token/1" do
+    setup do
+      user = user_fixture()
+
+      token =
+        extract_user_token(fn url ->
+          Accounts.deliver_user_reset_password_instructions(user, url)
+        end)
+
+      %{user: user, token: token}
+    end
+
+    test "returns the user with a valid token", %{user: %{id: id}, token: token} do
+      assert %User{id: ^id} = Accounts.get_user_by_reset_password_token(token)
+    end
+
+    test "does not return the user with an invalid token", %{user: user} do
+      refute Accounts.get_user_by_reset_password_token("oops")
+      assert Repo.get_by(UserToken, user_id: user.id, context: "reset_password")
+    end
+
+    test "does not return the user if the token expired", %{user: user, token: token} do
+      {1, nil} = Repo.update_all(UserToken, set: [inserted_at: ~N[2020-01-01 00:00:00]])
+      refute Accounts.get_user_by_reset_password_token(token)
+      assert Repo.get_by(UserToken, user_id: user.id, context: "reset_password")
+    end
+
+    test "does not return the user for a confirmation token", %{user: user} do
+      token =
+        extract_user_token(fn url ->
+          Accounts.deliver_user_confirmation_instructions(user, url)
+        end)
+
+      refute Accounts.get_user_by_reset_password_token(token)
+    end
+  end
+
+  describe "reset_user_password/2" do
+    setup do
+      %{user: user_fixture()}
+    end
+
+    test "validates password", %{user: user} do
+      {:error, changeset} =
+        Accounts.reset_user_password(user, %{
+          password: "abc",
+          password_confirmation: "another"
+        })
+
+      assert %{
+               password: ["should be at least 4 character(s)"],
+               password_confirmation: ["does not match password"]
+             } = errors_on(changeset)
+    end
+
+    test "updates the password", %{user: user} do
+      {:ok, {updated_user, _}} =
+        Accounts.reset_user_password(user, %{password: "new valid password"})
+
+      assert is_nil(updated_user.password)
+      assert Accounts.get_user_by_email_and_password(user.email, "new valid password")
+    end
+
+    test "deletes all tokens for the given user", %{user: user} do
+      _ = Accounts.generate_user_session_token(user)
+
+      {:ok, {_, _}} = Accounts.reset_user_password(user, %{password: "new valid password"})
+
+      refute Repo.get_by(UserToken, user_id: user.id)
+    end
+
+    test "confirms an unconfirmed user, since the reset proves they own the mailbox" do
+      user = unconfirmed_user_fixture()
+      refute user.confirmed_at
+
+      {:ok, {user, _}} = Accounts.reset_user_password(user, %{password: "new valid password"})
+
+      assert user.confirmed_at
     end
   end
 

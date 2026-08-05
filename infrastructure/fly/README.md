@@ -236,13 +236,28 @@ curl -s localhost:9091/metrics | grep tabletop_prom_ex_game
 Counters only appear once their event has fired at least once, so a freshly
 booted server shows the polled gauges but not yet the event counters.
 
+## Error tracking (Sentry)
+
+Enable it by setting the DSN; the SDK reads `SENTRY_DSN` from the environment
+itself, and with no DSN it is disabled outright, which is why dev and test need
+no opt-out:
+
+```bash
+fly secrets set SENTRY_DSN="https://<key>@<org>.ingest.sentry.io/<project>"
+```
+
+Verify the config end to end with:
+
+```bash
+mix sentry.send_test_event
+```
+
 ## Tracing (Grafana Tempo)
 
-Traces are **pushed** over OTLP rather than scraped, which is what makes them work
-on a scale-to-zero machine — there is no poll to miss while it sleeps. Wiring
-lives in `Tabletop.Tracing`; spans come from Bandit (HTTP), Phoenix (endpoint,
-router **and LiveView** callbacks) and Ecto (one span per query, with the
-parameterised SQL attached).
+Traces are batched and **pushed** over OTLP rather than scraped. Wiring lives in
+`Tabletop.Tracing`; spans come from Bandit (HTTP), Phoenix (endpoint, router
+**and LiveView** callbacks) and Ecto (one span per query, with the parameterised
+SQL attached).
 
 ### Enabling it
 
@@ -350,12 +365,15 @@ config :opentelemetry, traces_exporter: {:otel_exporter_stdout, []}
 `mix phx.server` then prints every span, which is how the instrumentation above
 was verified.
 
-### Caveat: scale-to-zero
+### Caveat: metrics are per-machine and in-memory
 
-`fly.toml` sets `auto_stop_machines = 'stop'` with `min_machines_running = 0`.
-Metrics live in the machine's memory, so counters reset on every cold start and
-gauges gap while the machine is stopped. Use `rate()`/`increase()` in queries —
-they account for counter resets — and don't read a gap as a zero.
+`fly.toml` sets `auto_stop_machines = 'off'` with `min_machines_running = 1`, so
+the machine stays up and the series are continuous during normal operation.
+
+They are still **not** durable across a restart: metrics live in the machine's
+memory, so a deploy resets every counter and leaves a gap in the gauges. Use
+`rate()`/`increase()` in queries — they account for counter resets — and read a
+gap as "deployed", not as zero.
 
 ## Environment
 

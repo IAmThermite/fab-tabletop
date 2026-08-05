@@ -142,7 +142,7 @@ Prometheus metrics via **PromEx**, scraped by Fly's managed Prometheus. Three mo
 
 `Cards.best_phash_match/2` mirrors the arm ranking inside `find_by_p_hash_similarity/1`'s SQL so a match's distance can be reported without a second query — if you change the thresholds or the arms, change both.
 
-Metrics are per-machine and in-memory, and `fly.toml` sets `auto_stop_machines = 'stop'`: counters reset on cold start and gauges gap while stopped. Query with `rate()`/`increase()`; don't read a gap as a zero.
+Metrics are per-machine and in-memory, so they don't survive a restart: a deploy resets every counter and gaps the gauges. Query with `rate()`/`increase()` and read a gap as "deployed", not as zero. The machine stays up (`auto_stop_machines = 'off'`, `min_machines_running = 1`), so the series are otherwise continuous.
 
 **Tracing** is separate from the above: OpenTelemetry spans **pushed** over OTLP to Grafana Tempo (push, not scrape — the only model that works on a sleeping machine). [Tabletop.Tracing](tabletop/lib/tabletop/tracing.ex) attaches the handlers from `Application.start/2` before the endpoint serves; spans come from Bandit, Phoenix (including LiveView `mount`/`handle_event` — where most of this app's behaviour actually lives) and Ecto. No application code emits spans directly.
 
@@ -151,6 +151,8 @@ Two things to know before touching it:
 - **Disabled unless configured.** The exporter defaults to `http://localhost:4318` and logs every failed batch, so `config.exs` ships `traces_exporter: :none` and `runtime.exs` flips it to `:otlp` only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Handlers attach regardless, so the instrumented path is identical either way. `Tabletop.Tracing.exporting?/0` distinguishes "off" from "on but rejected".
 
 `OpentelemetryEcto` runs with `db_statement: :enabled` — safe because Ecto parameterises queries, so the recorded SQL holds `$1`/`$2` placeholders and never user values. To inspect spans locally, set `traces_exporter: {:otel_exporter_stdout, []}` in `dev.exs`.
+
+**Error tracking** is [Sentry](tabletop/lib/tabletop/application.ex), deliberately *not* overlapping the above: Tempo records exceptions but has no issue model (no grouping, dedup, or regression detection), and metrics cannot see a crash at all. Enabled only when `SENTRY_DSN` is set — the SDK reads that env var itself and is disabled without it, so dev and test need no opt-out. 
 
 ## Conventions worth knowing
 

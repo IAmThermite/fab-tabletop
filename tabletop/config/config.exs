@@ -130,6 +130,22 @@ config :opentelemetry,
 # library default, but stating it keeps the grpc path (and grpcbox) unused.
 config :opentelemetry_exporter, otlp_protocol: :http_protobuf
 
+# Error tracking. Complements rather than overlaps the Grafana stack: Tempo
+# records exceptions but has no issue model (no grouping, dedup, or "this is
+# new"), and metrics cannot see a crash at all.
+#
+# No `dsn` here on purpose — Sentry reads SENTRY_DSN from the environment
+# itself, and with no DSN it is disabled outright. So dev and test are silent
+# without any per-env opt-out, and production only needs the secret set.
+#
+# Source context requires `mix sentry.package_source_code` before `mix release`
+# (see infrastructure/Dockerfile); without it the events still arrive, just
+# without surrounding source lines.
+config :sentry,
+  environment_name: config_env(),
+  enable_source_code_context: true,
+  root_source_code_paths: [File.cwd!()]
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

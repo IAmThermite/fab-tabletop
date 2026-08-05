@@ -51,3 +51,9 @@ config :phoenix,
 # concurrently running suites. PromEx itself still starts, so the telemetry
 # handlers are attached and the emit calls are exercised.
 config :tabletop, :metrics_port, nil
+
+# Starts Sentry's test registry so `Sentry.Test` can intercept events in-process
+# instead of over HTTP. Without it, `start_collecting_sentry_reports/0` exits
+# with a missing `Sentry.Test.Registry`. No DSN is set, so nothing can escape to
+# the real Sentry either way.
+config :sentry, test_mode: true

@@ -11,9 +11,15 @@ defmodule TabletopWeb.Endpoint do
     same_site: "Lax"
   ]
 
+  # `:peer_data`, `:uri` and `:user_agent` are read by `Sentry.LiveViewHook` to
+  # give a LiveView error the request URL, client IP and user agent. The hook
+  # works without them, but the resulting issue has no request context — and in
+  # this app nearly every error happens inside a LiveView callback.
+  @live_connect_info [:peer_data, :uri, :user_agent, session: @session_options]
+
   socket("/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]],
-    longpoll: [connect_info: [session: @session_options]]
+    websocket: [connect_info: @live_connect_info],
+    longpoll: [connect_info: @live_connect_info]
   )
 
   socket("/socket", TabletopWeb.UserSocket,

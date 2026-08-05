@@ -12,6 +12,16 @@ defmodule Tabletop.Application do
     # no-op unless configured, so this runs in every environment.
     Tabletop.Tracing.setup()
 
+    # Reports crashes (and `Logger.error/1` and above) to Sentry.
+    :logger.add_handler(:sentry_handler, Sentry.LoggerHandler, %{
+      config: %{
+        capture_metadata: [:request_id, :game_id, :user_id],
+        rate_limiting: [max_events: 10, interval: :timer.seconds(1)],
+        capture_log_messages: true,
+        capture_level: :error
+      }
+    })
+
     children =
       [
         TabletopWeb.Telemetry,

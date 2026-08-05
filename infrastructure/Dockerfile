@@ -45,6 +45,9 @@ RUN mix compile
 # Compile assets (needs colocated JS from mix compile)
 RUN mix assets.deploy
 
+# Package source into priv/sentry.map so Sentry issues show surrounding source.
+RUN mix sentry.package_source_code
+
 # Build the release
 RUN mix release
 

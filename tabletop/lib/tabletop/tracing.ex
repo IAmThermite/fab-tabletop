@@ -2,9 +2,13 @@ defmodule Tabletop.Tracing do
   @moduledoc """
   OpenTelemetry span instrumentation, exported over OTLP to Grafana Tempo.
 
-  Tracing is **push-based**, which is what makes it viable on a machine with
-  `auto_stop_machines` enabled — there is no scrape to miss while the machine
-  sleeps, and spans are flushed by the batch processor as they are produced.
+  Spans are batched and **pushed** over OTLP, so nothing needs to reach into the
+  machine to collect them.
+
+  One consequence of batching to keep in mind: spans buffered when the VM stops
+  are lost. The machine no longer auto-stops (`auto_stop_machines = 'off'`), so
+  in practice that means a deploy. `OTEL_BSP_SCHEDULE_DELAY_MILLIS` in
+  `fly.toml` sets how long that window is.
 
   ## What produces spans
 

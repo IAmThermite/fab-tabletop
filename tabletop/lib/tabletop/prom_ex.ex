@@ -13,9 +13,11 @@ defmodule Tabletop.PromEx do
   are PromEx's stock plugins, each with a matching pre-built Grafana dashboard
   listed in `dashboards/0`.
 
-  Note that metrics live in the machine's memory. With `auto_stop_machines`
-  enabled the counters reset on every cold start — `rate()` handles that, but
-  gauges will show gaps while the machine is stopped.
+  Note that metrics live in the machine's memory, so they do not survive a
+  restart: every counter resets and gauges gap on deploy. `rate()`/`increase()`
+  account for counter resets; read a gap as "deployed", not as zero. The machine
+  itself stays up (`auto_stop_machines = 'off'`), so during normal operation the
+  series are continuous.
   """
 
   use PromEx, otp_app: :tabletop

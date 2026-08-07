@@ -7,6 +7,13 @@ config :bcrypt_elixir, :log_rounds, 1
 # tests override this to exercise the "too soon" guard.
 config :tabletop, :check_in_min_seconds, 0
 
+# Never refresh the popular-heroes cache in the background: the server holds its
+# own connection, which the Ecto sandbox does not own, and a cache one async test
+# populated would leak into the rest. Reads compute inline instead. Tests that
+# exercise the cache itself allow the server on their connection and call
+# `HeroLeaderboard.refresh/0` directly.
+config :tabletop, :hero_leaderboard_refresh_ms, nil
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used

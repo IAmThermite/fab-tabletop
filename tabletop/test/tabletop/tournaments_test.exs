@@ -355,6 +355,91 @@ defmodule Tabletop.TournamentsTest do
     assert_receive {:user_notification, %{type: :result}}
   end
 
+  test "generating the next Swiss round refreshes the tournament listings",
+       %{admin_scope: admin} do
+    t = tournament_fixture(scope: admin)
+    {:ok, t} = Tournaments.open_registration(admin, t)
+
+    [s1, s2] =
+      for _ <- 1..2 do
+        s = Scope.for_user(user_fixture())
+        {:ok, _} = Tournaments.register(s, t.id, %{"decklist_url" => valid_fabrary_url()})
+        s
+      end
+
+    {:ok, t} = Tournaments.open_check_in(admin, t)
+    for s <- [s1, s2], do: {:ok, _} = Tournaments.check_in(s, t.id)
+    {:ok, t} = Tournaments.start_tournament(admin, t)
+
+    [match] = Tournaments.list_matches_for_round(t.current_round_id)
+    {:ok, _} = Tournaments.override_match(admin, match.id, "p1_win")
+
+    # Subscribe only now, so the message asserted below is the round's own.
+    Tournaments.subscribe_tournaments()
+    {:ok, _t} = Tournaments.generate_next_swiss_round(admin, t)
+
+    # The listings label an in-progress tournament by its current round, so a
+    # new round has to reach the list topic and not just `tournament:<id>`.
+    assert_receive {:tournaments_updated}
+  end
+
+  describe "tournament listings" do
+    # Registers `n` fresh players into an open tournament, returning their scopes.
+    defp register_players(t, n) do
+      for _ <- 1..n do
+        s = Scope.for_user(user_fixture())
+        {:ok, _} = Tournaments.register(s, t.id, %{"decklist_url" => valid_fabrary_url()})
+        s
+      end
+    end
+
+    defp count_for(tournaments, %{id: id}) do
+      Enum.find(tournaments, &(&1.id == id)).active_player_count
+    end
+
+    test "counts active players per tournament without cross-contamination",
+         %{admin_scope: admin} do
+      busy = tournament_fixture(scope: admin)
+      {:ok, busy} = Tournaments.open_registration(admin, busy)
+      register_players(busy, 3)
+
+      quiet = tournament_fixture(scope: admin)
+      {:ok, quiet} = Tournaments.open_registration(admin, quiet)
+      register_players(quiet, 1)
+
+      # Open for sign-ups but nobody has registered — no group of its own comes
+      # back from the grouped count, so this is the row that must still read 0.
+      empty = tournament_fixture(scope: admin)
+      {:ok, empty} = Tournaments.open_registration(admin, empty)
+
+      %{upcoming: upcoming} = Tournaments.list_home_tournaments()
+
+      assert count_for(upcoming, busy) == 3
+      assert count_for(upcoming, quiet) == 1
+      assert count_for(upcoming, empty) == 0
+    end
+
+    test "excludes dropped registrations from the count", %{admin_scope: admin} do
+      t = tournament_fixture(scope: admin)
+      {:ok, t} = Tournaments.open_registration(admin, t)
+      [dropper | _] = register_players(t, 3)
+
+      assert count_for(Tournaments.list_home_tournaments().upcoming, t) == 3
+
+      {:ok, _} = Tournaments.drop(dropper, t.id)
+
+      assert count_for(Tournaments.list_home_tournaments().upcoming, t) == 2
+    end
+
+    test "list_tournaments counts a draft tournament as empty", %{admin_scope: admin} do
+      draft = tournament_fixture(scope: admin)
+
+      # Drafts are excluded from the home listing but not from the full one.
+      assert count_for(Tournaments.list_tournaments(), draft) == 0
+      refute Enum.any?(Tournaments.list_home_tournaments().upcoming, &(&1.id == draft.id))
+    end
+  end
+
   describe "list_recent_winners/1" do
     test "returns finished tournaments newest-first with the winner preloaded",
          %{admin_scope: admin} do
@@ -391,7 +476,7 @@ defmodule Tabletop.TournamentsTest do
     end
   end
 
-  describe "recent_hero_entries/1 (popular-heroes source)" do
+  describe "recent_hero_counts/1 (popular-heroes source)" do
     test "counts each player's hero once per tournament, whatever the round count",
          %{admin_scope: admin} do
       {_t, _champ} = finished_tournament_fixture(admin)
@@ -399,8 +484,8 @@ defmodule Tabletop.TournamentsTest do
 
       # Both players piloted arakni-huntsman — one entry per player (the
       # registration row), never multiplied by the tournament's match games.
-      assert Enum.frequencies(Tournaments.recent_hero_entries(cutoff)) ==
-               %{{:classic_constructed, "arakni-huntsman"} => 2}
+      assert Tournaments.recent_hero_counts(cutoff) ==
+               [{:classic_constructed, "arakni-huntsman", 2}]
     end
 
     test "excludes tournaments that haven't begun play", %{admin_scope: admin} do
@@ -415,7 +500,7 @@ defmodule Tabletop.TournamentsTest do
         })
 
       cutoff = DateTime.add(DateTime.utc_now(), -7 * 24 * 60 * 60, :second)
-      assert Tournaments.recent_hero_entries(cutoff) == []
+      assert Tournaments.recent_hero_counts(cutoff) == []
     end
 
     test "excludes tournaments last active before the window", %{admin_scope: admin} do
@@ -423,7 +508,7 @@ defmodule Tabletop.TournamentsTest do
       set_updated_at(t.id, ~U[2026-01-01 00:00:00Z])
 
       cutoff = DateTime.add(DateTime.utc_now(), -7 * 24 * 60 * 60, :second)
-      assert Tournaments.recent_hero_entries(cutoff) == []
+      assert Tournaments.recent_hero_counts(cutoff) == []
     end
 
     test "activity_stats folds tournament heroes into the popular-heroes leaderboard",

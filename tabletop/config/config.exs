@@ -34,6 +34,11 @@ config :tabletop, :admin_ids, []
 # closed by default on a fresh deploy.
 config :tabletop, :live_dashboard_user_ids, []
 
+# How often `Tabletop.Games.HeroLeaderboard` recomputes the lobby's
+# popular-heroes ranking. It covers a 7-day window, so it barely moves between
+# refreshes; `nil` disables refreshing and makes every read compute inline.
+config :tabletop, :hero_leaderboard_refresh_ms, :timer.minutes(30)
+
 config :tabletop, Tabletop.Repo, migration_primary_key: [type: :uuid]
 
 # Configure the endpoint

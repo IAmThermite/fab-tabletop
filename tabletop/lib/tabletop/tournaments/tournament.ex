@@ -32,6 +32,11 @@ defmodule Tabletop.Tournaments.Tournament do
     # Form-facing duration in minutes; the changeset derives the persisted
     # `round_duration_seconds` from it.
     field :round_duration_minutes, :integer, virtual: true
+    # Registrations that haven't dropped, filled in by the listing functions in
+    # `Tabletop.Tournaments`. `nil` means "not counted", which is why it is a
+    # declared field rather than a key merged onto the struct — reading it on a
+    # tournament that skipped those functions should give `nil`, not raise.
+    field :active_player_count, :integer, virtual: true
     field :starts_at, :utc_datetime_usec
     # When the admin opened the check-in window. Drives the 5-minute minimum
     # that must elapse before the tournament can be started.

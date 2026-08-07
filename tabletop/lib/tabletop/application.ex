@@ -17,6 +17,7 @@ defmodule Tabletop.Application do
       {Registry, keys: :duplicate, name: Tabletop.Games.GameConnectionRegistry},
       {DynamicSupervisor,
        name: Tabletop.Games.LeaveTimerSupervisor, strategy: :one_for_one, max_children: 1_000},
+      Tabletop.Games.HeroLeaderboard,
       {Registry, keys: :unique, name: Tabletop.Games.GameSessionRegistry},
       {DynamicSupervisor,
        name: Tabletop.Games.GameSessionSupervisor, strategy: :one_for_one, max_children: 1_000},

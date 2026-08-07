@@ -5,6 +5,7 @@ defmodule TabletopWeb.GameLive.Index do
   alias Tabletop.Accounts.Scope
   alias Tabletop.Games
   alias Tabletop.Games.Game
+  alias Tabletop.Games.HeroLeaderboard
   alias Tabletop.Heroes
   alias Tabletop.Languages
   alias Tabletop.Tournaments
@@ -455,10 +456,14 @@ defmodule TabletopWeb.GameLive.Index do
                 </div>
               </div>
 
-              <%!-- Popular heroes by format, last 7 days --%>
+              <%!-- Popular heroes by format. The window is the leaderboard's own,
+                   so the label can't drift from the data behind it. --%>
               <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
                 <h3 class="font-semibold mb-3">
-                  Popular heroes <span class="text-xs font-normal text-zinc-500">· last 7 days</span>
+                  Popular heroes
+                  <span class="text-xs font-normal text-zinc-500">
+                    · last {HeroLeaderboard.window_days()} days
+                  </span>
                 </h3>
 
                 <div :if={@popular_heroes_any?} class="space-y-3">
@@ -856,19 +861,25 @@ defmodule TabletopWeb.GameLive.Index do
   end
 
   @impl true
-  def handle_info({type, %Game{}}, socket)
-      when type in [:created, :updated, :deleted] do
-    {:noreply,
-     socket
-     |> assign_current_game(socket.assigns.current_scope)
-     |> assign_last_game(socket.assigns.current_scope)
-     |> assign_games()
-     |> assign_activity()}
+  def handle_info({type, %Game{} = game}, socket) when type in [:created, :updated, :deleted] do
+    socket =
+      if involves?(socket.assigns.current_scope, game) do
+        socket
+        |> assign_current_game(socket.assigns.current_scope)
+        |> assign_last_game(socket.assigns.current_scope)
+      else
+        socket
+      end
+
+    {:noreply, socket |> assign_games() |> assign_activity()}
   end
 
   def handle_info({:tournaments_updated}, socket) do
     {:noreply, assign_tournaments(socket)}
   end
+
+  defp involves?(%Scope{user: %{id: id}}, %Game{} = g), do: g.user_id == id or g.user2_id == id
+  defp involves?(nil, _), do: false
 
   defp assign_current_game(socket, %Scope{} = scope) do
     assign(socket, :current_game, Games.get_current_game_for_user(scope))

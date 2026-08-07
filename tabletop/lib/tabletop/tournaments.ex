@@ -114,7 +114,7 @@ defmodule Tabletop.Tournaments do
     from(t in Tournament, preload: [:created_by])
     |> Repo.all()
     |> Enum.sort_by(fn t -> {status_order(t.status), -DateTime.to_unix(t.inserted_at)} end)
-    |> Enum.map(&with_player_count/1)
+    |> with_player_counts()
   end
 
   @doc """
@@ -131,7 +131,7 @@ defmodule Tabletop.Tournaments do
         preload: [:current_round]
       )
       |> Repo.all()
-      |> Enum.map(&with_player_count/1)
+      |> with_player_counts()
 
     upcoming =
       tournaments
@@ -194,9 +194,9 @@ defmodule Tabletop.Tournaments do
 
   @doc """
   Hero picks from tournaments recently in play, for the lobby's popular-heroes
-  leaderboard. Returns `{format, hero_slug}` tuples — **one per player per
-  tournament** (the registration row is the unit), so a tournament's many round
-  games never multiply a player's hero.
+  leaderboard. Returns `{format, hero_slug, count}` tuples counting **one entry
+  per player per tournament** (the registration row is the unit), so a
+  tournament's many round games never multiply a player's hero.
 
   Only tournaments that have begun play (`:swiss`/`:cut`/`:finished`) and whose
   row was last touched on/after `cutoff` are counted (`updated_at` tracks
@@ -204,7 +204,7 @@ defmodule Tabletop.Tournaments do
   and long-finished events age out. Dropped registrations and blank heroes are
   skipped.
   """
-  def recent_hero_entries(%DateTime{} = cutoff) do
+  def recent_hero_counts(%DateTime{} = cutoff) do
     from(r in TournamentRegistration,
       join: t in Tournament,
       on: t.id == r.tournament_id,
@@ -212,7 +212,8 @@ defmodule Tabletop.Tournaments do
       where: t.updated_at >= ^cutoff,
       where: is_nil(r.dropped_at),
       where: not is_nil(r.hero) and r.hero != "",
-      select: {t.format, r.hero}
+      group_by: [t.format, r.hero],
+      select: {t.format, r.hero, count(r.id)}
     )
     |> Repo.all()
   end
@@ -231,16 +232,27 @@ defmodule Tabletop.Tournaments do
   defp status_order(:cancelled), do: 6
   defp status_order(_), do: 7
 
-  defp with_player_count(%Tournament{} = t) do
-    count =
-      Repo.aggregate(
-        from(r in TournamentRegistration,
-          where: r.tournament_id == ^t.id and is_nil(r.dropped_at)
-        ),
-        :count
-      )
+  # Fills in `active_player_count` across a whole listing with one grouped count.
+  # Both callers re-run in every connected LiveView on every tournament
+  # broadcast, so a `Repo.aggregate` per row turns one listing into N+1 queries.
+  defp with_player_counts([]), do: []
 
-    Map.put(t, :active_player_count, count)
+  defp with_player_counts(tournaments) do
+    ids = Enum.map(tournaments, & &1.id)
+
+    counts =
+      from(r in TournamentRegistration,
+        where: r.tournament_id in ^ids,
+        where: is_nil(r.dropped_at),
+        group_by: r.tournament_id,
+        select: {r.tournament_id, count(r.id)}
+      )
+      |> Repo.all()
+      |> Map.new()
+
+    # A tournament whose registrations are all dropped (or has none yet) has no
+    # group of its own, so it needs the explicit zero rather than a missing key.
+    Enum.map(tournaments, &%{&1 | active_player_count: Map.get(counts, &1.id, 0)})
   end
 
   def get_tournament!(id) do
@@ -728,6 +740,11 @@ defmodule Tabletop.Tournaments do
         end)
         |> case do
           {:ok, t} ->
+            # The list topic too, not just this tournament's: the home page and
+            # the tournaments index both label an in-progress tournament with
+            # `round_progress_label/1` ("Swiss 3/5"), which reads the round that
+            # just changed.
+            broadcast_list()
             broadcast_one(t.id)
             notify_new_round(t, t.current_round_id)
             {:ok, t}
@@ -820,6 +837,8 @@ defmodule Tabletop.Tournaments do
         end)
         |> case do
           {:ok, t} ->
+            # `:swiss` → `:cut` changes the status badge both listings render.
+            broadcast_list()
             broadcast_one(t.id)
             notify_new_round(t, t.current_round_id)
             {:ok, t}
@@ -919,9 +938,19 @@ defmodule Tabletop.Tournaments do
             t
             |> Tournament.status_changeset(%{status: :finished, winner_id: champion_id})
             |> Repo.update()
-            |> tap(fn _ -> broadcast_list() end)
-            |> tap(fn _ -> broadcast_one(t.id) end)
-            |> tap(fn _ -> notify_finished(t, champion_id) end)
+            |> case do
+              # Only announce a champion that actually got recorded — `tap/2`
+              # here fired the finish broadcast and the winner's notification
+              # on a failed update too.
+              {:ok, t} ->
+                broadcast_list()
+                broadcast_one(t.id)
+                notify_finished(t, champion_id)
+                {:ok, t}
+
+              error ->
+                error
+            end
 
           {:next, pairings} ->
             Repo.transaction(fn ->

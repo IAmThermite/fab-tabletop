@@ -16,12 +16,26 @@ primary_region = 'iad'
 # "Outliers" tabs of the LiveDashboard Ecto Stats page (see the app router);
 # without it `ecto_psql_extras` just omits those two tabs.
 #
+# The three flags after it are what Grafana Cloud database observability needs
+# on top of that (see infrastructure/monitoring/README.md § 4):
+#   * compute_query_id=on          — PG18 defaults to `auto`, which computes the
+#                                    id only because pg_stat_statements asks. The
+#                                    query_samples collector joins pg_stat_activity
+#                                    to pg_stat_statements on query_id, so it has
+#                                    to be unconditionally on, not module-driven.
+#   * pg_stat_statements.track=all — also track statements nested inside functions
+#                                    and DO blocks, not just top-level ones.
+#   * track_activity_query_size    — 4096 (default 1024) so pg_stat_activity stops
+#                                    truncating queries before explain_plans sees
+#                                    them. Costs max_connections × 4 KB of shared
+#                                    memory, i.e. ~400 KB at the default 100.
+#
 # Kept here rather than as an `ALTER SYSTEM` on the volume so that a rebuilt
 # volume comes back with the setting intact. The process group name must stay
 # `app` — that is the existing machine's group, and renaming it would replace
 # the machine instead of updating it, orphaning the pg_data volume.
 [processes]
-  app = 'postgres -c shared_preload_libraries=pg_stat_statements'
+  app = 'postgres -c shared_preload_libraries=pg_stat_statements -c compute_query_id=on -c pg_stat_statements.track=all -c track_activity_query_size=4096'
 
 [env]
   PGDATA = '/data/postgresql'

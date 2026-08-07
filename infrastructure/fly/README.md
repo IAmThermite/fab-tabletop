@@ -112,6 +112,10 @@ fly ssh console --app fabtabletop-db \
 Step 1 is required before step 2 — `CREATE EXTENSION` fails with
 "pg_stat_statements must be loaded via shared_preload_libraries" otherwise.
 
+The same extension backs Grafana Cloud database observability, which adds three
+more server settings to `postgres.toml` and a read-only monitoring role — see
+[../monitoring/README.md](../monitoring/README.md) § 4.
+
 ## Database Backups
 
 The self-hosted Postgres runs on a persistent volume. To back up manually:

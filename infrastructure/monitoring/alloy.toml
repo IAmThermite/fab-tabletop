@@ -1,33 +1,17 @@
-# fly.toml app configuration for the Grafana Alloy collector — the database
-# observability signal. See README.md § 4 for the secrets this needs.
+# fly.toml app configuration file generated for fabtabletop-alloy on 2026-08-10T11:20:45+12:00
 #
-# Deploy from the repo root, so the build context picks up config.alloy:
-#   fly deploy --config infrastructure/monitoring/alloy.toml
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
 app = 'fabtabletop-alloy'
 primary_region = 'iad'
 
 [build]
-  # Resolved relative to this config file, unlike the build context (the working
-  # directory). Named `alloy.Dockerfile` to keep it distinct from the web app's
-  # infrastructure/Dockerfile.
   dockerfile = 'alloy.Dockerfile'
 
 [env]
-  # Stable series identity for the monitored database. Deliberately not the DSN
-  # (which carries the password and changes whenever it is rotated) — config.alloy
-  # relabels the DSN out of `instance` and this value in.
   PG_INSTANCE_LABEL = 'fabtabletop-db.internal:5432'
 
-# No [http_service] and no [[services]] on purpose: this app only makes outbound
-# connections (to the database over 6PN, to Grafana Cloud over the internet), so
-# it needs no public address at all. Alloy's own UI on :12345 stays private and
-# is reached with `fly proxy 12345 -a fabtabletop-alloy`.
-
-# Run exactly one machine (`fly scale count 1`): a second would double-report
-# every series and every log line. Having no services declared also means Fly
-# never auto-stops it, which is what we want — a stopped collector is a blind
-# spot, and with no inbound requests nothing would ever auto-start it again.
 [[vm]]
   size = 'shared-cpu-1x'
   memory = '256mb'

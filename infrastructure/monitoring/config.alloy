@@ -48,6 +48,19 @@ database_observability.postgres "fabtabletop" {
 loki.relabel "db_o11y" {
   forward_to = [loki.write.logs_service.receiver]
 
+  // `database_observability.postgres` does not label the logs it forwards, so
+  // both labels have to be added here — same pair the metrics path sets below.
+  //
+  // `job` is not a convention: Grafana Cloud's Database Observability app keys
+  // off this exact value to attach telemetry to an instance. Without it the
+  // logs still arrive in Loki, but query_samples, schema_details and
+  // explain_plans never bind to the database, so the instance shows up with
+  // metrics and permanently empty query panels.
+  rule {
+    target_label = "job"
+    replacement  = "integrations/db-o11y"
+  }
+
   rule {
     target_label = "instance"
     replacement  = sys.env("PG_INSTANCE_LABEL")

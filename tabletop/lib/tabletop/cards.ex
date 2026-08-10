@@ -15,7 +15,7 @@ defmodule Tabletop.Cards do
   import Ecto.Query, warn: false
   alias Tabletop.Repo
 
-  alias Tabletop.Cards.{Card, CardPrint, OcrNormalizer}
+  alias Tabletop.Cards.{Card, CardPrint, OcrNormalizer, PHash}
 
   # Per-kind Hamming-distance thresholds. A row qualifies if **any** arm is
   # below its kind's threshold. Whole-card hashes are generous (frame/border
@@ -162,6 +162,38 @@ defmodule Tabletop.Cards do
     )
     |> Repo.all()
   end
+
+  @doc """
+  Returns `{arm, distance}` for the arm that best explains why `card_print`
+  matched `phashes`, or `nil` if no arm qualifies.
+
+  Mirrors the ranking in `find_by_p_hash_similarity/1` — same per-kind
+  thresholds, same `LEAST` across qualifying arms — but in Elixir, so callers
+  can report *how close* a match was without a second query. Used to feed the
+  scan-quality metric; a distribution that drifts toward the threshold is the
+  signal that the thresholds above need revisiting.
+  """
+  def best_phash_match(phashes, %CardPrint{} = card_print) when is_map(phashes) do
+    [
+      {:art, phashes[:art], card_print.image_phash, @art_threshold},
+      {:art_flipped, phashes[:art_flipped], card_print.image_phash, @art_threshold},
+      {:full, phashes[:full], card_print.image_phash_full, @full_threshold}
+    ]
+    |> Enum.filter(fn {_arm, captured, stored, _t} ->
+      is_integer(captured) and is_integer(stored)
+    end)
+    |> Enum.map(fn {arm, captured, stored, threshold} ->
+      {arm, PHash.hamming_distance(captured, stored), threshold}
+    end)
+    |> Enum.filter(fn {_arm, distance, threshold} -> distance < threshold end)
+    |> Enum.min_by(fn {_arm, distance, _threshold} -> distance end, fn -> nil end)
+    |> case do
+      nil -> nil
+      {arm, distance, _threshold} -> {arm, distance}
+    end
+  end
+
+  def best_phash_match(_phashes, _card_print), do: nil
 
   # --- Pitch variants ---
 

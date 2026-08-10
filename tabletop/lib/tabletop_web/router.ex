@@ -12,6 +12,11 @@ defmodule TabletopWeb.Router do
     plug(:put_secure_browser_headers)
     plug(TabletopWeb.Plugs.SecurityHeaders)
     plug(TabletopWeb.Plugs.AnonymousId)
+    # Attaches request metadata (path, params, headers) to any error captured
+    # during this request. Note there is deliberately no `Sentry.PlugCapture` in
+    # the endpoint: that is for Cowboy, and on Bandit it produces duplicate
+    # events — PlugContext alone is the documented Bandit setup.
+    plug(Sentry.PlugContext)
     plug(:fetch_current_scope_for_user)
   end
 
@@ -28,7 +33,11 @@ defmodule TabletopWeb.Router do
     get("/code-of-conduct", PageController, :code_of_conduct)
     get("/health", PageController, :health)
 
-    live_session :phone_camera do
+    # `Sentry.LiveViewHook` is on every live_session because almost all of this
+    # app's behaviour lives in LiveView callbacks rather than controllers —
+    # without it a captured error carries no request URL, user agent or
+    # breadcrumbs, which is most of what makes an issue diagnosable.
+    live_session :phone_camera, on_mount: [Sentry.LiveViewHook] do
       live "/phone-camera/:token", PhoneCameraLive, :index
     end
   end
@@ -109,6 +118,7 @@ defmodule TabletopWeb.Router do
 
     live_session :require_authenticated_user,
       on_mount: [
+        Sentry.LiveViewHook,
         {TabletopWeb.UserAuth, :require_authenticated},
         {TabletopWeb.UserNotifications, :default}
       ] do
@@ -124,6 +134,7 @@ defmodule TabletopWeb.Router do
 
     live_session :require_authenticated_user_and_sudo_mode,
       on_mount: [
+        Sentry.LiveViewHook,
         {TabletopWeb.UserAuth, :require_authenticated}
       ] do
       live("/users/settings/confirm-password", UserLive.Settings, :confirm_password)
@@ -135,6 +146,7 @@ defmodule TabletopWeb.Router do
 
     live_session :tournaments_admin,
       on_mount: [
+        Sentry.LiveViewHook,
         {TabletopWeb.UserAuth, :require_admin},
         {TabletopWeb.UserNotifications, :default}
       ] do
@@ -145,6 +157,7 @@ defmodule TabletopWeb.Router do
 
     live_session :current_user,
       on_mount: [
+        Sentry.LiveViewHook,
         {TabletopWeb.UserAuth, :mount_current_scope},
         {TabletopWeb.UserNotifications, :default}
       ] do

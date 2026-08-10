@@ -45,6 +45,9 @@ RUN mix compile
 # Compile assets (needs colocated JS from mix compile)
 RUN mix assets.deploy
 
+# Package source into priv/sentry.map so Sentry issues show surrounding source.
+RUN mix sentry.package_source_code
+
 # Build the release
 RUN mix release
 
@@ -73,5 +76,8 @@ COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/tabletop ./
 USER nobody
 
 EXPOSE 4000
+# Prometheus scrape endpoint. Reachable only over Fly's private 6PN network —
+# it is not part of [http_service] in fly.toml, so it is never public.
+EXPOSE 9091
 
 CMD ["bin/tabletop", "start"]

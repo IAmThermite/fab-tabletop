@@ -99,6 +99,58 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Prometheus metrics. The scrape endpoint is served by
+# `Tabletop.PromEx.MetricsServer` on its own port (see `:metrics_port` per env)
+# so it is never routable through the public endpoint.
+#
+# `grafana: :disabled` — dashboards are imported into Grafana manually rather
+# than pushed from the app on boot. See `Tabletop.PromEx.dashboards/0` for the
+# list; export them with `mix prom_ex.dashboard.export --dashboard <name>`.
+config :tabletop, Tabletop.PromEx,
+  manual_metrics_start_delay: :no_delay,
+  drop_metrics_groups: [],
+  grafana: :disabled,
+  metrics_server: :disabled
+
+config :tabletop, :metrics_port, 9091
+
+# OpenTelemetry tracing → Grafana Tempo. See `Tabletop.Tracing`.
+#
+# `traces_exporter: :none` is the default on purpose: the exporter would
+# otherwise target http://localhost:4318 and log a failure for every batch.
+# `runtime.exs` flips this to `:otlp` only when OTEL_EXPORTER_OTLP_ENDPOINT is
+# set, so tracing is opt-in per environment.
+config :opentelemetry,
+  traces_exporter: :none,
+  span_processor: :batch,
+  resource: [service: [name: "tabletop"]],
+  # Installed as the `root` of the default parent_based sampler, so child spans
+  # keep inheriting their parent's decision — dropping a health-check root also
+  # drops the Ecto spans beneath it. See `Tabletop.Tracing.PathSampler`.
+  sampler:
+    {:parent_based,
+     %{root: {Tabletop.Tracing.PathSampler, %{ignore_paths: ["/health", "/metrics"]}}}}
+
+# Grafana Cloud's OTLP gateway speaks protobuf over HTTP. This is also the
+# library default, but stating it keeps the grpc path (and grpcbox) unused.
+config :opentelemetry_exporter, otlp_protocol: :http_protobuf
+
+# Error tracking. Complements rather than overlaps the Grafana stack: Tempo
+# records exceptions but has no issue model (no grouping, dedup, or "this is
+# new"), and metrics cannot see a crash at all.
+#
+# No `dsn` here on purpose — Sentry reads SENTRY_DSN from the environment
+# itself, and with no DSN it is disabled outright. So dev and test are silent
+# without any per-env opt-out, and production only needs the secret set.
+#
+# Source context requires `mix sentry.package_source_code` before `mix release`
+# (see infrastructure/Dockerfile); without it the events still arrive, just
+# without surrounding source lines.
+config :sentry,
+  environment_name: config_env(),
+  enable_source_code_context: true,
+  root_source_code_paths: [File.cwd!()]
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

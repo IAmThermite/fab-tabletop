@@ -23,6 +23,12 @@ end
 config :tabletop, TabletopWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# Port for the Prometheus scrape listener. Must stay in sync with the
+# `[metrics]` block in `infrastructure/fly/fly.toml` — Fly scrapes this port
+# over the private 6PN network, so it is deliberately NOT part of
+# `[http_service]` and never publicly reachable.
+config :tabletop, :metrics_port, String.to_integer(System.get_env("METRICS_PORT", "9091"))
+
 if admin_ids = System.get_env("FABTABLETOP_ADMIN_IDS") do
   config :tabletop,
          :admin_ids,
@@ -38,6 +44,82 @@ if dashboard_user_ids = System.get_env("LIVE_DASHBOARD_USER_IDS") do
          |> String.split(",")
          |> Enum.map(&String.trim/1)
          |> Enum.reject(&(&1 == ""))
+end
+
+# --- OpenTelemetry / Grafana Tempo ---
+#
+# Tracing stays off until an OTLP endpoint is provided, because the exporter's
+# default target is http://localhost:4318 and every failed batch is logged.
+# See `Tabletop.Tracing` and the Tracing section of infrastructure/fly/README.md.
+if otlp_endpoint = System.get_env("OTEL_EXPORTER_OTLP_ENDPOINT") do
+  # Grafana Cloud authenticates the OTLP gateway with HTTP Basic, where the
+  # username is the numeric instance id and the password is an access-policy
+  # token. Assembling the header here means the deploy only needs the two
+  # values Grafana shows you, not a hand-rolled base64 string. Setting
+  # OTEL_EXPORTER_OTLP_HEADERS directly still wins, for any other backend.
+  parse_otlp_headers = fn raw ->
+    raw
+    |> String.split(",", trim: true)
+    |> Enum.map(fn pair ->
+      # `parts: 2` keeps base64 padding in the value rather than splitting on it.
+      [k, v] = String.split(pair, "=", parts: 2)
+
+      # OTLP header values are percent-encoded per the OTel spec, and the
+      # snippet Grafana Cloud generates contains `Basic%20<base64>`. The Erlang
+      # exporter does not decode, so a pasted snippet would send a literal
+      # "%20" and fail auth. `URI.decode/1` (not `decode_www_form/1`, which
+      # would turn `+` into a space and corrupt base64) handles it, and is a
+      # no-op for values with no escapes.
+      {String.trim(k), v |> String.trim() |> URI.decode()}
+    end)
+  end
+
+  otlp_headers =
+    case {System.get_env("OTEL_EXPORTER_OTLP_HEADERS"),
+          System.get_env("GRAFANA_CLOUD_INSTANCE_ID"), System.get_env("GRAFANA_CLOUD_OTLP_TOKEN")} do
+      {raw, _, _} when is_binary(raw) ->
+        parse_otlp_headers.(raw)
+
+      {_, instance_id, token} when is_binary(instance_id) and is_binary(token) ->
+        [{"authorization", "Basic " <> Base.encode64("#{instance_id}:#{token}")}]
+
+      _ ->
+        raise """
+        OTEL_EXPORTER_OTLP_ENDPOINT is set but no credentials were provided.
+
+        Set either GRAFANA_CLOUD_INSTANCE_ID + GRAFANA_CLOUD_OTLP_TOKEN, or
+        OTEL_EXPORTER_OTLP_HEADERS directly. Unset OTEL_EXPORTER_OTLP_ENDPOINT
+        to disable tracing.
+        """
+    end
+
+  # The exporter re-reads OTEL_EXPORTER_OTLP_HEADERS from the OS environment and
+  # `otel_configuration:merge_list_with_environment/3` ranks OS env ABOVE app
+  # env, so setting `otlp_headers` below is not enough on its own — the raw
+  # variable wins. Its parser also never percent-decodes, so Grafana's
+  # `Authorization=Basic%20<base64>` snippet reaches Tempo with a literal "%20",
+  # no recognisable auth scheme, and is rejected as "no credentials provided".
+  #
+  # Writing the canonical (decoded) form back into the variable makes the SDK's
+  # own reader agree with the value we parsed. runtime.exs is evaluated before
+  # any application starts, so this lands before the exporter reads it.
+  System.put_env(
+    "OTEL_EXPORTER_OTLP_HEADERS",
+    Enum.map_join(otlp_headers, ",", fn {k, v} -> "#{k}=#{v}" end)
+  )
+
+  config :opentelemetry, traces_exporter: :otlp
+
+  config :opentelemetry_exporter,
+    otlp_protocol: :http_protobuf,
+    otlp_endpoint: otlp_endpoint,
+    otlp_headers: otlp_headers
+
+  config :opentelemetry,
+    resource: [
+      service: [name: System.get_env("OTEL_SERVICE_NAME", "tabletop")],
+      deployment: [environment: to_string(config_env())]
+    ]
 end
 
 if config_env() == :prod do

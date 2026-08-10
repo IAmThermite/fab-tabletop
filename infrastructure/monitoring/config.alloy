@@ -1,0 +1,117 @@
+// Grafana Alloy — database observability for the fabtabletop Postgres.
+//
+// Deployed as its own Fly app (alloy.toml) rather than pointed at from Grafana
+// Cloud, because fabtabletop-db publishes no ports: it is reachable only over
+// Fly's private 6PN network, so the collector has to sit inside that network.
+//
+// Everything environment-specific comes from Fly secrets — see README.md § 4.
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+// Both components take the same DSN. Grafana's guidance is to point at the
+// database host directly and never at a pooler (PgBouncer et al), since a pooler
+// multiplexes sessions and makes per-connection telemetry meaningless.
+prometheus.exporter.postgres "fabtabletop" {
+  data_source_names  = [sys.env("PG_DSN")]
+  enabled_collectors = ["stat_statements"]
+
+  stat_statements {
+    // db-o11y's own polling would otherwise dominate the top-queries panels.
+    // Belt and braces with the `ALTER ROLE db-o11y SET pg_stat_statements.track
+    // = 'none'` in db-o11y-setup.sql: that stops the statements being recorded,
+    // this stops any already-recorded ones being reported.
+    exclude_users = ["db-o11y"]
+  }
+
+  autodiscovery {
+    enabled = true
+  }
+}
+
+database_observability.postgres "fabtabletop" {
+  data_source_name = sys.env("PG_DSN")
+  forward_to       = [loki.relabel.db_o11y.receiver]
+  targets          = prometheus.exporter.postgres.fabtabletop.targets
+
+  // query_details  — per-statement stats out of pg_stat_statements
+  // query_samples  — live samples from pg_stat_activity, joined on query_id
+  //                  (this is what needs compute_query_id=on)
+  // schema_details — table/index/column shape
+  // explain_plans  — EXPLAIN for sampled queries (needs the wider
+  //                  track_activity_query_size, or plans are cut off)
+  enable_collectors = ["query_details", "query_samples", "schema_details", "explain_plans"]
+}
+
+loki.relabel "db_o11y" {
+  forward_to = [loki.write.logs_service.receiver]
+
+  // `database_observability.postgres` does not label the logs it forwards, so
+  // both labels have to be added here — same pair the metrics path sets below.
+  //
+  // `job` is not a convention: Grafana Cloud's Database Observability app keys
+  // off this exact value to attach telemetry to an instance. Without it the
+  // logs still arrive in Loki, but query_samples, schema_details and
+  // explain_plans never bind to the database, so the instance shows up with
+  // metrics and permanently empty query panels.
+  rule {
+    target_label = "job"
+    replacement  = "integrations/db-o11y"
+  }
+
+  rule {
+    target_label = "instance"
+    replacement  = sys.env("PG_INSTANCE_LABEL")
+  }
+}
+
+discovery.relabel "db_o11y" {
+  targets = database_observability.postgres.fabtabletop.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "integrations/db-o11y"
+  }
+
+  // The scrape target arrives labelled with the DSN as `instance`; move it to
+  // `dsn` and overwrite `instance` with a stable, credential-free name, so the
+  // series doesn't churn (or leak the password) when the DSN is rotated.
+  rule {
+    source_labels = ["instance"]
+    target_label  = "dsn"
+  }
+
+  rule {
+    target_label = "instance"
+    replacement  = sys.env("PG_INSTANCE_LABEL")
+  }
+}
+
+prometheus.scrape "db_o11y" {
+  targets    = discovery.relabel.db_o11y.output
+  forward_to = [prometheus.remote_write.metrics_service.receiver]
+}
+
+prometheus.remote_write "metrics_service" {
+  endpoint {
+    url = sys.env("GCLOUD_HOSTED_METRICS_URL")
+
+    basic_auth {
+      username = sys.env("GCLOUD_HOSTED_METRICS_ID")
+      password = sys.env("GCLOUD_RW_API_KEY")
+    }
+  }
+}
+
+loki.write "logs_service" {
+  endpoint {
+    url = sys.env("GCLOUD_HOSTED_LOGS_URL")
+
+    basic_auth {
+      username = sys.env("GCLOUD_HOSTED_LOGS_ID")
+      password = sys.env("GCLOUD_RW_API_KEY")
+    }
+  }
+}

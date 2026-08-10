@@ -24,6 +24,13 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/tabletop"
 import topbar from "../vendor/topbar.cjs"
+import {initErrorReporting} from "./error_reporting.js"
+
+// Before any of the wiring below, so a failure setting up the socket or hooks is
+// itself reported. (Imports are hoisted, so this cannot cover errors thrown
+// while the modules above evaluate — only statements in this file onwards.)
+// Inert unless a DSN was rendered into the page.
+initErrorReporting()
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {

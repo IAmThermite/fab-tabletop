@@ -53,6 +53,15 @@ if dashboard_user_ids = System.get_env("LIVE_DASHBOARD_USER_IDS") do
          |> Enum.reject(&(&1 == ""))
 end
 
+# Browser errors go to their own Sentry project, so this and `SENTRY_DSN` (which
+# the Elixir SDK reads for itself) are deliberately different values. Held under
+# `:tabletop` rather than `:sentry` so the server SDK cannot pick it up by
+# accident and start reporting backend crashes into the frontend project.
+#
+# Unset means no browser reporting, mirroring the server — nothing to disable per
+# environment. Rendered into the page by `TabletopWeb.Layouts.sentry_browser_dsn/0`.
+config :tabletop, :sentry_frontend_dsn, System.get_env("SENTRY_FRONTEND_DSN")
+
 # --- OpenTelemetry / Grafana Tempo ---
 #
 # Tracing stays off until an OTLP endpoint is provided, because the exporter's

@@ -4,6 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
+    <%!--
+      Browser error reporting, into its own Sentry project (SENTRY_FRONTEND_DSN,
+      not the server's SENTRY_DSN). A DSN is a public identifier, not a secret —
+      the browser SDK is designed to ship it in client code.
+
+      Rendered here rather than baked in at build time so one image works across
+      environments; unset leaves the attribute empty and the client SDK inert.
+    --%>
+    <meta name="sentry-dsn" content={sentry_browser_dsn() || ""} />
+    <meta
+      name="sentry-environment"
+      content={to_string(Application.get_env(:sentry, :environment_name))}
+    />
     <link rel="icon" type="image/svg+xml" href={~p"/images/logo-mark.svg"} />
     <.live_title default="Tabletop" suffix=" · FaB Tabletop">
       {assigns[:page_title]}

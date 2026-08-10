@@ -9,6 +9,17 @@ FROM ${BUILDER_IMAGE} AS builder
 RUN apt-get update -y && apt-get install -y build-essential git \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
+# Node exists solely to `npm ci` the JS runtime dependencies that esbuild then
+# bundles (@sentry/browser). Everything else in the asset pipeline runs on the
+# standalone esbuild/tailwind binaries and needs no Node at all.
+#
+# Copied from the official image rather than installed with apt, which ships a
+# much older Node. The tag tracks the builder's own Debian release (trixie) so
+# the glibc matches, and the major matches .tool-versions.
+COPY --from=node:24-trixie-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:24-trixie-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
+
 WORKDIR /app
 
 ENV MIX_ENV="prod"
@@ -42,7 +53,12 @@ RUN chmod +x rel/overlays/bin/migrate rel/overlays/bin/server
 COPY tabletop/config/runtime.exs config/
 RUN mix compile
 
-# Compile assets (needs colocated JS from mix compile)
+# JS runtime dependencies for the bundle. `npm ci` (not `install`) so the build
+# is reproducible from package-lock.json and never silently resolves a new
+# version. `--omit=dev` skips pngjs, which only the Node asset tests use.
+RUN npm ci --prefix assets --omit=dev
+
+# Compile assets (needs colocated JS from mix compile and node_modules above)
 RUN mix assets.deploy
 
 # Package source into priv/sentry.map so Sentry issues show surrounding source.

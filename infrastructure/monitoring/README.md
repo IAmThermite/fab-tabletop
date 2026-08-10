@@ -211,10 +211,13 @@ otherwise makes short-lived runs look as though nothing was produced.
 fly secrets set SENTRY_DSN="https://<key>@<org>.ingest.sentry.io/<project>"
 ```
 
-That is the only variable needed. The SDK reads `SENTRY_DSN` from the
-environment itself, which is why there is no `dsn:` in `config.exs` — and with no
-DSN the SDK is disabled outright, so dev and test are silent with no per-env
+That is the only variable the *server* needs — the SDK reads `SENTRY_DSN` from
+the environment itself, which is why there is no `dsn:` in `config.exs`, and with
+no DSN it is disabled outright, so dev and test are silent with no per-env
 opt-out. Find it under **Settings → Projects → *project* → Client Keys (DSN)**.
+
+Browser errors go to a **second, separate project** via `SENTRY_FRONTEND_DSN` —
+see *Browser errors* below.
 
 ### What is wired
 
@@ -231,6 +234,66 @@ opt-out. Find it under **Settings → Projects → *project* → Client Keys (DS
 
 The LiveDashboard's own `live_session` is intentionally not hooked — it belongs
 to a dependency, and crashes there are still captured by the LoggerHandler.
+
+### Browser errors
+
+`@sentry/browser` reports client-side exceptions into a **separate Sentry
+project** from the server, configured with its own DSN:
+
+```bash
+fly secrets set SENTRY_FRONTEND_DSN="https://<key>@<org>.ingest.sentry.io/<frontend-project>"
+```
+
+Separate because the two have very different noise profiles — an ad-blocker
+mangling a request or a wedged browser extension, versus a `GameSession`
+crashing. Keeping them apart means each can be triaged, alerted on and
+quota-managed without drowning the other. Nothing falls back to `SENTRY_DSN`; an
+unset `SENTRY_FRONTEND_DSN` simply means no browser reporting.
+
+Wiring is `assets/js/error_reporting.js`, initialised at the top of `app.js`:
+
+- **Errors only.** Performance tracing and session replay are not imported at
+  all, rather than imported and disabled, so esbuild tree-shakes them out. Cost
+  as measured: **+29 KB gzipped** (61.6 → 91.0 KB). Adding either integration
+  would change that materially.
+- **The DSN comes from a `<meta>` tag** rendered by `root.html.heex`, not baked
+  in at build time, so one image serves every environment and rotating the DSN
+  needs no rebuild. A Sentry DSN is a public identifier — the browser SDK is
+  built to ship it in client code. With no DSN the SDK never initialises, so dev
+  is silent exactly as the server is.
+- **The DSN is sanitised before rendering.** `Layouts.public_dsn/1` truncates
+  the userinfo to the public key, because the pre-2016 DSN format embedded a
+  secret (`https://public:secret@host/project`) that Sentry still parses. A
+  no-op for a modern DSN; the difference between publishing a secret and not for
+  a legacy one. The frontend value is held under `:tabletop`, not `:sentry`, so
+  the server SDK cannot pick it up and report backend crashes into the frontend
+  project.
+- **Web Worker errors are forwarded explicitly.** Errors thrown inside a worker
+  never reach the main thread's global handler, so the card scanner — the code
+  most likely to fail on an unfamiliar camera — would otherwise be invisible.
+  `card_scanner/liveview_hook.js` wires both `worker.onerror` (crashed) and the
+  worker's own `{type: "error"}` message (caught), tagged `uncaught=true|false`
+  to tell a bug from a frame the scanner simply could not read.
+- **No CSP change was needed.** `connect-src` already allows `https:` because
+  OpenCV.js fetches its wasm from a CDN, and that covers Sentry ingest.
+
+Errors are deliberately the *only* frontend signal. WebRTC quality metrics and
+the scanner funnel would need a `pushEvent` → `:telemetry` → PromEx pipeline;
+that is a bigger commitment and is not built.
+
+### Node in the Docker build
+
+The builder image has no Node — the asset pipeline otherwise runs entirely on
+the standalone esbuild and tailwind binaries. `@sentry/browser` is the first
+*runtime* JS dependency, so the Dockerfile now copies Node from
+`node:24-trixie-slim` (matching the builder's own Debian release, and the major
+in `.tool-versions`) and runs `npm ci --prefix assets --omit=dev` before
+`mix assets.deploy`.
+
+`npm ci`, not `npm install`, so the build is reproducible from
+`package-lock.json` — which must therefore stay committed. `assets/node_modules`
+is both gitignored and dockerignored, so the container always installs fresh for
+its own architecture rather than inheriting a host build.
 
 ### Verify against the deployed app
 

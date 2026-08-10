@@ -23,6 +23,50 @@ defmodule TabletopWeb.Layouts do
   """
   def github_url, do: @github_url
 
+  @doc """
+  The Sentry DSN to hand to the browser SDK, or `nil` when it is not configured.
+
+  This is the **frontend** project's DSN (`SENTRY_FRONTEND_DSN`), not the
+  server's. Browser and server report into separate Sentry projects so their
+  very different noise profiles — an ad-blocker mangling a request versus a
+  `GameSession` crashing — do not share an issue stream or alert rules.
+
+  Returning `nil` leaves the client SDK uninitialised, so an environment without
+  the variable is silent with no separate opt-out, matching the server.
+  """
+  def sentry_browser_dsn do
+    :tabletop
+    |> Application.get_env(:sentry_frontend_dsn)
+    |> public_dsn()
+  end
+
+  @doc """
+  Strips any secret from a DSN, leaving the public key.
+
+  A DSN is a public identifier meant to travel in client code — but only the
+  modern form is. The pre-2016 format embedded a secret
+  (`https://public:secret@host/project`), which Sentry still parses, and
+  rendering one of those into every page would publish it. For a modern DSN this
+  is a no-op; for a legacy one it is the difference between leaking and not.
+
+  Split out from `sentry_browser_dsn/0` so the sanitising is testable
+  independently of where the value comes from.
+  """
+  def public_dsn(nil), do: nil
+
+  def public_dsn(dsn) when is_binary(dsn) do
+    case URI.parse(dsn) do
+      %URI{userinfo: userinfo} = uri when is_binary(userinfo) ->
+        public_key = userinfo |> String.split(":", parts: 2) |> hd()
+        URI.to_string(%{uri | userinfo: public_key})
+
+      # No userinfo means no key at all, so this is not a DSN we can hand to the
+      # SDK. Returning nil leaves it uninitialised, the safe default.
+      %URI{} ->
+        nil
+    end
+  end
+
   # Embed all files in layouts/* within this module.
   # The default root.html.heex file contains the HTML
   # skeleton of your application, namely HTML headers
@@ -487,17 +531,35 @@ defmodule TabletopWeb.Layouts do
           this.setOpen(this.panel().hidden)
         },
 
+        // Every write here is guarded, and that is load-bearing rather than
+        // tidiness. A DOM write queues a MutationObserver record even when it
+        // changes nothing, and the panel's own `hidden` attribute sits inside
+        // the subtree the observer above watches — so writing it unconditionally
+        // re-enters sync() as a microtask, which writes it again, which... The
+        // event loop never gets control back and the tab freezes. Since an empty
+        // tray calls setOpen(false) on every sync, that is the resting state of
+        // every page in this layout, not an edge case.
         setOpen(open) {
-          this.panel().hidden = !open
-          this.el.querySelector("[data-toggle]").setAttribute("aria-expanded", String(open))
+          const panel = this.panel()
+          const button = this.el.querySelector("[data-toggle]")
+          const expanded = String(open)
+
+          if (panel.hidden !== !open) panel.hidden = !open
+          if (button.getAttribute("aria-expanded") !== expanded) {
+            button.setAttribute("aria-expanded", expanded)
+          }
         },
 
         sync() {
           const count = this.visibleAlerts().length
           const button = this.el.querySelector("[data-toggle]")
+          const countEl = this.el.querySelector("[data-count]")
 
-          this.el.querySelector("[data-count]").textContent = count
-          button.hidden = count === 0
+          // The badge and button live outside [data-panel], so these two can't
+          // re-trigger the observer — but they are guarded on the same principle,
+          // so moving them inside the panel later can't reintroduce the freeze.
+          if (countEl.textContent !== String(count)) countEl.textContent = count
+          if (button.hidden !== (count === 0)) button.hidden = count === 0
 
           // An emptied tray closes itself; leaving an open, empty panel over
           // the video is the obstruction this whole component exists to avoid.

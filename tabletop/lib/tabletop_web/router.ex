@@ -37,7 +37,8 @@ defmodule TabletopWeb.Router do
     # app's behaviour lives in LiveView callbacks rather than controllers —
     # without it a captured error carries no request URL, user agent or
     # breadcrumbs, which is most of what makes an issue diagnosable.
-    live_session :phone_camera, on_mount: [Sentry.LiveViewHook] do
+    live_session :phone_camera,
+      on_mount: [Sentry.LiveViewHook, {TabletopWeb.SystemAnnouncements, :default}] do
       live "/phone-camera/:token", PhoneCameraLive, :index
     end
   end
@@ -120,7 +121,8 @@ defmodule TabletopWeb.Router do
       on_mount: [
         Sentry.LiveViewHook,
         {TabletopWeb.UserAuth, :require_authenticated},
-        {TabletopWeb.UserNotifications, :default}
+        {TabletopWeb.UserNotifications, :default},
+        {TabletopWeb.SystemAnnouncements, :default}
       ] do
       live("/users/settings", UserLive.Settings, :edit)
     end
@@ -135,7 +137,8 @@ defmodule TabletopWeb.Router do
     live_session :require_authenticated_user_and_sudo_mode,
       on_mount: [
         Sentry.LiveViewHook,
-        {TabletopWeb.UserAuth, :require_authenticated}
+        {TabletopWeb.UserAuth, :require_authenticated},
+        {TabletopWeb.SystemAnnouncements, :default}
       ] do
       live("/users/settings/confirm-password", UserLive.Settings, :confirm_password)
     end
@@ -144,22 +147,28 @@ defmodule TabletopWeb.Router do
   scope "/", TabletopWeb do
     pipe_through([:browser])
 
-    live_session :tournaments_admin,
+    # Everything gated on `Scope.admin?/1` — tournament management and the
+    # site-wide announcement console.
+    live_session :admin,
       on_mount: [
         Sentry.LiveViewHook,
         {TabletopWeb.UserAuth, :require_admin},
-        {TabletopWeb.UserNotifications, :default}
+        {TabletopWeb.UserNotifications, :default},
+        {TabletopWeb.SystemAnnouncements, :default}
       ] do
       live "/tournaments/new", TournamentLive.Form, :new
       live "/tournaments/:id/edit", TournamentLive.Form, :edit
       live "/tournaments/:id/admin", TournamentLive.Admin, :admin
+
+      live "/admin/announcements", AdminLive.Announcements, :index
     end
 
     live_session :current_user,
       on_mount: [
         Sentry.LiveViewHook,
         {TabletopWeb.UserAuth, :mount_current_scope},
-        {TabletopWeb.UserNotifications, :default}
+        {TabletopWeb.UserNotifications, :default},
+        {TabletopWeb.SystemAnnouncements, :default}
       ] do
       live("/users/register", UserLive.Registration, :new)
       live("/users/log-in", UserLive.Login, :new)

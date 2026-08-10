@@ -4,7 +4,7 @@ defmodule TabletopWeb.PhoneCameraLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.game flash={@flash}>
+    <Layouts.game flash={@flash} system_announcement={@system_announcement}>
       <div
         :if={@valid}
         id="phone-camera"

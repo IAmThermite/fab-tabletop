@@ -7,7 +7,11 @@ defmodule TabletopWeb.UserLive.Registration do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+    >
       <div class="mx-auto max-w-sm">
         <div class="text-center">
           <.header>

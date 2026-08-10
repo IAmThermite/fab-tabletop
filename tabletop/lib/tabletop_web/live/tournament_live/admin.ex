@@ -208,7 +208,11 @@ defmodule TabletopWeb.TournamentLive.Admin do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+    >
       <.header>
         Admin · {@tournament.name}
         <:subtitle>

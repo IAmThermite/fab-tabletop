@@ -1367,7 +1367,7 @@ defmodule Tabletop.Tournaments do
   end
 
   defp ensure_admin!(scope) do
-    unless Scope.admin?(scope), do: raise(Tabletop.Tournaments.NotAdminError)
+    unless Scope.admin?(scope), do: raise(Tabletop.NotAdminError)
     :ok
   end
 

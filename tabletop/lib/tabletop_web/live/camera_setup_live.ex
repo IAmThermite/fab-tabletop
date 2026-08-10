@@ -11,7 +11,11 @@ defmodule TabletopWeb.CameraSetupLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.game flash={@flash} current_scope={@current_scope}>
+    <Layouts.game
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+    >
       <div
         id="camera-setup"
         phx-hook=".CameraSetup"

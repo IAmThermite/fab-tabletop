@@ -52,6 +52,11 @@ defmodule TabletopWeb.Layouts do
 
   attr(:max_width, :string, default: "max-w-4xl", doc: "the max width class for the main content")
 
+  attr(:system_announcement, :map,
+    default: nil,
+    doc: "the active site-wide announcement, from `TabletopWeb.SystemAnnouncements`"
+  )
+
   slot(:inner_block, required: true)
 
   def app(assigns) do
@@ -155,6 +160,9 @@ defmodule TabletopWeb.Layouts do
                 class="dropdown-content menu bg-base-100 rounded-box z-50 mt-2 w-44 p-2 shadow-lg border border-base-300"
               >
                 <li><.link href={~p"/users/settings"}>Settings</.link></li>
+                <li :if={Tabletop.Accounts.Scope.admin?(@current_scope)}>
+                  <.link navigate={~p"/admin/announcements"}>Announcements</.link>
+                </li>
                 <li><.link href={~p"/users/log-out"} method="delete">Log out</.link></li>
               </ul>
             </div>
@@ -171,6 +179,10 @@ defmodule TabletopWeb.Layouts do
              height) and is centred at the page's max width, leaving the image
              visible in the surrounding margins. --%>
         <div class={["mx-auto", @max_width]}>
+          <%!-- Sits above the content panel rather than inside it so it reads as
+               chrome, and so it is the first thing under the header on every
+               standard page. The game layout uses the toast variant instead. --%>
+          <.system_announcement announcement={@system_announcement} />
           <div class="space-y-4 rounded-box border border-base-300 bg-base-100/80 backdrop-blur p-4 sm:p-6">
             {render_slot(@inner_block)}
           </div>
@@ -294,6 +306,11 @@ defmodule TabletopWeb.Layouts do
     doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
   )
 
+  attr(:system_announcement, :map,
+    default: nil,
+    doc: "the active site-wide announcement, from `TabletopWeb.SystemAnnouncements`"
+  )
+
   slot(:inner_block, required: true)
 
   def game(assigns) do
@@ -302,7 +319,10 @@ defmodule TabletopWeb.Layouts do
       {render_slot(@inner_block)}
     </main>
 
-    <.flash_group flash={@flash} />
+    <%!-- No `flash_group/1` here: its toasts park over the video grid. The tray
+         collects the same alerts behind one corner button instead. --%>
+    <.game_alert_tray flash={@flash} system_announcement={@system_announcement} />
+    <.notification_sounds />
     """
   end
 
@@ -347,10 +367,172 @@ defmodule TabletopWeb.Layouts do
       </.flash>
     </div>
 
-    <%!-- Plays the audio cue that accompanies a tournament toast. Present on
-          every page (flash_group sits in both the app and game layouts) and
-          listens on its own event so it never collides with the in-game
-          `#game-sounds` hook, which owns `play_sound`. --%>
+    <.notification_sounds />
+    """
+  end
+
+  @doc """
+  Every alert the game view can raise, collapsed into one corner button.
+
+  The game layout is a fullscreen video grid: a toast parked over it hides the
+  thing the player is actually looking at, and the system announcement in
+  particular stays up until dismissed. So instead of floating cards, this puts
+  a single small button bottom-right with an unread count, and the alerts
+  themselves in a panel that only opens when the player asks for it.
+
+  **Connection loss is deliberately not in the panel.** `#connection-status` in
+  the game top bar tracks the *WebRTC peer*, not the LiveView socket, so these
+  two are the only signal that the socket itself has dropped — and a dropped
+  socket is exactly when nothing can prompt the player to open a tray. They
+  render as compact pills beside the button instead: still unmissable, still
+  small enough not to obstruct.
+
+  Tray entries do not auto-hide the way `flash_group/1`'s toasts do. An alert
+  that erased itself after five seconds would leave the unread count lying, and
+  the whole point of collapsing them is that they wait until they're read.
+  """
+  attr(:flash, :map, required: true, doc: "the map of flash messages")
+
+  attr(:system_announcement, :map,
+    default: nil,
+    doc: "the active site-wide announcement, from `TabletopWeb.SystemAnnouncements`"
+  )
+
+  def game_alert_tray(assigns) do
+    ~H"""
+    <div
+      id="game-alert-tray"
+      phx-hook=".AlertTray"
+      class="fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-2"
+    >
+      <%!-- Hidden until the hook finds something in it, so an empty tray puts
+            nothing at all over the video. `aria-live` is on the panel rather
+            than the button so a screen reader announces the alert text itself. --%>
+      <div
+        id="game-alert-panel"
+        data-panel
+        hidden
+        aria-live="polite"
+        class="flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2"
+      >
+        <.system_announcement announcement={@system_announcement} variant={:tray} />
+        <.flash kind={:info} flash={@flash} variant={:tray} />
+        <.flash kind={:error} flash={@flash} variant={:tray} />
+      </div>
+
+      <div
+        id="client-error"
+        role="alert"
+        hidden
+        phx-disconnected={show(".phx-client-error #client-error") |> JS.remove_attribute("hidden")}
+        phx-connected={hide("#client-error") |> JS.set_attribute({"hidden", ""})}
+        class="alert alert-error w-auto gap-2 px-3 py-2 shadow-lg"
+      >
+        <.icon name="hero-arrow-path" class="size-4 shrink-0 motion-safe:animate-spin" />
+        <span class="text-sm">{gettext("Reconnecting…")}</span>
+      </div>
+
+      <div
+        id="server-error"
+        role="alert"
+        hidden
+        phx-disconnected={show(".phx-server-error #server-error") |> JS.remove_attribute("hidden")}
+        phx-connected={hide("#server-error") |> JS.set_attribute({"hidden", ""})}
+        class="alert alert-error w-auto gap-2 px-3 py-2 shadow-lg"
+      >
+        <.icon name="hero-arrow-path" class="size-4 shrink-0 motion-safe:animate-spin" />
+        <span class="text-sm">{gettext("Something went wrong — reconnecting…")}</span>
+      </div>
+
+      <button
+        data-toggle
+        type="button"
+        hidden
+        aria-expanded="false"
+        aria-controls="game-alert-panel"
+        class="btn btn-circle btn-sm indicator"
+        title={gettext("Alerts")}
+      >
+        <span data-count class="indicator-item badge badge-xs badge-primary"></span>
+        <.icon name="hero-bell" class="size-5" />
+      </button>
+    </div>
+    <script :type={ColocatedHook} name=".AlertTray">
+      export default {
+        mounted() {
+          this.el.querySelector("[data-toggle]").addEventListener("click", () => this.toggle())
+
+          // Not every alert leaves through the server. Dismissing the
+          // announcement is a localStorage note the hook applies by setting
+          // `hidden`, and clearing a flash hides it with a JS transition before
+          // the round trip lands — neither produces a patch here, so without
+          // this the badge would keep counting alerts that are already gone.
+          this._observer = new MutationObserver(() => this.sync())
+          this._observer.observe(this.panel(), {
+            subtree: true,
+            childList: true,
+            attributeFilter: ["hidden", "style", "class"],
+          })
+
+          this.sync()
+        },
+
+        destroyed() { this._observer?.disconnect() },
+
+        // Recomputed from the DOM rather than tracked, so server-sent and
+        // client-side removals are counted the same way.
+        updated() { this.sync() },
+
+        toggle() {
+          this.setOpen(this.panel().hidden)
+        },
+
+        setOpen(open) {
+          this.panel().hidden = !open
+          this.el.querySelector("[data-toggle]").setAttribute("aria-expanded", String(open))
+        },
+
+        sync() {
+          const count = this.visibleAlerts().length
+          const button = this.el.querySelector("[data-toggle]")
+
+          this.el.querySelector("[data-count]").textContent = count
+          button.hidden = count === 0
+
+          // An emptied tray closes itself; leaving an open, empty panel over
+          // the video is the obstruction this whole component exists to avoid.
+          if (count === 0) this.setOpen(false)
+
+          // Nudge, don't interrupt: something new is worth noticing, but
+          // opening the panel would put a card back over the board.
+          if (count > this._lastCount) {
+            button.classList.remove("motion-safe:animate-bounce")
+            void button.offsetWidth
+            button.classList.add("motion-safe:animate-bounce")
+            setTimeout(() => button.classList.remove("motion-safe:animate-bounce"), 1500)
+          }
+          this._lastCount = count
+        },
+
+        visibleAlerts() {
+          return [...this.panel().querySelectorAll("[data-alert]")].filter(
+            (el) => !el.hidden && getComputedStyle(el).display !== "none"
+          )
+        },
+
+        panel() { return this.el.querySelector("[data-panel]") },
+      }
+    </script>
+    """
+  end
+
+  @doc """
+  Plays the audio cue that accompanies a notification toast. Rendered by both
+  layouts, and listening on its own event so it never collides with the in-game
+  `#game-sounds` hook, which owns `play_sound`.
+  """
+  def notification_sounds(assigns) do
+    ~H"""
     <div id="notification-sounds" phx-hook=".NotificationSounds"></div>
     <script :type={ColocatedHook} name=".NotificationSounds">
       import { sounds } from "@/js/sounds.js"

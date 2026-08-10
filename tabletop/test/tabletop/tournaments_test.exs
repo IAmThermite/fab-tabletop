@@ -76,7 +76,7 @@ defmodule Tabletop.TournamentsTest do
   test "non-admin cannot create a tournament" do
     user_scope = Scope.for_user(user_fixture())
 
-    assert_raise Tabletop.Tournaments.NotAdminError, fn ->
+    assert_raise Tabletop.NotAdminError, fn ->
       Tournaments.create_tournament(user_scope, %{
         "name" => "x",
         "format" => "classic_constructed"

@@ -43,6 +43,18 @@ defmodule TabletopWeb.CoreComponents do
   attr(:flash, :map, default: %{}, doc: "the map of flash messages to display")
   attr(:title, :string, default: nil)
   attr(:kind, :atom, values: [:info, :error], doc: "used for styling and flash lookup")
+
+  attr(:variant, :atom,
+    default: :toast,
+    values: [:toast, :tray],
+    doc: """
+    `:toast` floats top-right and fades itself out after five seconds.
+    `:tray` renders in place with no auto-hide, for `<.game_alert_tray>` — the
+    tray's whole point is that alerts wait there until read, and a self-erasing
+    entry would make its unread count lie.
+    """
+  )
+
   attr(:rest, :global, doc: "the arbitrary HTML attributes to add to the flash container")
 
   slot(:inner_block, doc: "the optional inner block that renders the flash message")
@@ -55,13 +67,18 @@ defmodule TabletopWeb.CoreComponents do
       :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
       id={@id}
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
-      phx-mounted={JS.hide(to: "#flash-#{@kind}", transition: "fade-out", time: 5000)}
+      phx-mounted={
+        @variant == :toast && JS.hide(to: "#flash-#{@kind}", transition: "fade-out", time: 5000)
+      }
       role="alert"
-      class="toast toast-top toast-end z-50"
+      data-alert
+      class={@variant == :toast && "toast toast-top toast-end z-50"}
       {@rest}
     >
       <div class={[
-        "alert w-80 sm:w-96 max-w-80 sm:max-w-96 text-wrap",
+        "alert items-start text-wrap",
+        @variant == :toast && "w-80 sm:w-96 max-w-80 sm:max-w-96",
+        @variant == :tray && "w-full shadow-lg",
         @kind == :info && "alert-info",
         @kind == :error && "alert-error"
       ]}>
@@ -154,6 +171,143 @@ defmodule TabletopWeb.CoreComponents do
   defp notification_icon(:check_in), do: "hero-clipboard-document-check"
   defp notification_icon(:match), do: "hero-play"
   defp notification_icon(_), do: "hero-bell"
+
+  @doc """
+  Renders the site-wide announcement in `@system_announcement` (see
+  `TabletopWeb.SystemAnnouncements`), or nothing when there isn't one.
+
+  Two presentations, chosen by the layout rather than the caller's page:
+
+    * `:banner` — a persistent bar in the page flow, used by `Layouts.app`.
+    * `:tray` — a card sized to sit inside `<.game_alert_tray>`, used by
+      `Layouts.game`, whose fullscreen video grid has nowhere to put a bar and
+      must not be covered by a floating one.
+
+  Only one of the two ever renders on a given page, so a player never sees the
+  same message twice. The `:tray` variant carries no positioning of its own —
+  the tray owns that.
+
+  ## Examples
+
+      <.system_announcement announcement={@system_announcement} />
+      <.system_announcement announcement={@system_announcement} variant={:tray} />
+  """
+  attr(:announcement, :map, default: nil, doc: "a %Tabletop.Announcements.Announcement{} or nil")
+
+  attr(:variant, :atom,
+    default: :banner,
+    values: [:banner, :tray],
+    doc: "presentation — an in-flow page bar, or a card inside the game alert tray"
+  )
+
+  def system_announcement(assigns) do
+    assigns = assign(assigns, :key, announcement_key(assigns.announcement))
+
+    ~H"""
+    <%!-- The dismissal is client-owned (a localStorage note keyed by
+         `data-announcement-key`), so the hook must be allowed to keep the
+         element hidden across re-renders — hence `phx-update="ignore"`, per the
+         convention in CLAUDE.md. That would normally freeze stale content, but
+         `@key` folds in `updated_at`: a new or edited announcement produces a
+         different DOM id, so LiveView drops the old node and mounts a fresh one
+         (which also re-shows a message that was edited after someone dismissed
+         it).
+
+         `data-announcement-key` is also what the pre-paint script in
+         root.html.heex targets to hide an already-dismissed announcement before
+         the dead render paints — keep the attribute name in step with it. --%>
+    <div
+      :if={@announcement}
+      id={"system-announcement-#{@variant}-#{@key}"}
+      phx-hook=".SystemAnnouncement"
+      phx-update="ignore"
+      data-announcement-key={@key}
+      data-alert
+    >
+      <div
+        role="alert"
+        class={[
+          "alert items-start gap-3 text-left",
+          announcement_level_class(@announcement.level),
+          @variant == :banner && "mb-4",
+          @variant == :tray && "shadow-lg"
+        ]}
+      >
+        <.icon name={announcement_icon(@announcement.level)} class="size-5 shrink-0" />
+        <p class="flex-1 text-wrap">{@announcement.message}</p>
+        <button
+          :if={@announcement.dismissible}
+          type="button"
+          data-dismiss
+          class="group cursor-pointer self-start"
+          aria-label={gettext("Dismiss announcement")}
+        >
+          <.icon name="hero-x-mark" class="size-5 opacity-40 group-hover:opacity-70" />
+        </button>
+      </div>
+    </div>
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".SystemAnnouncement">
+      // Remembers a dismissal per announcement so it doesn't nag on every
+      // navigation. One slot, not a list: only one announcement shows at a time,
+      // and stale keys are worthless once it has been replaced.
+      //
+      // Full page loads are handled before paint by the script in
+      // root.html.heex; this covers the rest of a connected session, where
+      // `mounted()` runs in the same task as the DOM patch and so hides the
+      // element before the browser gets a chance to paint it.
+      const STORAGE_KEY = "tabletop:dismissed-announcement"
+
+      export default {
+        mounted() {
+          if (this.read() === this.key()) {
+            this.el.hidden = true
+            return
+          }
+
+          const button = this.el.querySelector("[data-dismiss]")
+          if (button) button.addEventListener("click", () => this.dismiss())
+        },
+
+        dismiss() {
+          try {
+            localStorage.setItem(STORAGE_KEY, this.key())
+          } catch (_) {
+            // Private-mode / quota failures shouldn't leave the banner stuck.
+          }
+          this.el.hidden = true
+        },
+
+        key() {
+          return this.el.dataset.announcementKey
+        },
+
+        read() {
+          try {
+            return localStorage.getItem(STORAGE_KEY)
+          } catch (_) {
+            return null
+          }
+        },
+      }
+    </script>
+    """
+  end
+
+  # Identity *and* version: the DOM id and the dismissal note both hang off
+  # this, so editing an announcement re-shows it to everyone.
+  defp announcement_key(nil), do: nil
+
+  defp announcement_key(announcement) do
+    "#{announcement.id}-#{DateTime.to_unix(announcement.updated_at)}"
+  end
+
+  defp announcement_level_class(:critical), do: "alert-error"
+  defp announcement_level_class(:warning), do: "alert-warning"
+  defp announcement_level_class(_), do: "alert-info"
+
+  defp announcement_icon(:critical), do: "hero-exclamation-circle"
+  defp announcement_icon(:warning), do: "hero-exclamation-triangle"
+  defp announcement_icon(_), do: "hero-information-circle"
 
   @doc """
   Renders an input with label and error messages.

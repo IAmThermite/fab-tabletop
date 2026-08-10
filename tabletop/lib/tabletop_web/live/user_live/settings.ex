@@ -8,7 +8,11 @@ defmodule TabletopWeb.UserLive.Settings do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+    >
       <div class="text-center">
         <.link navigate={~p"/camera-setup"} class="btn btn-primary">
           Camera Setup

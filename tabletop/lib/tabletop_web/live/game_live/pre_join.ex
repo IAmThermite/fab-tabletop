@@ -13,7 +13,11 @@ defmodule TabletopWeb.GameLive.PreJoin do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.game flash={@flash} current_scope={@current_scope}>
+    <Layouts.game
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+    >
       <div
         id="pre-join"
         phx-hook=".PreJoinCamera"

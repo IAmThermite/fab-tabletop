@@ -27,7 +27,14 @@ config :tabletop, TabletopWeb.Endpoint,
 # `[metrics]` block in `infrastructure/fly/fly.toml` — Fly scrapes this port
 # over the private 6PN network, so it is deliberately NOT part of
 # `[http_service]` and never publicly reachable.
-config :tabletop, :metrics_port, String.to_integer(System.get_env("METRICS_PORT", "9091"))
+#
+# Skipped under test on purpose: `config/test.exs` sets this to `nil` so the
+# suite binds no fixed port, and `runtime.exs` runs *after* it. Without this
+# guard the default below silently reinstates 9091, and `mix test` then dies
+# with `:eaddrinuse` whenever a dev server (or a second suite) already holds it.
+if config_env() != :test do
+  config :tabletop, :metrics_port, String.to_integer(System.get_env("METRICS_PORT", "9091"))
+end
 
 if admin_ids = System.get_env("FABTABLETOP_ADMIN_IDS") do
   config :tabletop,

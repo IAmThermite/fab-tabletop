@@ -95,6 +95,16 @@ const CUES = {
     type: "sine",
     gain: 0.55,
   },
+
+  // Site-wide announcement (scheduled downtime and the like), fired
+  // server-side by TabletopWeb.SystemAnnouncements. Two low, even notes —
+  // deliberately unlike the rising tournament cues, so "read the banner"
+  // doesn't sound like "your match is ready".
+  system_announcement: {
+    notes: [{ freq: 440.0, t: 0, dur: 0.16 }, { freq: 440.0, t: 0.24, dur: 0.22 }],
+    type: "triangle",
+    gain: 0.5,
+  },
 }
 
 class SoundEngine {

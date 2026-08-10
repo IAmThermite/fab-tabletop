@@ -380,6 +380,12 @@ The `GCLOUD_HOSTED_*` values come from the Prometheus and Loki pages under
 access policy token with `metrics:write` and `logs:write`. That is the same
 access policy as § 2's Tempo token — one policy can carry all three scopes.
 
+**The two instance IDs are different numbers.** Each service in the stack has its
+own numeric username — Prometheus, Loki and Tempo all differ, and § 2's OTLP
+gateway id is a fourth. They are on separate pages, so if you are hunting for
+both on one screen you will not find them. The *token*, by contrast, is
+deliberately shared: one access policy token is the password for both endpoints.
+
 Rotating the database password means re-running step 2 and then updating `PG_DSN`
 with `fly secrets set`, which restarts the collector.
 
@@ -436,10 +442,59 @@ preloaded, so a migration would fail on both.
 | Sentry: *"the :sentry application has not been started yet"* | Used `eval` instead of `rpc`. |
 | Metrics gauges gap, counters reset | A deploy. Metrics are in-memory and per-machine. |
 | Alloy: `SSL is not enabled on the server` | DSN says `sslmode=require`. The Postgres image serves no certificate; use `sslmode=disable` over 6PN. |
+| Alloy: **401** `authentication error: invalid token` on **both** exporters | `GCLOUD_RW_API_KEY` — see below. Failing on both at once rules out the instance ids. |
+| Database appears, but query panels stay empty | `job` label missing from the Loki path — see below. |
 | Database panels populate, but **Query samples** stays empty | `compute_query_id` is `auto`, not `on`. `pg_stat_activity.query_id` is null so the join finds nothing — and nothing errors. |
 | Explain plans truncated or missing | `track_activity_query_size` still at its 1024 default. |
 | Ecto Stats has no **Calls**/**Outliers** tab | `CREATE EXTENSION pg_stat_statements` was never run on that database. Expected in dev, which runs stock Postgres. |
 | `CREATE EXTENSION` fails: *must be loaded via shared_preload_libraries* | Preload flag not applied yet — deploy `postgres.toml` first. |
+
+### Alloy `401 invalid token`
+
+Read *how many* exporters are failing before touching anything:
+
+```
+prometheus.remote_write → prometheus-prod-NN-… → 401 "invalid token"
+loki.write              → logs-prod-NNN…       → 401 "invalid token"
+```
+
+Both failing at once is the diagnosis. The two endpoints use *different*
+instance ids and share only `GCLOUD_RW_API_KEY`, so the shared key is the
+variable at fault — no point re-checking the ids. Only one failing would mean the
+opposite: that endpoint's id or URL.
+
+Note the wording. `invalid token` means Grafana does not recognise the
+credential at all; a *recognised* token missing a scope returns **403**. So this
+is a wrong, mistyped or revoked token rather than a permissions problem. The most
+common cause is token type — Cloud Access Policy tokens begin `glc_`, while a
+Grafana service-account token (`glsa_`) or stack API key looks similar and is
+accepted nowhere in Cloud ingestion.
+
+Isolate it without redeploying:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+  -u "<GCLOUD_HOSTED_METRICS_ID>:<GCLOUD_RW_API_KEY>" \
+  "$GCLOUD_HOSTED_METRICS_URL"
+```
+
+`401` means the token is bad. `400` means authentication **succeeded** and the
+server is merely rejecting the empty body — so the credential is fine and the
+problem is elsewhere.
+
+### The `job` label is load-bearing for logs
+
+`config.alloy` sets `job = "integrations/db-o11y"` on *both* paths —
+`discovery.relabel` for metrics and `loki.relabel` for logs. Grafana Cloud's
+Database Observability app keys off that exact value to attach telemetry to an
+instance; it is a required identifier, not a naming convention.
+
+`database_observability.postgres` does **not** label the logs it forwards, so the
+`loki.relabel` block has to add both `job` and `instance` itself. Drop `job` and
+the logs still arrive in Loki, but `query_details`, `query_samples`,
+`schema_details` and `explain_plans` never bind to the database — the instance
+shows up with metrics and permanently empty query panels, which reads as a
+collector problem rather than a labelling one.
 
 ### The OTLP `%20` trap
 

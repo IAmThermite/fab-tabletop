@@ -1,4 +1,12 @@
 import { Socket } from "phoenix"
+import { startVideoFrameLoop } from "./video_frame_loop"
+import {
+  TARGET_FRAMERATE,
+  hintVideoDetail,
+  preferVideoCodecs,
+  readVideoStats,
+  tuneVideoSender,
+} from "./webrtc_tuning"
 
 const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -7,15 +15,27 @@ const ICE_SERVERS = [
   // { urls: "turn:your-coturn-server:3478", username: "user", credential: "pass" },
 ]
 
+// Capture resolution. Deliberately not 4K: webcams generally only serve 2160p
+// as low-framerate MJPEG, the encoder scales it back down to fit the bitrate
+// anyway, and the extra decode/canvas work pushes the encoder into CPU-limited
+// degradation — which costs more detail than the extra pixels ever bought. This
+// also matches what the pre-join and camera-setup previews capture, so the
+// zoom/rotation calibration made there describes the same frame.
+const CAPTURE_WIDTH = 1920
+const CAPTURE_HEIGHT = 1080
+
+// Set `tabletop:debug-webrtc` to "true" in localStorage to log outbound video
+// health (resolution, framerate, codec, bitrate, limitation reason).
+const STATS_LOG_INTERVAL_MS = 5000
+
 export default class WebRTCManager {
-  constructor({ token, gameId, localVideoEl, remoteVideoEl, canvasEl, tileLayerEl, onStatusChange, micEnabled = true, cameraEnabled = true }) {
+  constructor({ token, gameId, localVideoEl, remoteVideoEl, tileLayerEl, onStatusChange, micEnabled = true, cameraEnabled = true }) {
     this.token = token
     this.gameId = gameId
     this.localVideoEl = localVideoEl
     this.remoteVideoEl = remoteVideoEl
-    this.canvasEl = canvasEl
     // Overlay holding the opponent's tiles. Tile coordinates are percentages of
-    // the board, so the overlay has to track the letterboxed canvas rect rather
+    // the board, so the overlay has to track the letterboxed video rect rather
     // than the container it is centred in.
     this.tileLayerEl = tileLayerEl || null
     this.onStatusChange = onStatusChange || (() => { })
@@ -24,7 +44,6 @@ export default class WebRTCManager {
     this.channel = null
     this.peerConnection = null
     this.localStream = null
-    this.animFrameId = null
     this.cameraEnabled = cameraEnabled
     this.micEnabled = micEnabled
     this._status = null
@@ -32,16 +51,28 @@ export default class WebRTCManager {
     // Transformed stream for sending zoom/rotation to peer
     this._streamForPeer = null
     this._localCanvasEl = null
-    this._localAnimFrameId = null
+    this._stopLocalTransformLoop = null
     this._canvasStream = null
+
+    // Remote-board layout (see _startRemoteLayout)
+    this._onRemoteLayout = null
+    this._containerObserver = null
+    this._statsTimer = null
   }
 
   async start() {
     this._setStatus("connecting")
 
     // Capture local media first so tracks are ready before signaling.
-    // Lock to 16:9 so previews and the remote feed share one aspect ratio.
-    const videoBase = { width: { ideal: 3840 }, height: { ideal: 2160 } }
+    // Lock to 16:9 so previews and the remote feed share one aspect ratio —
+    // tile coordinates are percentages of the frame, so a preview cropped to a
+    // different aspect than the sent frame would place tiles where the opponent
+    // doesn't see them.
+    const videoBase = {
+      width: { ideal: CAPTURE_WIDTH },
+      height: { ideal: CAPTURE_HEIGHT },
+      frameRate: { ideal: TARGET_FRAMERATE },
+    }
     try {
       try {
         this.localStream = await navigator.mediaDevices.getUserMedia({
@@ -59,6 +90,7 @@ export default class WebRTCManager {
           throw err
         }
       }
+      hintVideoDetail(this.localStream)
       this.localVideoEl.srcObject = this.localStream
       await this.localVideoEl.play().catch(() => { })
       this._streamForPeer = this._createTransformedStream()
@@ -109,21 +141,28 @@ export default class WebRTCManager {
     this._applyTrackEnabled()
   }
 
-  // Pushes the current cameraEnabled / micEnabled state down to whatever
-  // tracks currently exist. Safe to call before media is acquired (no-op).
+  // Pushes the current cameraEnabled / micEnabled state down to every track we
+  // hold. It has to cover all of them, not just the webcam: when the phone is
+  // the video source `_streamForPeer` *is* the phone's stream, so touching only
+  // `localStream` would leave the camera toggle and mic mute doing nothing
+  // while the phone kept transmitting. Safe to call before media is acquired.
   _applyTrackEnabled() {
-    if (!this.localStream) return
-    const videoTrack = this.localStream.getVideoTracks()[0]
-    if (videoTrack) videoTrack.enabled = this.cameraEnabled
-    if (this._canvasStream) {
-      this._canvasStream.getVideoTracks().forEach(t => t.enabled = this.cameraEnabled)
+    const videoTracks = new Set()
+    const audioTracks = new Set()
+
+    for (const stream of [this.localStream, this._externalStream, this._canvasStream, this._streamForPeer]) {
+      if (!stream) continue
+      stream.getVideoTracks().forEach((t) => videoTracks.add(t))
+      stream.getAudioTracks().forEach((t) => audioTracks.add(t))
     }
-    const audioTrack = this.localStream.getAudioTracks()[0]
-    if (audioTrack) audioTrack.enabled = this.micEnabled
+
+    videoTracks.forEach((t) => { t.enabled = this.cameraEnabled })
+    audioTracks.forEach((t) => { t.enabled = this.micEnabled })
   }
 
   async setExternalVideoSource(stream) {
     this._externalStream = stream
+    hintVideoDetail(stream)
 
     // Update local preview to show the external source
     this.localVideoEl.srcObject = stream
@@ -133,16 +172,11 @@ export default class WebRTCManager {
     this._stopLocalTransform()
     this._streamForPeer = this._createTransformedStream()
 
-    // Replace the video track on the peer connection
-    if (this.peerConnection) {
-      const newVideoTrack = this._streamForPeer.getVideoTracks()[0]
-      const sender = this.peerConnection
-        .getSenders()
-        .find((s) => s.track?.kind === "video")
-      if (sender && newVideoTrack) {
-        await sender.replaceTrack(newVideoTrack)
-      }
-    }
+    // Newly built tracks start enabled, so re-assert the toggle state before
+    // they reach the peer — otherwise switching source silently un-mutes.
+    this._applyTrackEnabled()
+
+    await this._replacePeerVideoTrack()
   }
 
   async clearExternalVideoSource() {
@@ -156,23 +190,31 @@ export default class WebRTCManager {
     // Rebuild the transformed stream from the webcam
     this._stopLocalTransform()
     this._streamForPeer = this._createTransformedStream()
+    this._applyTrackEnabled()
 
-    // Replace the video track back to the webcam
-    if (this.peerConnection) {
-      const newVideoTrack = this._streamForPeer.getVideoTracks()[0]
-      const sender = this.peerConnection
-        .getSenders()
-        .find((s) => s.track?.kind === "video")
-      if (sender && newVideoTrack) {
-        await sender.replaceTrack(newVideoTrack)
-      }
+    await this._replacePeerVideoTrack()
+  }
+
+  // Swaps the outbound video track to whatever `_streamForPeer` now holds and
+  // re-applies the encoding parameters (a fresh track can arrive with default
+  // encodings).
+  async _replacePeerVideoTrack() {
+    if (!this.peerConnection) return
+
+    const newVideoTrack = this._streamForPeer?.getVideoTracks()[0]
+    const sender = this.peerConnection
+      .getSenders()
+      .find((s) => s.track?.kind === "video")
+    if (sender && newVideoTrack) {
+      await sender.replaceTrack(newVideoTrack)
+      await tuneVideoSender(this.peerConnection)
     }
   }
 
   _stopLocalTransform() {
-    if (this._localAnimFrameId) {
-      cancelAnimationFrame(this._localAnimFrameId)
-      this._localAnimFrameId = null
+    if (this._stopLocalTransformLoop) {
+      this._stopLocalTransformLoop()
+      this._stopLocalTransformLoop = null
     }
     if (this._canvasStream) {
       this._canvasStream.getTracks().forEach((t) => t.stop())
@@ -182,23 +224,10 @@ export default class WebRTCManager {
   }
 
   disconnect() {
-    if (this._localAnimFrameId) {
-      cancelAnimationFrame(this._localAnimFrameId)
-      this._localAnimFrameId = null
-    }
-
-    if (this._canvasStream) {
-      this._canvasStream.getTracks().forEach(t => t.stop())
-      this._canvasStream = null
-    }
-
-    this._localCanvasEl = null
+    this.stopStatsLogging()
+    this._stopLocalTransform()
     this._streamForPeer = null
-
-    if (this.animFrameId) {
-      cancelAnimationFrame(this.animFrameId)
-      this.animFrameId = null
-    }
+    this._stopRemoteLayout()
 
     if (this.peerConnection) {
       this.peerConnection.close()
@@ -219,6 +248,33 @@ export default class WebRTCManager {
       this.socket.disconnect()
       this.socket = null
     }
+  }
+
+  // -- Diagnostics --
+
+  // One-shot read of the outbound video stats. Also available from the console
+  // for ad-hoc checks during a real game.
+  videoStats() {
+    return readVideoStats(this.peerConnection)
+  }
+
+  startStatsLogging(intervalMs = STATS_LOG_INTERVAL_MS) {
+    if (this._statsTimer) return
+
+    this._statsTimer = setInterval(async () => {
+      const s = await this.videoStats()
+      if (!s) return
+      console.log(
+        `[WebRTC] out ${s.width}x${s.height} @${s.fps ?? "?"}fps ` +
+        `${s.codec || "?"} ${s.targetKbps ?? "?"}kbps limited=${s.limitation}`,
+      )
+    }, intervalMs)
+  }
+
+  stopStatsLogging() {
+    if (!this._statsTimer) return
+    clearInterval(this._statsTimer)
+    this._statsTimer = null
   }
 
   // -- Private methods --
@@ -254,7 +310,7 @@ export default class WebRTCManager {
     this.peerConnection.ontrack = (event) => {
       this.remoteVideoEl.srcObject = event.streams[0]
       this.remoteVideoEl.play().catch(() => { })
-      this._startCanvasRender()
+      this._startRemoteLayout()
       this._setStatus("connected")
     }
 
@@ -264,9 +320,11 @@ export default class WebRTCManager {
 
       if (state === "disconnected" || state === "failed") {
         this._setStatus("disconnected")
-        this._stopCanvasRender()
       } else if (state === "connected" || state === "completed") {
         this._setStatus("connected")
+        // A blip that recovers doesn't fire `ontrack` again, so re-assert the
+        // board layout here rather than relying on that path.
+        this.applyRemoteLayout()
       }
     }
   }
@@ -275,11 +333,13 @@ export default class WebRTCManager {
     try {
       console.log("[WebRTC] Creating offer (peer joined)")
       this._createPeerConnection()
+      preferVideoCodecs(this.peerConnection)
 
       const offer = await this.peerConnection.createOffer()
       await this.peerConnection.setLocalDescription(offer)
 
       this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+      await tuneVideoSender(this.peerConnection)
     } catch (err) {
       console.error("[WebRTC] Error creating offer:", err)
       this._setStatus("error")
@@ -293,10 +353,15 @@ export default class WebRTCManager {
 
       await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
 
+      // After setRemoteDescription so the preference applies to the transceiver
+      // the offer associated, but before createAnswer so it reaches the SDP.
+      preferVideoCodecs(this.peerConnection)
+
       const answer = await this.peerConnection.createAnswer()
       await this.peerConnection.setLocalDescription(answer)
 
       this.channel.push("answer", { sdp: this.peerConnection.localDescription })
+      await tuneVideoSender(this.peerConnection)
     } catch (err) {
       console.error("[WebRTC] Error handling offer:", err)
       this._setStatus("error")
@@ -308,6 +373,7 @@ export default class WebRTCManager {
       console.log("[WebRTC] Received answer")
       if (this.peerConnection) {
         await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
+        await tuneVideoSender(this.peerConnection)
       }
     } catch (err) {
       console.error("[WebRTC] Error handling answer:", err)
@@ -327,7 +393,7 @@ export default class WebRTCManager {
 
   _handlePeerLeft() {
     console.log("[WebRTC] Peer left")
-    this._stopCanvasRender()
+    this._stopRemoteLayout()
 
     if (this.peerConnection) {
       this.peerConnection.close()
@@ -335,7 +401,7 @@ export default class WebRTCManager {
     }
 
     this.remoteVideoEl.srcObject = null
-    this._clearCanvas()
+    this._clearRemoteLayout()
     this._setStatus("waiting")
   }
 
@@ -346,7 +412,8 @@ export default class WebRTCManager {
     const zoom = parseFloat(localStorage.getItem("tabletop:camera-zoom") || "1")
     const rotation = parseFloat(localStorage.getItem("tabletop:camera-rotation") || "0")
 
-    // No transforms needed — use raw stream directly
+    // No transforms needed — use raw stream directly. Skipping the canvas
+    // entirely also skips a re-encode generation, so this is the good path.
     if (zoom === 1 && rotation === 0) {
       return sourceStream
     }
@@ -355,122 +422,165 @@ export default class WebRTCManager {
     this._localCanvasEl = document.createElement("canvas")
     const videoTrack = sourceStream.getVideoTracks()[0]
     const settings = videoTrack.getSettings()
-    this._localCanvasEl.width = settings.width || 1280
-    this._localCanvasEl.height = settings.height || 720
+    const sourceW = settings.width || CAPTURE_WIDTH
+    const sourceH = settings.height || CAPTURE_HEIGHT
+
+    // Size the canvas to the *cropped* region rather than to the full frame.
+    // Zoom is a centre crop, so cropping to 1/zoom and then stretching back up
+    // to full size would hand the encoder interpolated pixels — at 2x zoom, a
+    // 1080p frame carrying 540p of real detail, with the bitrate spent smoothing
+    // the difference. Encoding the crop at its true size spends every bit on
+    // real pixels instead. Even dimensions so chroma subsampling has nothing to
+    // round. Aspect ratio is preserved (a centre crop can't change it).
+    const even = (n) => Math.max(2, Math.round(n / 2) * 2)
+    this._localCanvasEl.width = even(sourceW / zoom)
+    this._localCanvasEl.height = even(sourceH / zoom)
 
     const ctx = this._localCanvasEl.getContext("2d")
+    ctx.imageSmoothingQuality = "high"
     const videoEl = this.localVideoEl
     const rad = rotation * Math.PI / 180
 
     const renderLocal = () => {
-      if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
-        const cw = this._localCanvasEl.width
-        const ch = this._localCanvasEl.height
-        const vw = videoEl.videoWidth
-        const vh = videoEl.videoHeight
+      const cw = this._localCanvasEl.width
+      const ch = this._localCanvasEl.height
+      const vw = videoEl.videoWidth
+      const vh = videoEl.videoHeight
 
-        // Zoom: crop source rectangle from center
-        const sw = vw / zoom
-        const sh = vh / zoom
-        const sx = (vw - sw) / 2
-        const sy = (vh - sh) / 2
+      // Zoom: crop source rectangle from center
+      const sw = vw / zoom
+      const sh = vh / zoom
+      const sx = (vw - sw) / 2
+      const sy = (vh - sh) / 2
 
-        // Scale up to fill corners when rotated
-        const sinR = Math.abs(Math.sin(rad))
-        const cosR = Math.abs(Math.cos(rad))
-        const rotScale = Math.max(
-          (cw * cosR + ch * sinR) / cw,
-          (cw * sinR + ch * cosR) / ch
-        )
-        const dw = cw * rotScale
-        const dh = ch * rotScale
-        const dx = (cw - dw) / 2
-        const dy = (ch - dh) / 2
+      // Scale up to fill corners when rotated. At rotation 0 this resolves to
+      // 1, so the crop is drawn 1:1 and no interpolation happens at all.
+      const sinR = Math.abs(Math.sin(rad))
+      const cosR = Math.abs(Math.cos(rad))
+      const rotScale = Math.max(
+        (cw * cosR + ch * sinR) / cw,
+        (cw * sinR + ch * cosR) / ch
+      )
+      const dw = cw * rotScale
+      const dh = ch * rotScale
+      const dx = (cw - dw) / 2
+      const dy = (ch - dh) / 2
 
-        ctx.clearRect(0, 0, cw, ch)
-        ctx.save()
-        ctx.translate(cw / 2, ch / 2)
-        ctx.rotate(rad)
-        ctx.translate(-cw / 2, -ch / 2)
-        ctx.drawImage(videoEl, sx, sy, sw, sh, dx, dy, dw, dh)
-        ctx.restore()
-      }
-      this._localAnimFrameId = requestAnimationFrame(renderLocal)
+      ctx.clearRect(0, 0, cw, ch)
+      ctx.save()
+      ctx.translate(cw / 2, ch / 2)
+      ctx.rotate(rad)
+      ctx.translate(-cw / 2, -ch / 2)
+      ctx.drawImage(videoEl, sx, sy, sw, sh, dx, dy, dw, dh)
+      ctx.restore()
     }
-    this._localAnimFrameId = requestAnimationFrame(renderLocal)
+    this._stopLocalTransformLoop = startVideoFrameLoop(videoEl, renderLocal)
 
-    // Capture stream from canvas at 30fps
-    this._canvasStream = this._localCanvasEl.captureStream(30)
+    this._canvasStream = this._localCanvasEl.captureStream(TARGET_FRAMERATE)
 
     // Combine canvas video track with audio tracks from the active source
     const combinedStream = new MediaStream()
     this._canvasStream.getVideoTracks().forEach(t => combinedStream.addTrack(t))
     sourceStream.getAudioTracks().forEach(t => combinedStream.addTrack(t))
+    hintVideoDetail(combinedStream)
 
     return combinedStream
   }
 
-  _startCanvasRender() {
-    if (this.animFrameId) return
+  // -- Remote board layout --
+  //
+  // The opponent's board is the `<video>` element itself: nothing copies its
+  // frames into a canvas, so the browser keeps its hardware video path and the
+  // CPU it would have spent on that copy stays available to the encoder. All
+  // that's left is sizing — the video is letterboxed inside #game-area, and the
+  // tile overlay has to cover exactly the rect the board is drawn in.
 
-    const ctx = this.canvasEl.getContext("2d")
+  /**
+   * Sizes the remote video, and the tile overlay tracking it, to the
+   * aspect-fitted rect inside their container. Cheap enough to call on any
+   * layout signal — and public because a LiveView patch of the tile layer drops
+   * the inline size (the server markup carries none), so the game hook
+   * re-applies this from `updated()`.
+   */
+  applyRemoteLayout() {
+    const video = this.remoteVideoEl
+    if (!video) return
 
-    const render = () => {
-      if (this.remoteVideoEl.readyState >= this.remoteVideoEl.HAVE_CURRENT_DATA) {
-        const vw = this.remoteVideoEl.videoWidth
-        const vh = this.remoteVideoEl.videoHeight
-        const container = this.canvasEl.parentElement
-        const containerW = container.clientWidth
-        const containerH = container.clientHeight
+    const vw = video.videoWidth
+    const vh = video.videoHeight
+    const container = video.parentElement
+    if (!vw || !vh || !container) return
 
-        // Fit canvas to container while preserving video aspect ratio
-        const videoAspect = vw / vh
-        const containerAspect = containerW / containerH
-        let displayW, displayH
-        if (videoAspect > containerAspect) {
-          displayW = containerW
-          displayH = containerW / videoAspect
-        } else {
-          displayH = containerH
-          displayW = containerH * videoAspect
-        }
+    const containerW = container.clientWidth
+    const containerH = container.clientHeight
+    if (!containerW || !containerH) return
 
-        this.canvasEl.style.width = displayW + "px"
-        this.canvasEl.style.height = displayH + "px"
-
-        // Re-applied every frame on purpose: a LiveView patch of the tile layer
-        // drops the inline size (the server markup carries none).
-        if (this.tileLayerEl) {
-          this.tileLayerEl.style.width = displayW + "px"
-          this.tileLayerEl.style.height = displayH + "px"
-        }
-
-        // Set buffer to native video resolution for sharp card captures
-        if (this.canvasEl.width !== vw || this.canvasEl.height !== vh) {
-          this.canvasEl.width = vw
-          this.canvasEl.height = vh
-        }
-
-        ctx.drawImage(this.remoteVideoEl, 0, 0, vw, vh)
-      }
-      this.animFrameId = requestAnimationFrame(render)
+    // Fit to the container while preserving the video's aspect ratio
+    const videoAspect = vw / vh
+    const containerAspect = containerW / containerH
+    let displayW, displayH
+    if (videoAspect > containerAspect) {
+      displayW = containerW
+      displayH = containerW / videoAspect
+    } else {
+      displayH = containerH
+      displayW = containerH * videoAspect
     }
 
-    this.animFrameId = requestAnimationFrame(render)
-  }
+    video.style.width = displayW + "px"
+    video.style.height = displayH + "px"
 
-  _stopCanvasRender() {
-    if (this.animFrameId) {
-      cancelAnimationFrame(this.animFrameId)
-      this.animFrameId = null
+    if (this.tileLayerEl) {
+      this.tileLayerEl.style.width = displayW + "px"
+      this.tileLayerEl.style.height = displayH + "px"
     }
   }
 
-  _clearCanvas() {
-    const ctx = this.canvasEl.getContext("2d")
-    ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height)
-    this.canvasEl.style.width = ""
-    this.canvasEl.style.height = ""
+  _startRemoteLayout() {
+    if (this._onRemoteLayout) {
+      this.applyRemoteLayout()
+      return
+    }
+
+    this._onRemoteLayout = () => this.applyRemoteLayout()
+
+    // `loadedmetadata` covers the first frame; `resize` on a video element
+    // fires whenever the stream's intrinsic size changes — the peer switching
+    // webcam → phone, or their encoder settling on a different resolution.
+    this.remoteVideoEl.addEventListener("loadedmetadata", this._onRemoteLayout)
+    this.remoteVideoEl.addEventListener("resize", this._onRemoteLayout)
+
+    const container = this.remoteVideoEl.parentElement
+    if (container && typeof ResizeObserver === "function") {
+      this._containerObserver = new ResizeObserver(this._onRemoteLayout)
+      this._containerObserver.observe(container)
+    } else {
+      window.addEventListener("resize", this._onRemoteLayout)
+    }
+
+    this.applyRemoteLayout()
+  }
+
+  _stopRemoteLayout() {
+    if (!this._onRemoteLayout) return
+
+    this.remoteVideoEl.removeEventListener("loadedmetadata", this._onRemoteLayout)
+    this.remoteVideoEl.removeEventListener("resize", this._onRemoteLayout)
+    window.removeEventListener("resize", this._onRemoteLayout)
+
+    if (this._containerObserver) {
+      this._containerObserver.disconnect()
+      this._containerObserver = null
+    }
+
+    this._onRemoteLayout = null
+  }
+
+  _clearRemoteLayout() {
+    if (this.remoteVideoEl) {
+      this.remoteVideoEl.style.width = ""
+      this.remoteVideoEl.style.height = ""
+    }
     if (this.tileLayerEl) {
       // No stream, so no board rect to track — fall back to the full container.
       this.tileLayerEl.style.width = ""

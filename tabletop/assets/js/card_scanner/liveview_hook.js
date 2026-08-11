@@ -13,6 +13,7 @@ import {
   rememberScanCapture,
 } from "./debug"
 import { computePhashesForLayout } from "./recognition_pipeline"
+import { captureWorkerError } from "../error_reporting.js"
 
 const LOG = "[CardScanner]"
 const BOX_LINGER_MS = 3000
@@ -37,7 +38,15 @@ function getWorker() {
       console.log(`${LOG} OpenCV worker ready`)
     } else if (event.data.type === "error") {
       console.warn(`${LOG} OpenCV worker error: ${event.data.message}`)
+      captureWorkerError("card_scanner", event.data, { uncaught: false })
     }
+  }
+  // Errors thrown inside a worker never reach the main thread's global handler,
+  // so without this an OpenCV or WASM failure is invisible to Sentry — and this
+  // is the code most likely to break on an unfamiliar camera or device.
+  _worker.onerror = (event) => {
+    console.error(`${LOG} OpenCV worker crashed:`, event?.message)
+    captureWorkerError("card_scanner", event)
   }
   return _worker
 }
@@ -86,13 +95,14 @@ export function preloadScanner() {
  * Attach card-lookup click handling to a game area.
  *
  * @param {object} hook        - The LiveView hook instance (for pushEvent).
- * @param {HTMLCanvasElement} canvasEl  - Canvas to capture from.
+ * @param {HTMLVideoElement|HTMLCanvasElement} sourceEl - Element clicked on and
+ *   captured from. A `<video>` is read directly (see captureDetectRegion).
  * @param {HTMLElement} gameArea       - Container for loading/toast overlays.
  * @param {object} opts
  * @param {() => boolean} [opts.isFlipped]  - Returns true if video is flipped.
  * @param {() => boolean} [opts.guardFn]    - Returns false to skip the click (e.g. not yet connected).
  */
-export function setupCardLookup(hook, canvasEl, gameArea, opts = {}) {
+export function setupCardLookup(hook, sourceEl, gameArea, opts = {}) {
   const isFlipped = opts.isFlipped ?? (() => false)
   const guardFn = opts.guardFn ?? (() => true)
 
@@ -123,14 +133,14 @@ export function setupCardLookup(hook, canvasEl, gameArea, opts = {}) {
   }
 
   gameArea.addEventListener("click", async (e) => {
-    if (e.target !== canvasEl) return
+    if (e.target !== sourceEl) return
     if (!guardFn()) return
 
     showLoading(e.clientX, e.clientY)
 
     try {
       // Capture the clicked frame once; every retry re-processes these pixels.
-      const captured = captureDetectRegion(canvasEl, e.clientX, e.clientY, isFlipped())
+      const captured = captureDetectRegion(sourceEl, e.clientX, e.clientY, isFlipped())
       const rect = gameArea.getBoundingClientRect()
 
       let matched = false
@@ -231,13 +241,33 @@ export function setupCardLookup(hook, canvasEl, gameArea, opts = {}) {
   })
 }
 
-function captureRegion(ctx, canvasEl, canvasX, canvasY, w, h) {
-  const sx = Math.max(0, Math.round(canvasX - w / 2))
-  const sy = Math.max(0, Math.round(canvasY - h / 2))
-  const sw = Math.min(w, canvasEl.width - sx)
-  const sh = Math.min(h, canvasEl.height - sy)
+// Scratch canvas the detect region is copied into. Module-level and resized in
+// place so a scan doesn't allocate a fresh one per click.
+let _scratchCanvas = null
+
+function scratchContext(w, h) {
+  if (!_scratchCanvas) _scratchCanvas = document.createElement("canvas")
+  if (_scratchCanvas.width !== w || _scratchCanvas.height !== h) {
+    _scratchCanvas.width = w
+    _scratchCanvas.height = h
+  }
+  return _scratchCanvas.getContext("2d", { willReadFrequently: true })
+}
+
+// Copies just the detect region out of `sourceEl` (a video or a canvas). Only
+// the region is copied, never the whole frame — the source is on screen already
+// and nothing needs a full-frame duplicate.
+function captureRegion(sourceEl, srcW, srcH, centerX, centerY, w, h) {
+  const sx = Math.max(0, Math.round(centerX - w / 2))
+  const sy = Math.max(0, Math.round(centerY - h / 2))
+  const sw = Math.min(w, srcW - sx)
+  const sh = Math.min(h, srcH - sy)
   if (sw <= 0 || sh <= 0) return null
-  return { imageData: ctx.getImageData(sx, sy, sw, sh), sx, sy, sw, sh }
+
+  const ctx = scratchContext(sw, sh)
+  ctx.clearRect(0, 0, sw, sh)
+  ctx.drawImage(sourceEl, sx, sy, sw, sh, 0, 0, sw, sh)
+  return { imageData: ctx.getImageData(0, 0, sw, sh), sx, sy, sw, sh }
 }
 
 // Push `open_card` and resolve with the server's reply, normalised to at least
@@ -324,22 +354,32 @@ function fadeBox(box) {
 // Grab the square region around the click from the current frame. Captured
 // once per click so retries re-process the SAME pixels (the video is live and
 // would otherwise change between attempts).
-export function captureDetectRegion(canvasEl, clientX, clientY, isFlipped) {
-  const rect = canvasEl.getBoundingClientRect()
-  const scaleX = canvasEl.width / rect.width
-  const scaleY = canvasEl.height / rect.height
+//
+// `sourceEl` is whatever is on screen — the game board reads straight off the
+// remote `<video>` (nothing mirrors it into a canvas), while the camera-setup
+// page passes its test canvas. Both expose an intrinsic pixel size and both are
+// valid `drawImage` sources, so the only difference is where that size is read
+// from. Note the returned `sx`/`sy` stay in *source pixel* space, which is what
+// the debug overlays divide back down by `scaleX`/`scaleY`.
+export function captureDetectRegion(sourceEl, clientX, clientY, isFlipped) {
+  const srcW = sourceEl.videoWidth || sourceEl.width
+  const srcH = sourceEl.videoHeight || sourceEl.height
+  const rect = sourceEl.getBoundingClientRect()
+  if (!srcW || !srcH || !rect.width || !rect.height) return null
 
-  let canvasX = (clientX - rect.left) * scaleX
-  let canvasY = (clientY - rect.top) * scaleY
+  const scaleX = srcW / rect.width
+  const scaleY = srcH / rect.height
+
+  let sourceX = (clientX - rect.left) * scaleX
+  let sourceY = (clientY - rect.top) * scaleY
 
   if (isFlipped) {
-    canvasX = canvasEl.width - canvasX
-    canvasY = canvasEl.height - canvasY
+    sourceX = srcW - sourceX
+    sourceY = srcH - sourceY
   }
 
-  const ctx = canvasEl.getContext("2d")
-  const detectSize = Math.round(Math.min(canvasEl.width, canvasEl.height) * DETECT_RATIO)
-  const capture = captureRegion(ctx, canvasEl, canvasX, canvasY, detectSize, detectSize)
+  const detectSize = Math.round(Math.min(srcW, srcH) * DETECT_RATIO)
+  const capture = captureRegion(sourceEl, srcW, srcH, sourceX, sourceY, detectSize, detectSize)
   if (!capture) return null
 
   return { ...capture, rect, scaleX, scaleY }

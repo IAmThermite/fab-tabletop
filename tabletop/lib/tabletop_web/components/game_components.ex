@@ -613,9 +613,12 @@ defmodule TabletopWeb.GameComponents do
           the video frame — not of the surrounding box, so the layer has to cover
           exactly the rect the board is drawn in. For :local/:expanded/:setup the
           canvas fills its container, so `inset-0` is that rect; for :remote the
-          canvas is letterboxed inside #game-area at a size only known once the
-          stream's dimensions are, so the render loop in webrtc.js sizes this
-          layer to match the canvas (w-full/h-full is the no-video fallback).
+          video is letterboxed inside #game-area at a size only known once the
+          stream's dimensions are, so `applyRemoteLayout` in webrtc.js sizes this
+          layer to match it (w-full/h-full is the no-video fallback). That is
+          driven by layout events, not per frame, so a LiveView patch that
+          re-renders this layer drops the inline size — the game hook re-applies
+          it from `updated()`.
           `data-board-flipped` is set by the game hook when the opponent's board
           is shown rotated 180°; app.css mirrors the tile coordinates so tiles
           track the board while their labels stay upright and readable. --%>

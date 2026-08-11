@@ -31,14 +31,17 @@ User Click → LiveView Hook → OpenCV Worker → Recognition Pipeline → Back
 
 ### 1. User Interaction (`liveview_hook.js`)
 
-When a user clicks on the game area canvas:
+When a user clicks the board:
 
 ```javascript
 gameArea.addEventListener("click", async (e) => {
   showLoading(e.clientX, e.clientY)
 
+  // Grab the region around the click, once, so retries reuse the same pixels
+  const captured = captureDetectRegion(sourceEl, e.clientX, e.clientY, isFlipped())
+
   // Detect + deskew the card and compute its pHashes
-  const result = await captureAndDetect(canvasEl, e.clientX, e.clientY, isFlipped(), gameArea)
+  const result = await detectAndHash(captured, regionScale, gameArea, isFlipped(), first)
 
   // Send hashes to the backend for a pHash match
   if (result?.phashes?.length) {
@@ -48,10 +51,17 @@ gameArea.addEventListener("click", async (e) => {
 ```
 
 **Key steps:**
-- Convert click coordinates from CSS pixels to canvas pixels
+- Convert click coordinates from CSS pixels to source pixels
 - Handle camera flip (if applicable)
-- Capture a square region around the click (35% of canvas dimensions)
+- Capture a square region around the click (35% of the source's shorter side)
 - Display loading indicator
+
+`sourceEl` is whatever is on screen. In a game that is the remote `<video>`
+element directly — nothing mirrors its frames into a canvas — so only the clicked
+region is ever copied out, into a reused scratch canvas. The camera-setup page
+passes its test canvas instead; both are valid `drawImage` sources and both
+expose an intrinsic pixel size, which is the only thing `captureDetectRegion`
+needs from them.
 
 ### 2. Card Detection (`scanner_worker.js`)
 

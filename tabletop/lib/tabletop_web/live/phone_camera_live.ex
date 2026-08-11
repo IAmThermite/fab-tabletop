@@ -89,6 +89,8 @@ defmodule TabletopWeb.PhoneCameraLive do
 
     <script :type={ColocatedHook} name=".PhoneCamera">
       import PhoneCameraRelay from "@/js/phone_camera_relay.js"
+      import { startVideoFrameLoop } from "@/js/video_frame_loop.js"
+      import { TARGET_FRAMERATE, hintVideoDetail } from "@/js/webrtc_tuning.js"
 
       export default {
         mounted() {
@@ -104,7 +106,7 @@ defmodule TabletopWeb.PhoneCameraLive do
           let currentFacingMode = "environment"
           let stream = null
           let canvasStream = null
-          let animFrameId = null
+          let stopRotationLoop = null
           let rotateHiddenVideo = null
 
           // Try to lock to landscape (works in some browsers when fullscreen)
@@ -140,6 +142,7 @@ defmodule TabletopWeb.PhoneCameraLive do
                   width: { ideal: 1920 },
                   height: { ideal: 1080 },
                   aspectRatio: { ideal: 16 / 9 },
+                  frameRate: { ideal: TARGET_FRAMERATE },
                 },
                 audio: true,
               })
@@ -173,46 +176,49 @@ defmodule TabletopWeb.PhoneCameraLive do
 
             const render = () => {
               const v = rotateHiddenVideo
-              if (v && v.readyState >= v.HAVE_CURRENT_DATA) {
-                const vw = v.videoWidth
-                const vh = v.videoHeight
-                if (vw > 0 && vh > 0) {
-                  const isPortrait = vh > vw
-                  // Output is always landscape; swap dims when rotating.
-                  const outW = isPortrait ? vh : vw
-                  const outH = isPortrait ? vw : vh
-                  if (canvas.width !== outW || canvas.height !== outH) {
-                    canvas.width = outW
-                    canvas.height = outH
-                  }
-                  ctx.save()
-                  if (isPortrait) {
-                    ctx.translate(outW / 2, outH / 2)
-                    ctx.rotate(-Math.PI / 2)
-                    ctx.drawImage(v, -vw / 2, -vh / 2, vw, vh)
-                  } else {
-                    ctx.drawImage(v, 0, 0, outW, outH)
-                  }
-                  ctx.restore()
-                }
+              if (!v) return
+              const vw = v.videoWidth
+              const vh = v.videoHeight
+              if (vw <= 0 || vh <= 0) return
+
+              const isPortrait = vh > vw
+              // Output is always landscape; swap dims when rotating.
+              const outW = isPortrait ? vh : vw
+              const outH = isPortrait ? vw : vh
+              if (canvas.width !== outW || canvas.height !== outH) {
+                canvas.width = outW
+                canvas.height = outH
               }
-              animFrameId = requestAnimationFrame(render)
+              ctx.save()
+              if (isPortrait) {
+                ctx.translate(outW / 2, outH / 2)
+                ctx.rotate(-Math.PI / 2)
+                ctx.drawImage(v, -vw / 2, -vh / 2, vw, vh)
+              } else {
+                ctx.drawImage(v, 0, 0, outW, outH)
+              }
+              ctx.restore()
             }
-            animFrameId = requestAnimationFrame(render)
+            // Keyed to the camera's frame clock rather than the display's: a
+            // phone screen refreshes at 60-120Hz, so a plain rAF loop would
+            // redraw each 30fps frame two to four times over — on the same
+            // battery-powered CPU that has to encode 1080p at the same moment.
+            stopRotationLoop = startVideoFrameLoop(rotateHiddenVideo, render)
 
             // Capture the canvas as a video stream, carry audio from the original.
-            const out = canvas.captureStream(30)
+            const out = canvas.captureStream(TARGET_FRAMERATE)
             const audioTrack = cameraStream.getAudioTracks()[0]
             if (audioTrack) {
               out.addTrack(audioTrack)
             }
+            hintVideoDetail(out)
             return out
           }
 
           const stopRotationPipeline = () => {
-            if (animFrameId) {
-              cancelAnimationFrame(animFrameId)
-              animFrameId = null
+            if (stopRotationLoop) {
+              stopRotationLoop()
+              stopRotationLoop = null
             }
             if (rotateHiddenVideo) {
               rotateHiddenVideo.srcObject = null

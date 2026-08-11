@@ -5,6 +5,7 @@
 // one-way WebRTC connection to send video to the desktop.
 
 import { Socket } from "phoenix"
+import { hintVideoDetail, preferVideoCodecs, tuneVideoSender } from "./webrtc_tuning"
 
 const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -26,6 +27,10 @@ export default class PhoneCameraRelay {
 
   async start(stream) {
     this.localStream = stream
+    // This hop is the *first* of two lossy generations — the desktop decodes
+    // this stream and re-encodes it for the opponent — so detail lost here is
+    // gone for good. Tune it exactly like the game link.
+    hintVideoDetail(stream)
     this._setStatus("connecting")
 
     this.socket = new Socket("/socket", {
@@ -63,6 +68,7 @@ export default class PhoneCameraRelay {
   async replaceStream(newStream) {
     const oldStream = this.localStream
     this.localStream = newStream
+    hintVideoDetail(newStream)
 
     if (this.peerConnection) {
       const newVideoTrack = newStream.getVideoTracks()[0]
@@ -71,6 +77,8 @@ export default class PhoneCameraRelay {
         .find((s) => s.track?.kind === "video")
       if (sender && newVideoTrack) {
         await sender.replaceTrack(newVideoTrack)
+        // A fresh track can arrive with default encodings.
+        await tuneVideoSender(this.peerConnection)
       }
 
       const newAudioTrack = newStream.getAudioTracks()[0]
@@ -152,10 +160,12 @@ export default class PhoneCameraRelay {
     try {
       console.log("[PhoneRelay] Creating offer")
       this._createPeerConnection()
+      preferVideoCodecs(this.peerConnection)
 
       const offer = await this.peerConnection.createOffer()
       await this.peerConnection.setLocalDescription(offer)
       this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+      await tuneVideoSender(this.peerConnection)
     } catch (err) {
       console.error("[PhoneRelay] Error creating offer:", err)
       this._setStatus("error")
@@ -170,9 +180,12 @@ export default class PhoneCameraRelay {
       await this.peerConnection.setRemoteDescription(
         new RTCSessionDescription(sdp)
       )
+      preferVideoCodecs(this.peerConnection)
+
       const answer = await this.peerConnection.createAnswer()
       await this.peerConnection.setLocalDescription(answer)
       this.channel.push("answer", { sdp: this.peerConnection.localDescription })
+      await tuneVideoSender(this.peerConnection)
     } catch (err) {
       console.error("[PhoneRelay] Error handling offer:", err)
       this._setStatus("error")
@@ -186,6 +199,7 @@ export default class PhoneCameraRelay {
         await this.peerConnection.setRemoteDescription(
           new RTCSessionDescription(sdp)
         )
+        await tuneVideoSender(this.peerConnection)
       }
     } catch (err) {
       console.error("[PhoneRelay] Error handling answer:", err)

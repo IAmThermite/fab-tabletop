@@ -197,14 +197,21 @@
         create_proxy_token_open={@create_proxy_token_open}
       />
 
-      <%!-- Central game area with canvas --%>
+      <%!-- Central game area. The opponent's board is the <video> element
+            itself — nothing copies its frames into a canvas, so the browser
+            keeps its hardware video path and the CPU that copy used to cost
+            stays available to our own encoder. Card scanning reads pixels off
+            this element on demand instead (see captureDetectRegion). It is
+            sized to the aspect-fitted rect by applyRemoteLayout in webrtc.js,
+            which the tile overlay tracks. --%>
       <div id="game-area" class="flex-1 relative bg-black">
-        <canvas
-          id="remote-canvas"
-          class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+        <video
+          id="remote-video"
+          class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 object-contain"
+          autoplay
+          playsinline
         >
-        </canvas>
-        <video id="remote-video" class="hidden" autoplay playsinline></video>
+        </video>
 
         <%!-- Waiting overlay --%>
         <div
@@ -280,6 +287,7 @@
   <script :type={ColocatedHook} name=".GameVideo">
     import WebRTCManager from "@/js/webrtc.js"
     import CameraRelayReceiver from "@/js/camera_relay_receiver.js"
+    import { startVideoFrameLoop } from "@/js/video_frame_loop.js"
     import { setupCardLookup, preloadScanner } from "@/js/card_scanner/liveview_hook.js"
     import { isDebugEnabled, setDebugEnabled } from "@/js/card_scanner/debug.js"
     import { sounds } from "@/js/sounds.js"
@@ -298,7 +306,6 @@
         const localVideoEl = document.getElementById("local-video")
         const localCanvasEl = document.getElementById("local-canvas")
         const remoteVideoEl = document.getElementById("remote-video")
-        const canvasEl = document.getElementById("remote-canvas")
         const statusEl = document.getElementById("connection-status")
         const settingsBtn = document.getElementById("settings-btn")
         const settingsDialog = document.getElementById("settings-dialog")
@@ -315,17 +322,20 @@
         // table from them), so the resting view is already readable. The toggle
         // defaults to off; turning it on rotates the board back to upright.
         //
-        // Two layers have to agree on that orientation: the canvas, which is
+        // Two layers have to agree on that orientation: the video, which is
         // rotated in CSS, and the tile overlay, whose tiles have to stay the
         // right way up to stay readable and so mirror their *coordinates*
         // instead (see .game-tile in app.css). A LiveView patch can drop
         // either JS-set attribute, so this is re-applied from updated() too.
+        //
+        // Setting `transform` doesn't clobber the -translate-x/y-1/2 centring:
+        // Tailwind v4 emits those via the separate `translate` property.
         const FLIP_KEY = "tabletop:flip-opponent"
         const applyBoardOrientation = () => {
           const upright = localStorage.getItem(FLIP_KEY) === "true"
-          const canvas = document.getElementById("remote-canvas")
+          const video = document.getElementById("remote-video")
           const tileLayer = document.getElementById("tile-layer-remote")
-          if (canvas) canvas.style.transform = upright ? "" : "rotate(180deg)"
+          if (video) video.style.transform = upright ? "" : "rotate(180deg)"
           if (tileLayer) tileLayer.dataset.boardFlipped = String(!upright)
         }
         flipToggle.checked = localStorage.getItem(FLIP_KEY) === "true"
@@ -339,49 +349,47 @@
         const savedZoom = parseFloat(localStorage.getItem("tabletop:camera-zoom") || "1")
         const savedRotation = parseFloat(localStorage.getItem("tabletop:camera-rotation") || "0")
         const localCtx = localCanvasEl.getContext("2d")
-        this._localPreviewFrameId = null
 
         const renderLocalPreview = () => {
-          if (localVideoEl.readyState >= localVideoEl.HAVE_CURRENT_DATA) {
-            const cw = localCanvasEl.clientWidth
-            const ch = localCanvasEl.clientHeight
-            localCanvasEl.width = cw
-            localCanvasEl.height = ch
+          const cw = localCanvasEl.clientWidth
+          const ch = localCanvasEl.clientHeight
+          localCanvasEl.width = cw
+          localCanvasEl.height = ch
 
-            const vw = localVideoEl.videoWidth
-            const vh = localVideoEl.videoHeight
+          const vw = localVideoEl.videoWidth
+          const vh = localVideoEl.videoHeight
 
-            const sw = vw / savedZoom
-            const sh = vh / savedZoom
-            const sx = (vw - sw) / 2
-            const sy = (vh - sh) / 2
+          const sw = vw / savedZoom
+          const sh = vh / savedZoom
+          const sx = (vw - sw) / 2
+          const sy = (vh - sh) / 2
 
-            const baseScale = Math.max(cw / sw, ch / sh)
-            const rad = savedRotation * Math.PI / 180
-            let dw = sw * baseScale
-            let dh = sh * baseScale
-            const sinR = Math.abs(Math.sin(rad))
-            const cosR = Math.abs(Math.cos(rad))
-            const rotScale = Math.max(
-              (cw * cosR + ch * sinR) / dw,
-              (cw * sinR + ch * cosR) / dh
-            )
-            dw *= rotScale
-            dh *= rotScale
-            const dx = (cw - dw) / 2
-            const dy = (ch - dh) / 2
+          const baseScale = Math.max(cw / sw, ch / sh)
+          const rad = savedRotation * Math.PI / 180
+          let dw = sw * baseScale
+          let dh = sh * baseScale
+          const sinR = Math.abs(Math.sin(rad))
+          const cosR = Math.abs(Math.cos(rad))
+          const rotScale = Math.max(
+            (cw * cosR + ch * sinR) / dw,
+            (cw * sinR + ch * cosR) / dh
+          )
+          dw *= rotScale
+          dh *= rotScale
+          const dx = (cw - dw) / 2
+          const dy = (ch - dh) / 2
 
-            localCtx.clearRect(0, 0, cw, ch)
-            localCtx.save()
-            localCtx.translate(cw / 2, ch / 2)
-            localCtx.rotate(rad)
-            localCtx.translate(-cw / 2, -ch / 2)
-            localCtx.drawImage(localVideoEl, sx, sy, sw, sh, dx, dy, dw, dh)
-            localCtx.restore()
-          }
-          this._localPreviewFrameId = requestAnimationFrame(renderLocalPreview)
+          localCtx.clearRect(0, 0, cw, ch)
+          localCtx.save()
+          localCtx.translate(cw / 2, ch / 2)
+          localCtx.rotate(rad)
+          localCtx.translate(-cw / 2, -ch / 2)
+          localCtx.drawImage(localVideoEl, sx, sy, sw, sh, dx, dy, dw, dh)
+          localCtx.restore()
         }
-        this._localPreviewFrameId = requestAnimationFrame(renderLocalPreview)
+        // Keyed to the camera's frame clock, not the display's — a 120Hz rAF
+        // loop would redraw each 30fps frame four times and starve the encoder.
+        this._stopLocalPreview = startVideoFrameLoop(localVideoEl, renderLocalPreview)
 
         // Opponent presence state machine, driving the connection cues.
         this._oppPresent = false
@@ -393,7 +401,6 @@
           gameId,
           localVideoEl,
           remoteVideoEl,
-          canvasEl,
           tileLayerEl: document.getElementById("tile-layer-remote"),
           micEnabled: this.el.dataset.micEnabled === "true",
           cameraEnabled: this.el.dataset.cameraEnabled === "true",
@@ -456,6 +463,13 @@
 
         this.webrtc.start()
 
+        // Outbound video diagnostics, opt-in per device. `limited=` is the
+        // useful field: "bandwidth" blames the link, "cpu" blames local work,
+        // "none" at a low resolution means the bitrate cap is the ceiling.
+        if (localStorage.getItem("tabletop:debug-webrtc") === "true") {
+          this.webrtc.startStatsLogging()
+        }
+
         // Toggle handlers: flip the local track immediately for zero-latency
         // feedback, then persist the new state through the LiveView. The
         // server is authoritative for the button visuals — it re-renders the
@@ -478,10 +492,10 @@
           }
         })
 
-        // Card lookup — click on remote canvas to identify the card via pHash
+        // Card lookup — click the opponent's board to identify a card via pHash
         const gameArea = document.getElementById("game-area")
-        setupCardLookup(this, canvasEl, gameArea, {
-          // The canvas is visually rotated 180° in the default (toggle-off)
+        setupCardLookup(this, remoteVideoEl, gameArea, {
+          // The board is visually rotated 180° in the default (toggle-off)
           // state, so it is "flipped" for click-mapping when the toggle is off.
           isFlipped: () => !flipToggle.checked,
           guardFn: () => this.webrtc._status === "connected",
@@ -631,69 +645,68 @@
         // Preview modal — expanded local canvas
         // The modal is server-controlled via :if={@preview_open}, so we watch
         // for the expanded canvas entering/leaving the DOM via MutationObserver.
-        this._expandedFrameId = null
+        this._stopExpandedPreview = null
 
         const startExpandedRender = () => {
-          const expandedCanvas = document.getElementById("local-canvas-expanded")
-          if (!expandedCanvas || this._expandedFrameId) return
+          if (this._stopExpandedPreview) return
+          if (!document.getElementById("local-canvas-expanded")) return
 
           const renderExpandedPreview = () => {
             const canvas = document.getElementById("local-canvas-expanded")
-            if (!canvas) {
-              this._expandedFrameId = null
-              return
-            }
-            if (localVideoEl.readyState >= localVideoEl.HAVE_CURRENT_DATA) {
-              const cw = canvas.clientWidth
-              const ch = canvas.clientHeight
-              canvas.width = cw
-              canvas.height = ch
+            if (!canvas) return
 
-              const vw = localVideoEl.videoWidth
-              const vh = localVideoEl.videoHeight
+            const cw = canvas.clientWidth
+            const ch = canvas.clientHeight
+            canvas.width = cw
+            canvas.height = ch
 
-              const sw = vw / savedZoom
-              const sh = vh / savedZoom
-              const sx = (vw - sw) / 2
-              const sy = (vh - sh) / 2
+            const vw = localVideoEl.videoWidth
+            const vh = localVideoEl.videoHeight
 
-              const baseScale = Math.max(cw / sw, ch / sh)
-              const rad = savedRotation * Math.PI / 180
-              let dw = sw * baseScale
-              let dh = sh * baseScale
-              const sinR = Math.abs(Math.sin(rad))
-              const cosR = Math.abs(Math.cos(rad))
-              const rotScale = Math.max(
-                (cw * cosR + ch * sinR) / dw,
-                (cw * sinR + ch * cosR) / dh
-              )
-              dw *= rotScale
-              dh *= rotScale
-              const dx = (cw - dw) / 2
-              const dy = (ch - dh) / 2
+            const sw = vw / savedZoom
+            const sh = vh / savedZoom
+            const sx = (vw - sw) / 2
+            const sy = (vh - sh) / 2
 
-              const ctx = canvas.getContext("2d")
-              ctx.clearRect(0, 0, cw, ch)
-              ctx.save()
-              ctx.translate(cw / 2, ch / 2)
-              ctx.rotate(rad)
-              ctx.translate(-cw / 2, -ch / 2)
-              ctx.drawImage(localVideoEl, sx, sy, sw, sh, dx, dy, dw, dh)
-              ctx.restore()
-            }
-            this._expandedFrameId = requestAnimationFrame(renderExpandedPreview)
+            const baseScale = Math.max(cw / sw, ch / sh)
+            const rad = savedRotation * Math.PI / 180
+            let dw = sw * baseScale
+            let dh = sh * baseScale
+            const sinR = Math.abs(Math.sin(rad))
+            const cosR = Math.abs(Math.cos(rad))
+            const rotScale = Math.max(
+              (cw * cosR + ch * sinR) / dw,
+              (cw * sinR + ch * cosR) / dh
+            )
+            dw *= rotScale
+            dh *= rotScale
+            const dx = (cw - dw) / 2
+            const dy = (ch - dh) / 2
+
+            const ctx = canvas.getContext("2d")
+            ctx.clearRect(0, 0, cw, ch)
+            ctx.save()
+            ctx.translate(cw / 2, ch / 2)
+            ctx.rotate(rad)
+            ctx.translate(-cw / 2, -ch / 2)
+            ctx.drawImage(localVideoEl, sx, sy, sw, sh, dx, dy, dw, dh)
+            ctx.restore()
           }
-          this._expandedFrameId = requestAnimationFrame(renderExpandedPreview)
+          this._stopExpandedPreview = startVideoFrameLoop(localVideoEl, renderExpandedPreview)
+        }
+
+        const stopExpandedRender = () => {
+          if (!this._stopExpandedPreview) return
+          this._stopExpandedPreview()
+          this._stopExpandedPreview = null
         }
 
         // Watch for the expanded canvas appearing/disappearing in the DOM
         this._previewObserver = new MutationObserver(() => {
-          const canvas = document.getElementById("local-canvas-expanded")
-          if (canvas && !this._expandedFrameId) {
+          if (document.getElementById("local-canvas-expanded")) {
             startExpandedRender()
-          } else if (!canvas && this._expandedFrameId) {
-            cancelAnimationFrame(this._expandedFrameId)
-            this._expandedFrameId = null
+          } else {
+            stopExpandedRender()
           }
         })
         this._previewObserver.observe(this.el, { childList: true, subtree: true })
@@ -701,6 +714,11 @@
 
       updated() {
         if (this._applyBoardOrientation) this._applyBoardOrientation()
+
+        // The tile overlay's inline size is client-side only (the server markup
+        // carries none), so a patch that re-renders it drops the board rect.
+        // Re-assert it here rather than re-deriving it every animation frame.
+        if (this.webrtc) this.webrtc.applyRemoteLayout()
 
         // Keep the local tracks aligned with the server-authoritative state.
         // Normally these are the same — the click handler updates both — but
@@ -720,11 +738,11 @@
         if (this._soundUnsub) {
           this._soundUnsub()
         }
-        if (this._localPreviewFrameId) {
-          cancelAnimationFrame(this._localPreviewFrameId)
+        if (this._stopLocalPreview) {
+          this._stopLocalPreview()
         }
-        if (this._expandedFrameId) {
-          cancelAnimationFrame(this._expandedFrameId)
+        if (this._stopExpandedPreview) {
+          this._stopExpandedPreview()
         }
         if (this._previewObserver) {
           this._previewObserver.disconnect()

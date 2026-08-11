@@ -508,7 +508,7 @@ defmodule TabletopWeb.GameLiveTest do
 
       assert html =~ game.title
       assert html =~ "game-video"
-      assert html =~ "remote-canvas"
+      assert html =~ "remote-video"
     end
 
     test "has leave button that navigates to games list", %{conn: conn, game: game} do

@@ -15,8 +15,33 @@ logging {
 // database host directly and never at a pooler (PgBouncer et al), since a pooler
 // multiplexes sessions and makes per-connection telemetry meaningless.
 prometheus.exporter.postgres "fabtabletop" {
-  data_source_names  = [sys.env("PG_DSN")]
-  enabled_collectors = ["stat_statements"]
+  data_source_names = [sys.env("PG_DSN")]
+
+  // `enabled_collectors` REPLACES the exporter's defaults rather than adding to
+  // them. Grafana's Database Observability guide lists only "stat_statements",
+  // which is all that app consumes — but on its own it means no connection
+  // counts, database sizes, cache hit ratios, table/index stats, lock
+  // contention or WAL metrics, and community Postgres dashboards expect those.
+  //
+  // So the default set is restated explicitly alongside it. Dropping any entry
+  // here silently removes those series; there is no "defaults plus" syntax.
+  enabled_collectors = [
+    // Required by Database Observability.
+    "stat_statements",
+
+    // The exporter's default set, restored.
+    "database",
+    "locks",
+    "replication",
+    "replication_slot",
+    "roles",
+    "stat_bgwriter",
+    "stat_database",
+    "stat_progress_vacuum",
+    "stat_user_tables",
+    "statio_user_tables",
+    "wal",
+  ]
 
   stat_statements {
     // db-o11y's own polling would otherwise dominate the top-queries panels.

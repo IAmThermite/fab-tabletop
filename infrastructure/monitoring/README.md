@@ -342,6 +342,22 @@ Four collectors are enabled in `config.alloy`:
 | `schema_details` | table/index/column shape | read access to the tables |
 | `explain_plans` | `EXPLAIN` for sampled queries | `track_activity_query_size=4096` |
 
+Those four belong to `database_observability.postgres` and feed the Database
+Observability app over Loki. The Prometheus side is separate:
+`prometheus.exporter.postgres` has its own `enabled_collectors`, and **that
+argument replaces the exporter's defaults rather than adding to them.**
+
+Grafana's setup guide lists only `stat_statements`, which is all the DB
+Observability app consumes — but on its own that means no connection counts,
+database sizes, cache hit ratios, table/index stats, lock contention or WAL
+metrics, which is what community Postgres dashboards query. So `config.alloy`
+restates the default set explicitly alongside it. Removing an entry silently
+drops those series; there is no "defaults plus" syntax.
+
+A collector that cannot run fails on its own without taking the others down —
+on a database without `pg_stat_statements`, `stat_statements` logs
+`collector failed` each scrape and the remaining eleven still report.
+
 **The collector runs inside Fly, not from Grafana Cloud.** `fabtabletop-db`
 declares `ports = []` and has no public address, so it is reachable only over
 Fly's private 6PN network — nothing outside can dial it. Hence a second Fly app

@@ -73,6 +73,7 @@ defmodule TabletopWeb.GameComponents do
   attr :on_hits_open, :boolean, default: false
   attr :create_token_open, :boolean, default: false
   attr :create_proxy_token_open, :boolean, default: false
+  attr :proxy_token_target, :string, default: "opponent"
 
   def game_sidebar(assigns) do
     ~H"""
@@ -377,7 +378,9 @@ defmodule TabletopWeb.GameComponents do
 
       <div class="flex-1"></div>
 
-      <%!-- Create Proxy Token --%>
+      <%!-- Create Proxy Token. The list is unfiltered — any token can go on
+            either side — so the target selector, not the catalogue, decides who
+            receives it, and the counts shown are the target's. --%>
       <div class="relative">
         <button
           type="button"
@@ -393,12 +396,29 @@ defmodule TabletopWeb.GameComponents do
         </button>
         <ul
           :if={@create_proxy_token_open}
-          class="absolute z-40 list-none bg-base-100 rounded-box p-2 shadow-lg mb-1 bottom-full left-full ml-2 grid grid-cols-2 gap-x-4 gap-y-1 w-[26rem] border border-base-300"
+          class="absolute z-40 list-none bg-base-100 rounded-box p-2 shadow-lg mb-1 bottom-full left-full ml-2 grid grid-cols-2 gap-x-4 gap-y-1 w-[26rem] max-h-[70vh] overflow-y-auto border border-base-300"
         >
-          <li class="col-span-2 text-[10px] uppercase tracking-wide font-bold opacity-60 px-1 pb-1 border-b border-base-300">
-            Add Proxy Token
+          <li class="col-span-2 flex items-center gap-2 px-1 pb-2 border-b border-base-300 sticky top-0 bg-base-100 z-10">
+            <span class="text-[10px] uppercase tracking-wide font-bold opacity-60">
+              Give token to
+            </span>
+            <div class="join ml-auto">
+              <button
+                :for={{target, label} <- [{"my", "Me"}, {"opponent", "Opponent"}]}
+                type="button"
+                class={[
+                  "btn btn-xs join-item",
+                  @proxy_token_target == target && "btn-active btn-success"
+                ]}
+                phx-click="set_proxy_token_target"
+                phx-value-target={target}
+                aria-pressed={to_string(@proxy_token_target == target)}
+              >
+                {label}
+              </button>
+            </div>
           </li>
-          <%= for {_key, token} <- Tabletop.Fab.Effects.tokens_for_opponent() do %>
+          <%= for {_key, token} <- Tabletop.Fab.Effects.proxy_token_list() do %>
             <li class="flex items-center gap-1">
               <div class="flex items-center gap-1 flex-1 min-w-0 px-0.5 py-0.5">
                 <.icon
@@ -413,9 +433,10 @@ defmodule TabletopWeb.GameComponents do
                   :if={token[:singleton]}
                   type="checkbox"
                   class="checkbox checkbox-xs checkbox-success"
-                  checked={Map.get(@game_state.my.proxy_tokens || %{}, token[:name], 0) > 0}
+                  checked={proxy_token_count(@game_state, @proxy_token_target, token[:name]) > 0}
                   phx-click="toggle_proxy_token"
                   phx-value-type={token[:name]}
+                  phx-value-target={@proxy_token_target}
                 />
                 <button
                   :if={!token[:singleton]}
@@ -423,11 +444,12 @@ defmodule TabletopWeb.GameComponents do
                   class="btn btn-xs btn-circle btn-error"
                   phx-click="remove_proxy_token"
                   phx-value-type={token[:name]}
+                  phx-value-target={@proxy_token_target}
                 >
                   -
                 </button>
                 <span :if={!token[:singleton]} class="text-xs font-bold w-3 text-center">
-                  {Map.get(@game_state.my.proxy_tokens || %{}, token[:name], 0)}
+                  {proxy_token_count(@game_state, @proxy_token_target, token[:name])}
                 </span>
                 <button
                   :if={!token[:singleton]}
@@ -435,6 +457,7 @@ defmodule TabletopWeb.GameComponents do
                   class="btn btn-xs btn-circle btn-success"
                   phx-click="add_proxy_token"
                   phx-value-type={token[:name]}
+                  phx-value-target={@proxy_token_target}
                 >
                   +
                 </button>
@@ -488,29 +511,33 @@ defmodule TabletopWeb.GameComponents do
 
   attr :game_state, :any, required: true
   attr :expanded, :boolean, default: false
+  attr :tab, :string, default: "my"
 
+  @doc """
+  Floating panel listing the proxy tokens on *both* players.
+
+  `proxy_tokens` records the tokens sitting on a player, not the ones they
+  handed out, so this panel shows two lists and every control on it carries a
+  `phx-value-target`: either player can add to or clear either side. Collapsed
+  it is a row of chips per side; expanded it is a Yours/Opponent tab pair.
+  """
   def proxy_tokens_panel(assigns) do
-    proxy_tokens = Map.get(assigns.game_state.my, :proxy_tokens, %{})
-
-    tokens_by_name =
-      Map.new(Tabletop.Fab.Effects.tokens(), fn {_k, t} -> {t.name, t} end)
-
-    entries =
-      proxy_tokens
-      |> Enum.map(fn {name, count} -> {name, count, Map.get(tokens_by_name, name)} end)
-      |> Enum.filter(fn {_n, _c, token} -> token end)
-      |> Enum.sort_by(fn {name, _c, _t} -> name end)
-
-    total = Enum.reduce(proxy_tokens, 0, fn {_n, c}, acc -> acc + c end)
+    my_entries = proxy_token_entries(assigns.game_state.my)
+    opponent_entries = proxy_token_entries(assigns.game_state.opponent)
 
     assigns =
       assigns
-      |> assign(:entries, entries)
-      |> assign(:total, total)
+      |> assign(:my_entries, my_entries)
+      |> assign(:opponent_entries, opponent_entries)
+      |> assign(
+        :active_entries,
+        if(assigns.tab == "opponent", do: opponent_entries, else: my_entries)
+      )
+      |> assign(:total, entries_total(my_entries) + entries_total(opponent_entries))
 
     ~H"""
     <div
-      :if={@entries != []}
+      :if={@my_entries != [] or @opponent_entries != []}
       class="absolute top-2 right-2 z-30 bg-base-100/95 backdrop-blur rounded-lg shadow-lg border border-base-300 text-base-content max-w-[80%]"
     >
       <button
@@ -522,19 +549,34 @@ defmodule TabletopWeb.GameComponents do
         <span class="text-xs font-bold uppercase tracking-wide opacity-70">
           Proxy Tokens ({@total})
         </span>
-        <div :if={!@expanded} class="flex flex-wrap items-center gap-1 flex-1 min-w-0">
-          <span
-            :for={{name, count, token} <- @entries}
-            class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-900 rounded px-1.5 py-0.5 text-[11px] font-semibold"
+        <div :if={!@expanded} class="flex flex-wrap items-center gap-x-3 gap-y-1 flex-1 min-w-0">
+          <div
+            :for={
+              {label, entries, chip_class} <- [
+                {"You", @my_entries, "bg-emerald-100 text-emerald-900"},
+                {"Opp", @opponent_entries, "bg-sky-100 text-sky-900"}
+              ]
+            }
+            :if={entries != []}
+            class="flex flex-wrap items-center gap-1"
           >
-            <.icon
-              :if={token[:icon] not in [nil, ""]}
-              name={token[:icon]}
-              class="size-3 shrink-0"
-            />
-            {name}
-            <span :if={count > 1} class="opacity-70">×{count}</span>
-          </span>
+            <span class="text-[10px] uppercase font-bold opacity-50">{label}</span>
+            <span
+              :for={{name, count, token} <- entries}
+              class={[
+                "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold",
+                chip_class
+              ]}
+            >
+              <.icon
+                :if={token[:icon] not in [nil, ""]}
+                name={token[:icon]}
+                class="size-3 shrink-0"
+              />
+              {name}
+              <span :if={count > 1} class="opacity-70">×{count}</span>
+            </span>
+          </div>
         </div>
         <.icon
           name={if @expanded, do: "hero-chevron-up", else: "hero-chevron-down"}
@@ -542,55 +584,110 @@ defmodule TabletopWeb.GameComponents do
         />
       </button>
 
-      <div :if={@expanded} class="p-2 border-t border-base-300 flex flex-wrap gap-3 max-w-[60rem]">
-        <div :for={{name, count, token} <- @entries} class="flex flex-col items-center gap-1 w-60">
-          <img
-            :if={token[:card_img_src] not in [nil, ""]}
-            src={token[:card_img_src]}
-            alt={name}
-            class="w-60 rounded shadow"
-          />
-          <div
-            :if={token[:card_img_src] in [nil, ""]}
-            class="w-60 h-56 rounded bg-base-200 flex items-center justify-center text-xs p-2 text-center"
+      <div :if={@expanded} class="border-t border-base-300">
+        <div role="tablist" class="tabs tabs-border tabs-sm px-2 pt-1">
+          <button
+            :for={
+              {target, label, entries} <- [
+                {"my", "Yours", @my_entries},
+                {"opponent", "Opponent", @opponent_entries}
+              ]
+            }
+            type="button"
+            role="tab"
+            class={["tab gap-1", @tab == target && "tab-active font-semibold"]}
+            phx-click="set_proxy_tokens_tab"
+            phx-value-target={target}
+            aria-selected={to_string(@tab == target)}
           >
-            {name}
-          </div>
-          <div class="flex items-center gap-1">
-            <button
-              :if={token[:singleton]}
-              type="button"
-              class="btn btn-xs btn-circle btn-error"
-              phx-click="remove_proxy_token"
-              phx-value-type={name}
-              aria-label={"Remove #{name}"}
+            {label} <span class="opacity-60">({entries_total(entries)})</span>
+          </button>
+        </div>
+
+        <div class="p-2 flex flex-wrap gap-3 max-w-[58rem] max-h-[70vh] overflow-y-auto">
+          <p :if={@active_entries == []} class="text-xs opacity-60 px-1 py-2">
+            No proxy tokens on this side.
+          </p>
+          <div
+            :for={{name, count, token} <- @active_entries}
+            class="flex flex-col items-center gap-1 w-72"
+          >
+            <img
+              :if={token[:card_img_src] not in [nil, ""]}
+              src={token[:card_img_src]}
+              alt={name}
+              class="w-72 rounded shadow"
+            />
+            <div
+              :if={token[:card_img_src] in [nil, ""]}
+              class="w-72 aspect-[5/7] rounded bg-base-200 flex items-center justify-center text-xs p-2 text-center"
             >
-              <.icon name="hero-x-mark" class="size-3" />
-            </button>
-            <button
-              :if={!token[:singleton]}
-              type="button"
-              class="btn btn-xs btn-circle btn-error"
-              phx-click="remove_proxy_token"
-              phx-value-type={name}
-            >
-              -
-            </button>
-            <span :if={!token[:singleton]} class="text-sm font-bold w-6 text-center">{count}</span>
-            <button
-              :if={!token[:singleton]}
-              type="button"
-              class="btn btn-xs btn-circle btn-success"
-              phx-click="add_proxy_token"
-              phx-value-type={name}
-            >
-              +
-            </button>
+              {name}
+            </div>
+            <div class="flex items-center gap-1">
+              <button
+                :if={token[:singleton]}
+                type="button"
+                class="btn btn-xs btn-circle btn-error"
+                phx-click="remove_proxy_token"
+                phx-value-type={name}
+                phx-value-target={@tab}
+                aria-label={"Remove #{name}"}
+              >
+                <.icon name="hero-x-mark" class="size-3" />
+              </button>
+              <button
+                :if={!token[:singleton]}
+                type="button"
+                class="btn btn-xs btn-circle btn-error"
+                phx-click="remove_proxy_token"
+                phx-value-type={name}
+                phx-value-target={@tab}
+                aria-label={"Remove one #{name}"}
+              >
+                -
+              </button>
+              <span :if={!token[:singleton]} class="text-sm font-bold w-6 text-center">{count}</span>
+              <button
+                :if={!token[:singleton]}
+                type="button"
+                class="btn btn-xs btn-circle btn-success"
+                phx-click="add_proxy_token"
+                phx-value-type={name}
+                phx-value-target={@tab}
+                aria-label={"Add one #{name}"}
+              >
+                +
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </div>
     """
+  end
+
+  # A player's `proxy_tokens` map as `{name, count, token_definition}` triples,
+  # dropping any name the effects catalogue no longer knows about.
+  defp proxy_token_entries(player) do
+    tokens_by_name = Map.new(Tabletop.Fab.Effects.tokens(), fn {_k, t} -> {t.name, t} end)
+
+    player
+    |> Map.get(:proxy_tokens, %{})
+    |> Enum.map(fn {name, count} -> {name, count, Map.get(tokens_by_name, name)} end)
+    |> Enum.filter(fn {_n, _c, token} -> token end)
+    |> Enum.sort_by(fn {name, _c, _t} -> name end)
+  end
+
+  defp entries_total(entries), do: Enum.reduce(entries, 0, fn {_n, c, _t}, acc -> acc + c end)
+
+  # Count of `name` on whichever side the picker is currently targeting.
+  defp proxy_token_count(game_state, target, name) do
+    side = if target == "opponent", do: game_state.opponent, else: game_state.my
+
+    side
+    |> Map.get(:proxy_tokens, %{})
+    |> Map.get(name, 0)
   end
 
   attr :game_state, :any, required: true
@@ -1005,8 +1102,11 @@ defmodule TabletopWeb.GameComponents do
     on_hits_by_name =
       Map.new(Tabletop.Fab.Effects.on_hit_effects(), fn {_k, e} -> {e.name, e} end)
 
+    # The full catalogue, not just `tokens_for_player/0`: `valid_effect?/2`
+    # accepts any token name as a `token:` effect, so looking up the narrower
+    # list would render a tile with no icon or card art.
     tokens_by_name =
-      Map.new(Tabletop.Fab.Effects.tokens_for_player(), fn {_k, t} -> {t.name, t} end)
+      Map.new(Tabletop.Fab.Effects.tokens(), fn {_k, t} -> {t.name, t} end)
 
     effect_counts = Map.get(player_state, :effect_counts, %{})
 

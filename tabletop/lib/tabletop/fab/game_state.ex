@@ -39,9 +39,9 @@ defmodule Tabletop.Fab.GameState do
   multiplayer) and the camera-setup preview (local, single-screen). Adding a new
   action means adding its transform plus one clause here — nothing else.
 
-  `move_tile` carries an owner/target in its second element that is irrelevant to
-  the transform (the caller has already resolved which player to apply it to), so
-  it is ignored here.
+  `move_tile` and the `*_proxy_token` actions carry an owner/target in their
+  second element that is irrelevant to the transform (the caller has already
+  resolved which player to apply it to), so it is ignored here.
   """
   def transform(player, {:toggle_damage, type}), do: toggle_damage(player, type)
   def transform(player, {:change_damage, type, delta}), do: change_damage(player, type, delta)
@@ -61,9 +61,14 @@ defmodule Tabletop.Fab.GameState do
   def transform(player, {:change_effect_count, category, name, delta}),
     do: change_effect_count(player, category, name, delta)
 
-  def transform(player, {:add_proxy_token, name}), do: add_proxy_token(player, name)
-  def transform(player, {:remove_proxy_token, name}), do: remove_proxy_token(player, name)
-  def transform(player, {:toggle_proxy_token, name}), do: toggle_proxy_token(player, name)
+  def transform(player, {:add_proxy_token, _target, name}), do: add_proxy_token(player, name)
+
+  def transform(player, {:remove_proxy_token, _target, name}),
+    do: remove_proxy_token(player, name)
+
+  def transform(player, {:toggle_proxy_token, _target, name}),
+    do: toggle_proxy_token(player, name)
+
   def transform(player, {:change_life, delta}), do: change_life(player, delta)
   def transform(player, {:reset_board}), do: reset_board(player)
   def transform(player, {:set_media, kind, value}), do: set_media(player, kind, value)
@@ -260,6 +265,14 @@ defmodule Tabletop.Fab.GameState do
 
   def change_effect_count(_, _, _, _), do: {:error, :invalid_effect}
 
+  @doc """
+  Adds one of `name` to this player's proxy tokens (singletons cap at 1).
+
+  `proxy_tokens` is a `%{name => count}` map of the tokens sitting on *this*
+  player — not the tokens they handed out. Either player may add to or clear
+  either side's map, so which side a `*_proxy_token` action lands on is decided
+  by the caller (`GameSession.resolve_target_side/3`) before it gets here.
+  """
   def add_proxy_token(player, name) when is_binary(name) do
     if Effects.valid_token?(name) do
       counts = Map.get(player, :proxy_tokens, %{})

@@ -62,6 +62,44 @@ defmodule Tabletop.Games.GameSessionTest do
       assert_receive {:game_update, :user2, {:tile_moved, "arcane", 25.0, 30.0}, 1001}
     end
 
+    test "proxy tokens route to the named target side regardless of actor",
+         %{game_id: game_id} do
+      # user1 marks user2 …
+      :ok = GameSession.apply_action(game_id, 1001, {:add_proxy_token, 1002, "Mark"})
+      # … and gives themselves a Runechant.
+      :ok = GameSession.apply_action(game_id, 1001, {:add_proxy_token, 1001, "Runechant"})
+
+      assert %{
+               user1: %{proxy_tokens: %{"Runechant" => 1}},
+               user2: %{proxy_tokens: %{"Mark" => 1}}
+             } = GameSession.get_state(game_id)
+
+      assert_receive {:game_update, :user2, {:proxy_token_changed, "Mark", 1}, 1001}
+      assert_receive {:game_update, :user1, {:proxy_token_changed, "Runechant", 1}, 1001}
+    end
+
+    test "either player can clear a proxy token from either side", %{game_id: game_id} do
+      :ok = GameSession.apply_action(game_id, 1001, {:add_proxy_token, 1002, "Mark"})
+      :ok = GameSession.apply_action(game_id, 1001, {:add_proxy_token, 1001, "Frostbite"})
+
+      # The recipient dismisses the Mark they were given …
+      :ok = GameSession.apply_action(game_id, 1002, {:toggle_proxy_token, 1002, "Mark"})
+      # … and clears one off the other player's board too.
+      :ok = GameSession.apply_action(game_id, 1002, {:remove_proxy_token, 1001, "Frostbite"})
+
+      assert %{user1: %{proxy_tokens: %{}}, user2: %{proxy_tokens: %{}}} =
+               GameSession.get_state(game_id)
+    end
+
+    test "proxy tokens survive a board reset", %{game_id: game_id} do
+      :ok = GameSession.apply_action(game_id, 1001, {:add_proxy_token, 1001, "Frostbite"})
+      :ok = GameSession.apply_action(game_id, 1001, {:toggle_damage, :physical})
+      :ok = GameSession.apply_action(game_id, 1001, {:reset_board})
+
+      assert %{user1: %{proxy_tokens: %{"Frostbite" => 1}, physical: %{active: false}}} =
+               GameSession.get_state(game_id)
+    end
+
     test "returns error for unknown user", %{game_id: game_id} do
       assert {:error, :unknown_user} =
                GameSession.apply_action(game_id, 9999, {:change_life, 1})

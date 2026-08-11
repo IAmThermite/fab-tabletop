@@ -346,9 +346,105 @@ defmodule Tabletop.Fab.GameStateTest do
       assert new_player.tile_positions["amp"] == %{x: 30.0, y: 40.0}
     end
 
+    test "applies proxy token actions and ignores the target element" do
+      assert {:ok, player, {:proxy_token_changed, "Frostbite", 1}} =
+               GameState.transform(
+                 GameState.default_player(),
+                 {:add_proxy_token, "opponent", "Frostbite"}
+               )
+
+      assert player.proxy_tokens == %{"Frostbite" => 1}
+
+      assert {:ok, player, {:proxy_token_changed, "Frostbite", 0}} =
+               GameState.transform(player, {:remove_proxy_token, "my", "Frostbite"})
+
+      assert player.proxy_tokens == %{}
+
+      assert {:ok, player, {:proxy_token_changed, "Mark", 1}} =
+               GameState.transform(player, {:toggle_proxy_token, "opponent", "Mark"})
+
+      assert player.proxy_tokens == %{"Mark" => 1}
+    end
+
     test "returns an error for an unknown action" do
       assert {:error, :unknown_action} =
                GameState.transform(GameState.default_player(), {:bogus_action, 1})
+    end
+  end
+
+  describe "proxy tokens" do
+    test "adding stacks non-singleton tokens" do
+      player = GameState.default_player()
+
+      {:ok, player, {:proxy_token_changed, "Frostbite", 1}} =
+        GameState.add_proxy_token(player, "Frostbite")
+
+      {:ok, player, {:proxy_token_changed, "Frostbite", 2}} =
+        GameState.add_proxy_token(player, "Frostbite")
+
+      assert player.proxy_tokens == %{"Frostbite" => 2}
+    end
+
+    test "adding caps singleton tokens at one" do
+      player = GameState.default_player()
+
+      {:ok, player, _} = GameState.add_proxy_token(player, "Mark")
+
+      assert {:ok, player, {:proxy_token_changed, "Mark", 1}} =
+               GameState.add_proxy_token(player, "Mark")
+
+      assert player.proxy_tokens == %{"Mark" => 1}
+    end
+
+    test "removing decrements and drops the key at zero" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.add_proxy_token(player, "Frostbite")
+      {:ok, player, _} = GameState.add_proxy_token(player, "Frostbite")
+
+      {:ok, player, {:proxy_token_changed, "Frostbite", 1}} =
+        GameState.remove_proxy_token(player, "Frostbite")
+
+      assert player.proxy_tokens == %{"Frostbite" => 1}
+
+      {:ok, player, {:proxy_token_changed, "Frostbite", 0}} =
+        GameState.remove_proxy_token(player, "Frostbite")
+
+      assert player.proxy_tokens == %{}
+    end
+
+    test "removing an absent token is a no-op" do
+      assert {:ok, player, {:proxy_token_changed, "Frostbite", 0}} =
+               GameState.remove_proxy_token(GameState.default_player(), "Frostbite")
+
+      assert player.proxy_tokens == %{}
+    end
+
+    test "toggling flips a token on and off" do
+      player = GameState.default_player()
+
+      {:ok, player, {:proxy_token_changed, "Mark", 1}} =
+        GameState.toggle_proxy_token(player, "Mark")
+
+      {:ok, player, {:proxy_token_changed, "Mark", 0}} =
+        GameState.toggle_proxy_token(player, "Mark")
+
+      assert player.proxy_tokens == %{}
+    end
+
+    test "rejects names outside the token catalogue" do
+      player = GameState.default_player()
+
+      assert {:error, :invalid_token} = GameState.add_proxy_token(player, "Nonsense")
+      assert {:error, :invalid_token} = GameState.remove_proxy_token(player, "Nonsense")
+      assert {:error, :invalid_token} = GameState.toggle_proxy_token(player, "Nonsense")
+      assert {:error, :invalid_token} = GameState.add_proxy_token(player, :mark)
+    end
+
+    test "accepts self-facing tokens, not just opponent debuffs" do
+      assert {:ok, player, {:proxy_token_changed, "Runechant", 1}} =
+               GameState.add_proxy_token(GameState.default_player(), "Runechant")
+
+      assert player.proxy_tokens == %{"Runechant" => 1}
     end
   end
 

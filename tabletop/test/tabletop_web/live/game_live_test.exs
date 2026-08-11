@@ -552,6 +552,121 @@ defmodule TabletopWeb.GameLiveTest do
     end
   end
 
+  describe "Show (proxy tokens)" do
+    alias Tabletop.Games
+    alias Tabletop.Games.GameSession
+
+    setup %{scope: scope} do
+      game = game_fixture(scope)
+      opponent = user_scope_fixture()
+      {:ok, game} = Games.join_game(opponent, game, @create_attrs.hero)
+
+      %{game: game, opponent: opponent}
+    end
+
+    defp open_proxy_picker(show_live) do
+      show_live
+      |> element("button[phx-value-name='create_proxy_token']")
+      |> render_click()
+
+      show_live
+    end
+
+    test "the picker targets the chosen side", %{conn: conn, game: game} do
+      {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
+
+      # Default target is the opponent — the common case, handing over a debuff.
+      show_live
+      |> open_proxy_picker()
+      |> element("button[phx-click='add_proxy_token'][phx-value-type='Frostbite']")
+      |> render_click()
+
+      # Switching the target puts the next token on your own side instead.
+      show_live
+      |> element("button[phx-click='set_proxy_token_target'][phx-value-target='my']")
+      |> render_click()
+
+      show_live
+      |> element("button[phx-click='add_proxy_token'][phx-value-type='Runechant']")
+      |> render_click()
+
+      assert %{
+               user1: %{proxy_tokens: %{"Runechant" => 1}},
+               user2: %{proxy_tokens: %{"Frostbite" => 1}}
+             } = GameSession.get_state(game.id)
+    end
+
+    test "the panel lists both sides and clears from either", %{conn: conn, game: game} do
+      {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
+
+      show_live
+      |> open_proxy_picker()
+      |> element("input[phx-click='toggle_proxy_token'][phx-value-type='Mark']")
+      |> render_click()
+
+      show_live
+      |> element("button[phx-click='set_proxy_token_target'][phx-value-target='my']")
+      |> render_click()
+
+      show_live
+      |> element("button[phx-click='add_proxy_token'][phx-value-type='Runechant']")
+      |> render_click()
+
+      # Close the picker so the panel's controls are the only ones on the page.
+      show_live |> element("button[phx-value-name='create_proxy_token']") |> render_click()
+
+      html = render(show_live)
+      assert html =~ "Proxy Tokens (2)"
+      assert html =~ "Runechant"
+      assert html =~ "Mark"
+
+      # Expanded, the panel is a Yours/Opponent tab pair; each tab's controls
+      # carry that side as their target.
+      show_live |> element("button[phx-value-name='proxy_tokens_panel']") |> render_click()
+
+      show_live
+      |> element("#game-area button[phx-click='remove_proxy_token'][phx-value-target='my']")
+      |> render_click()
+
+      show_live
+      |> element("button[phx-click='set_proxy_tokens_tab'][phx-value-target='opponent']")
+      |> render_click()
+
+      show_live
+      |> element("#game-area button[phx-click='remove_proxy_token'][phx-value-target='opponent']")
+      |> render_click()
+
+      assert %{user1: %{proxy_tokens: %{}}, user2: %{proxy_tokens: %{}}} =
+               GameSession.get_state(game.id)
+    end
+
+    test "a player sees and can dismiss what their opponent gave them",
+         %{conn: conn, game: game, opponent: opponent} do
+      # The opponent marks us from their own session.
+      :ok = GameSession.ensure_started(game)
+
+      :ok =
+        GameSession.apply_action(
+          game.id,
+          opponent.user.id,
+          {:add_proxy_token, game.user_id, "Mark"}
+        )
+
+      {:ok, show_live, html} = live(conn, ~p"/games/#{game}")
+
+      assert html =~ "Proxy Tokens (1)"
+      assert html =~ "Mark"
+
+      show_live |> element("button[phx-value-name='proxy_tokens_panel']") |> render_click()
+
+      show_live
+      |> element("#game-area button[phx-click='remove_proxy_token'][phx-value-target='my']")
+      |> render_click()
+
+      assert %{user1: %{proxy_tokens: %{}}} = GameSession.get_state(game.id)
+    end
+  end
+
   describe "Show (tournament match)" do
     alias Tabletop.Games
     alias Tabletop.Repo

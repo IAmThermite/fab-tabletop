@@ -418,12 +418,22 @@
         <h3 class="text-xl font-semibold">3.5 Tokens & counters</h3>
         <p>
           <strong>Create Proxy Token</strong>
-          hands your opponent a token they'd otherwise have to remember —
-          Mark, Bloodrot Pox, Frailty, Frostbite, Inertia and Gold. Pick one
-          from the dropdown and it shows up in their proxy token panel as a
-          full card image, so they can read exactly what it does. Counters use
-          +/- for the ones that stack; Mark is a single toggle since you can
-          only ever be marked once.
+          tracks a token someone would otherwise have to remember. Pick who it
+          lands on — <strong>Me</strong>
+          or <strong>Opponent</strong>
+          — then pick the token; the whole list is
+          available to either side, so you can hand over a Mark or a Frostbite
+          and still give yourself a Runechant. Counters use +/- for the ones
+          that stack; Mark is a single toggle since you can only ever be marked
+          once.
+        </p>
+        <p>
+          Both players see the same panel, and it lists both sides: collapsed
+          it's a row of chips per player, expanded it splits into <strong>Yours</strong>
+          and <strong>Opponent</strong>
+          tabs showing each token as a card so
+          you can read exactly what it does. Either player can add to or clear
+          either list — whoever notices the trigger first can tidy it up.
         </p>
         <p>
           For anything the app doesn't have a tile for, type a name into the
@@ -436,12 +446,12 @@
           <figure class="rounded-box border border-base-300 bg-base-200 p-2">
             <img
               src={~p"/images/about/3-5-create-proxy-token.webp"}
-              alt="Create Proxy Token dropdown listing Mark, Frailty, Inertia, Bloodrot Pox, Frostbite and Gold"
+              alt="Create Proxy Token dropdown with a Me/Opponent target selector above the token list"
               class="w-full rounded"
               loading="lazy"
             />
             <figcaption class="text-sm text-base-content/70 pt-2">
-              Pick a token to give your opponent.
+              Pick who gets it, then pick the token.
             </figcaption>
           </figure>
           <figure class="rounded-box border border-base-300 bg-base-200 p-2">
@@ -452,7 +462,7 @@
               loading="lazy"
             />
             <figcaption class="text-sm text-base-content/70 pt-2">
-              They see the token as a card, and it stays until dismissed.
+              Both players see it, and either can dismiss it.
             </figcaption>
           </figure>
         </div>

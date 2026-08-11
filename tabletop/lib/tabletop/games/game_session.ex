@@ -157,6 +157,16 @@ defmodule Tabletop.Games.GameSession do
     side_for(state, target_user_id)
   end
 
+  # Proxy tokens work the same way: the action names the player the token sits
+  # *on*, so either player can hand one to the other (Mark, Frostbite) or take
+  # one for themselves, and either player can clear it again.
+  @targeted_actions [:add_proxy_token, :remove_proxy_token, :toggle_proxy_token]
+
+  defp resolve_target_side(state, _actor, {action, target_user_id, _name})
+       when action in @targeted_actions do
+    side_for(state, target_user_id)
+  end
+
   # Everything else targets the actor's own side.
   defp resolve_target_side(state, actor_user_id, _action) do
     side_for(state, actor_user_id)

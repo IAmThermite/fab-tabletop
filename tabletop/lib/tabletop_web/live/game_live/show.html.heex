@@ -195,6 +195,7 @@
         on_hits_open={@on_hits_open}
         create_token_open={@create_token_open}
         create_proxy_token_open={@create_proxy_token_open}
+        proxy_token_target={@proxy_token_target}
       />
 
       <%!-- Central game area. The opponent's board is the <video> element
@@ -227,13 +228,15 @@
           </div>
         </div>
 
-        <%!-- Remote peer media status --%>
+        <%!-- Remote peer media status. Top-*left*: the proxy token panel owns
+              the top-right corner and the two would otherwise stack on top of
+              each other whenever the opponent mutes or kills their camera. --%>
         <div
           :if={
             @peer_connected and (not @game_state.opponent.camera or not @game_state.opponent.mic)
           }
           id="remote-media-status"
-          class="absolute top-2 right-2 flex gap-1"
+          class="absolute top-2 left-2 flex gap-1"
         >
           <div
             :if={not @game_state.opponent.camera}
@@ -253,7 +256,11 @@
 
         <.game_tiles game_state={@game_state} context={:remote} />
 
-        <.proxy_tokens_panel game_state={@game_state} expanded={@proxy_tokens_expanded} />
+        <.proxy_tokens_panel
+          game_state={@game_state}
+          expanded={@proxy_tokens_expanded}
+          tab={@proxy_tokens_tab}
+        />
 
         <.card_popouts open_cards={@open_cards} />
       </div>

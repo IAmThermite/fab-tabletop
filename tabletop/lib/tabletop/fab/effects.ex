@@ -373,24 +373,33 @@ defmodule Tabletop.Fab.Effects do
       card_img_src:
         "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/ELE111.webp",
       for_opponent: true
-    },
-    # you can generate a gold for your opponent (as well as yourself) so let's add it here too
-    gold_2: %{
-      name: "Gold",
-      icon: "hero-currency-dollar",
-      description_html:
-        "<b>Action</b> – {{ resource-icon }}{{ resource-icon }}, destroy Gold: Draw a card. <b>Go again</b>",
-      card_img_src:
-        "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/SEN036.webp",
-      for_opponent: true
     }
   }
 
   def abilities, do: @abilities_map
   def on_hit_effects, do: @on_hit_effects_map
   def tokens, do: @tokens_map
+
+  @doc """
+  Tokens offered by the on-hit "Create Token" list — the ones a player creates
+  for *themselves*, which land on their own board as draggable tiles. Excludes
+  the `for_opponent` debuffs (Mark, Frostbite, …): those only ever arrive from
+  the other side of the table, so they are proxy tokens rather than tiles.
+  """
   def tokens_for_player, do: Enum.filter(@tokens_map, fn {_k, t} -> !t.for_opponent end)
-  def tokens_for_opponent, do: Enum.filter(@tokens_map, fn {_k, t} -> t.for_opponent end)
+
+  @doc """
+  Every token, ordered for the proxy-token picker: opponent-inflicted debuffs
+  first, then the rest alphabetically.
+
+  The picker is deliberately *unfiltered* — either player can put any token on
+  either side, so `for_opponent` decides ordering here and nothing else. Token
+  names are the storage key for `GameState.proxy_tokens`, so they have to be
+  unique across this map.
+  """
+  def proxy_token_list do
+    Enum.sort_by(@tokens_map, fn {_k, t} -> {!t.for_opponent, t.name} end)
+  end
 
   def counterable?("ability", name) do
     Enum.any?(@abilities_map, fn {_k, e} ->

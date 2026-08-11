@@ -106,6 +106,7 @@ defmodule TabletopWeb.CameraSetupLive do
             on_hits_open={@on_hits_open}
             create_token_open={@create_token_open}
             create_proxy_token_open={@create_proxy_token_open}
+            proxy_token_target={@proxy_token_target}
           />
 
           <%!-- Central area — camera preview canvas --%>
@@ -170,7 +171,11 @@ defmodule TabletopWeb.CameraSetupLive do
               </div>
             </div>
 
-            <.proxy_tokens_panel game_state={@game_state} expanded={@proxy_tokens_expanded} />
+            <.proxy_tokens_panel
+              game_state={@game_state}
+              expanded={@proxy_tokens_expanded}
+              tab={@proxy_tokens_tab}
+            />
 
             <.card_popouts open_cards={@open_cards} />
           </div>
@@ -530,6 +535,8 @@ defmodule TabletopWeb.CameraSetupLive do
      |> assign(:create_token_open, false)
      |> assign(:create_proxy_token_open, false)
      |> assign(:proxy_tokens_expanded, false)
+     |> assign(:proxy_token_target, "my")
+     |> assign(:proxy_tokens_tab, "my")
      |> assign(:open_cards, [])}
   end
 
@@ -560,8 +567,21 @@ defmodule TabletopWeb.CameraSetupLive do
   # Callback for `TabletopWeb.GameControls`: apply the action to this page's
   # local preview state. There is only one player on the setup screen, so
   # `move_tile`'s owner is irrelevant (`GameState.transform/2` ignores it).
+  #
+  # Proxy tokens are the exception: the picker can target either side, and the
+  # preview keeps a second player around so the "Opponent" tab has somewhere to
+  # put them.
+  @proxy_token_actions [:add_proxy_token, :remove_proxy_token, :toggle_proxy_token]
+
+  def apply_game_action(socket, {action, target, _name} = full_action)
+      when action in @proxy_token_actions do
+    side = if target == "opponent", do: :opponent, else: :my
+    player = Map.fetch!(socket.assigns.game_state, side)
+    apply_action(socket, side, GameState.transform(player, full_action))
+  end
+
   def apply_game_action(socket, action) do
-    apply_action(socket, GameState.transform(my(socket), action))
+    apply_action(socket, :my, GameState.transform(my(socket), action))
   end
 
   defp my(socket), do: socket.assigns.game_state.my
@@ -575,11 +595,12 @@ defmodule TabletopWeb.CameraSetupLive do
   # rationale as `GameLive.PreJoin.mount/3`.
   defp fetch_game_for_setup(_scope, id), do: Games.fetch_game(id)
 
-  defp apply_action(socket, {:ok, new_player, _broadcast_msg}) do
-    {:noreply, assign(socket, :game_state, %{socket.assigns.game_state | my: new_player})}
+  defp apply_action(socket, side, {:ok, new_player, _broadcast_msg}) do
+    game_state = Map.put(socket.assigns.game_state, side, new_player)
+    {:noreply, assign(socket, :game_state, game_state)}
   end
 
-  defp apply_action(socket, {:error, _reason}) do
+  defp apply_action(socket, _side, {:error, _reason}) do
     {:noreply, socket}
   end
 

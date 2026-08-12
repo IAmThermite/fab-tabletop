@@ -420,6 +420,7 @@
               connected: "Connected",
               disconnected: "Disconnected",
               no_camera: "No camera",
+              superseded: "Open in another tab",
               error: "Error",
             }
             statusEl.textContent = labels[status] || status
@@ -429,6 +430,7 @@
               disconnected: "badge-error",
               error: "badge-error",
               no_camera: "badge-warning",
+              superseded: "badge-warning",
             }
             statusEl.className = `badge badge-sm ${badgeClass[status] || "badge-outline"}`
 
@@ -444,7 +446,7 @@
                 this._oppPresent = true
                 this._everConnected = true
               }
-            } else if (status === "waiting" || status === "disconnected") {
+            } else if (status === "waiting" || status === "disconnected" || status === "superseded") {
               this.pushEvent("peer_disconnected", {})
               if (status === "disconnected" && this._oppPresent) {
                 // An established connection dropped. Defer the cue briefly so a
@@ -458,8 +460,9 @@
                     }
                   }, 1000)
                 }
-              } else if (status === "waiting") {
-                // Clean peer-left, not an accidental drop — no cue.
+              } else if (status === "waiting" || status === "superseded") {
+                // Clean peer-left, or this tab standing down for a newer one —
+                // not an accidental drop, so no cue.
                 if (this._dropTimer) {
                   clearTimeout(this._dropTimer)
                   this._dropTimer = null

@@ -5,6 +5,7 @@ defmodule TabletopWeb.GameChannel do
 
   alias Tabletop.Repo
   alias Tabletop.Games.Game
+  alias TabletopWeb.ChannelSeat
 
   @impl true
   def join("game:" <> game_id, _payload, socket) do
@@ -26,7 +27,16 @@ defmodule TabletopWeb.GameChannel do
 
   @impl true
   def handle_info(:after_join, socket) do
-    group = game_group(socket.assigns.game_id)
+    %{game_id: game_id, user_id: user_id} = socket.assigns
+
+    # Take this player's seat before announcing ourselves, so the topic holds at
+    # most one socket per player and the exchange below stays the two-party
+    # conversation it is written as. A second tab would otherwise put three
+    # sockets on a topic whose every signalling message is an unaddressed
+    # fan-out — see TabletopWeb.ChannelSeat.
+    ChannelSeat.claim(seat(game_id, user_id))
+
+    group = game_group(game_id)
 
     # Check for existing peers before registering ourselves
     has_peer = :pg.get_members(:game_channels, group) != []
@@ -36,7 +46,7 @@ defmodule TabletopWeb.GameChannel do
 
     # Notify existing peers that we joined.
     # The recipient of this broadcast will create the WebRTC offer.
-    broadcast_from!(socket, "peer_joined", %{user_id: socket.assigns.user_id})
+    broadcast_from!(socket, "peer_joined", %{user_id: user_id})
 
     # If we're the second joiner, the first joiner's broadcast was lost
     # (we weren't listening yet). But the first joiner will receive our
@@ -48,6 +58,15 @@ defmodule TabletopWeb.GameChannel do
     end
 
     {:noreply, socket}
+  end
+
+  def handle_info(:superseded, socket) do
+    # A newer connection for this player has taken the seat — another tab, or a
+    # reconnect that raced its predecessor's shutdown. Tell the client so it can
+    # say as much instead of appearing to lose its video for no reason, then
+    # stand down.
+    push(socket, "superseded", %{})
+    {:stop, :normal, assign(socket, :superseded, true)}
   end
 
   @impl true
@@ -73,12 +92,25 @@ defmodule TabletopWeb.GameChannel do
 
   @impl true
   def terminate(_reason, %{assigns: %{game_id: game_id, user_id: user_id}} = socket) do
+    ChannelSeat.release(seat(game_id, user_id))
     :pg.leave(:game_channels, game_group(game_id), self())
-    broadcast_from!(socket, "peer_left", %{user_id: user_id})
+
+    # A superseded socket's replacement is already on the topic and about to
+    # renegotiate; from the opponent's side this player never left. Announcing
+    # `peer_left` here would tear down the connection the replacement is in the
+    # middle of building, and nothing would offer again.
+    if !socket.assigns[:superseded] do
+      broadcast_from!(socket, "peer_left", %{user_id: user_id})
+    end
+
     :ok
   end
 
   def terminate(_, _), do: :ok
 
   defp game_group(game_id), do: {:game_channel, game_id}
+
+  # One socket per player per game. Not keyed by socket kind: the topic must
+  # hold two sockets in total, whatever token each authenticated with.
+  defp seat(game_id, user_id), do: {:game_seat, game_id, user_id}
 end

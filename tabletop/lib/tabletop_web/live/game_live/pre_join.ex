@@ -576,6 +576,9 @@ defmodule TabletopWeb.GameLive.PreJoin do
     case Games.reserve_join(scope, game) do
       {:ok, game} ->
         if connected?(socket) do
+          # Registered before the expiry timer so `terminate/2` can tell whether
+          # this user still has another pre-join tab holding the same seat.
+          Games.track_reservation(game.id, scope)
           Process.send_after(self(), :reservation_expired, @reservation_timeout_ms)
         end
 

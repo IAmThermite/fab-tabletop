@@ -451,9 +451,53 @@ defmodule Tabletop.Games do
   end
 
   @doc """
-  Releases a join reservation. Called when user leaves the pre-join screen.
+  Registers the calling process (a connected pre-join LiveView) as holding the
+  join reservation for `game_id`. The registration is dropped automatically by
+  the Registry when the process exits.
+
+  Reservations are per *user*, but pre-join screens are per *process*, so
+  `release_reservation/2` needs to know whether the user still has another one
+  open — see there. Reuses `GameConnectionRegistry` under a distinct key shape;
+  `Tabletop.Games.LeaveTimer` keys the same registry by a plain
+  `{game_id, user_id}` pair, and Registry keys match exactly, so the two never
+  see each other's entries.
+  """
+  def track_reservation(game_id, %Scope{} = scope) do
+    Registry.register(
+      Tabletop.Games.GameConnectionRegistry,
+      reservation_key(game_id, scope.user.id),
+      nil
+    )
+  end
+
+  @doc """
+  Releases a join reservation. Called when a user leaves the pre-join screen.
+
+  A no-op while the user still has another pre-join LiveView open for the same
+  game: with two tabs on one game, closing either would otherwise drop the
+  reservation the other is still relying on to hold the seat, leaving it open
+  for a third player to take.
   """
   def release_reservation(%Scope{} = scope, game_id) do
+    if reservation_held_elsewhere?(game_id, scope.user.id) do
+      :ok
+    else
+      do_release_reservation(scope, game_id)
+    end
+  end
+
+  # True if a process *other than the caller* still holds a pre-join screen for
+  # this user and game. The caller is excluded because the LiveView calling this
+  # from `terminate/2` is still registered while it runs.
+  defp reservation_held_elsewhere?(game_id, user_id) do
+    Tabletop.Games.GameConnectionRegistry
+    |> Registry.lookup(reservation_key(game_id, user_id))
+    |> Enum.any?(fn {pid, _} -> pid != self() end)
+  end
+
+  defp reservation_key(game_id, user_id), do: {:join_reservation, game_id, user_id}
+
+  defp do_release_reservation(%Scope{} = scope, game_id) do
     {count, _} =
       from(g in Game,
         where: g.id == ^game_id,

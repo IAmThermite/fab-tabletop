@@ -23,6 +23,10 @@ export default class PhoneCameraRelay {
     this.peerConnection = null
     this.localStream = null
     this._status = null
+    // Set when a newer phone socket takes this user's relay seat (see
+    // TabletopWeb.ChannelSeat) — the QR scanned twice, or the page reopened.
+    // Terminal: this page does not signal again.
+    this._superseded = false
   }
 
   async start(stream) {
@@ -50,6 +54,7 @@ export default class PhoneCameraRelay {
     this.channel.on("answer", (msg) => this._handleAnswer(msg))
     this.channel.on("ice_candidate", (msg) => this._handleIceCandidate(msg))
     this.channel.on("peer_left", () => this._handlePeerLeft())
+    this.channel.on("superseded", () => this._handleSuperseded())
 
     this.channel
       .join()
@@ -140,7 +145,7 @@ export default class PhoneCameraRelay {
 
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        this.channel.push("ice_candidate", { candidate: event.candidate })
+        this._push("ice_candidate", { candidate: event.candidate })
       }
     }
 
@@ -156,7 +161,16 @@ export default class PhoneCameraRelay {
     }
   }
 
+  // Signalling is emitted from async paths that can resume after the channel is
+  // gone, so this never throws on a torn-down channel.
+  _push(event, payload) {
+    if (!this.channel) return
+    this.channel.push(event, payload)
+  }
+
   async _createOffer() {
+    if (this._superseded) return
+
     try {
       console.log("[PhoneRelay] Creating offer")
       this._createPeerConnection()
@@ -164,7 +178,7 @@ export default class PhoneCameraRelay {
 
       const offer = await this.peerConnection.createOffer()
       await this.peerConnection.setLocalDescription(offer)
-      this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+      this._push("offer", { sdp: this.peerConnection.localDescription })
       await tuneVideoSender(this.peerConnection)
     } catch (err) {
       console.error("[PhoneRelay] Error creating offer:", err)
@@ -173,6 +187,8 @@ export default class PhoneCameraRelay {
   }
 
   async _handleOffer({ sdp }) {
+    if (this._superseded) return
+
     try {
       console.log("[PhoneRelay] Received offer, creating answer")
       this._createPeerConnection()
@@ -184,7 +200,7 @@ export default class PhoneCameraRelay {
 
       const answer = await this.peerConnection.createAnswer()
       await this.peerConnection.setLocalDescription(answer)
-      this.channel.push("answer", { sdp: this.peerConnection.localDescription })
+      this._push("answer", { sdp: this.peerConnection.localDescription })
       await tuneVideoSender(this.peerConnection)
     } catch (err) {
       console.error("[PhoneRelay] Error handling offer:", err)
@@ -215,6 +231,18 @@ export default class PhoneCameraRelay {
         console.error("[PhoneRelay] Error adding ICE candidate:", err)
       }
     }
+  }
+
+  // A newer phone socket took this user's relay seat — the QR scanned a second
+  // time, usually. Only one phone may sit on the relay topic (see
+  // TabletopWeb.ChannelSeat), so this page stops relaying and says so rather
+  // than fighting the newer one over the desktop's connection.
+  _handleSuperseded() {
+    console.warn("[PhoneRelay] Superseded — this camera is relaying from a newer tab")
+    this._superseded = true
+
+    this.disconnect()
+    this._setStatus("superseded")
   }
 
   _handlePeerLeft() {

@@ -3,6 +3,8 @@ defmodule TabletopWeb.CameraRelayChannel do
 
   require Logger
 
+  alias TabletopWeb.ChannelSeat
+
   @impl true
   def join("camera_relay:" <> relay_user_id, _payload, socket) do
     # The relay topic is keyed by user_id, which is stable across page mounts.
@@ -22,7 +24,16 @@ defmodule TabletopWeb.CameraRelayChannel do
 
   @impl true
   def handle_info(:after_join, socket) do
-    group = relay_group(socket.assigns.relay_user_id)
+    %{relay_user_id: relay_user_id, socket_kind: socket_kind} = socket.assigns
+
+    # One desktop and one phone. Signalling here is the same unaddressed
+    # `broadcast_from!` fan-out as the game topic, so a third socket breaks it
+    # the same way — but unlike a game, both ends belong to the same user, so
+    # the seat is keyed by which end of the relay this is. A second desktop tab
+    # evicts the first and leaves the phone alone. See TabletopWeb.ChannelSeat.
+    ChannelSeat.claim(seat(relay_user_id, socket_kind))
+
+    group = relay_group(relay_user_id)
     has_peer = :pg.get_members(:game_channels, group) != []
     :pg.join(:game_channels, group, self())
 
@@ -33,6 +44,14 @@ defmodule TabletopWeb.CameraRelayChannel do
     end
 
     {:noreply, socket}
+  end
+
+  def handle_info(:superseded, socket) do
+    # A newer socket for this end of the relay took the seat. Tell the client,
+    # then stand down; `terminate/2` withholds `peer_left` so the other end
+    # keeps the connection its replacement is about to renegotiate.
+    push(socket, "superseded", %{})
+    {:stop, :normal, assign(socket, :superseded, true)}
   end
 
   @impl true
@@ -68,9 +87,13 @@ defmodule TabletopWeb.CameraRelayChannel do
     # relay assigns may never have been set. Only clean up if we actually
     # joined the relay group.
     case socket.assigns do
-      %{relay_user_id: relay_user_id} ->
+      %{relay_user_id: relay_user_id, socket_kind: socket_kind} ->
+        ChannelSeat.release(seat(relay_user_id, socket_kind))
         :pg.leave(:game_channels, relay_group(relay_user_id), self())
-        broadcast_from!(socket, "peer_left", %{})
+
+        if !socket.assigns[:superseded] do
+          broadcast_from!(socket, "peer_left", %{})
+        end
 
       _ ->
         :ok
@@ -80,4 +103,8 @@ defmodule TabletopWeb.CameraRelayChannel do
   end
 
   defp relay_group(relay_user_id), do: {:camera_relay, relay_user_id}
+
+  # `socket_kind` is `:user` for the desktop and `:phone` for the phone-camera
+  # page — see TabletopWeb.UserSocket.
+  defp seat(relay_user_id, socket_kind), do: {:camera_relay_seat, relay_user_id, socket_kind}
 end

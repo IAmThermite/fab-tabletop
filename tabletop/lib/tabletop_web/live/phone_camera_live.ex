@@ -123,6 +123,7 @@ defmodule TabletopWeb.PhoneCameraLive do
                 waiting: "Waiting for desktop...",
                 connected: "Connected",
                 disconnected: "Disconnected",
+                superseded: "Open in another tab",
                 error: "Error",
               }
               statusEl.textContent = labels[status] || status
@@ -131,6 +132,7 @@ defmodule TabletopWeb.PhoneCameraLive do
                 connected: "badge-success",
                 disconnected: "badge-error",
                 error: "badge-error",
+                superseded: "badge-warning",
               }
               statusEl.className = `badge badge-sm ${badgeClass[status] || "badge-outline"}`
             },

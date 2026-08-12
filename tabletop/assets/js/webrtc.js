@@ -47,6 +47,9 @@ export default class WebRTCManager {
     this.cameraEnabled = cameraEnabled
     this.micEnabled = micEnabled
     this._status = null
+    // Set when the server hands this player's seat to a newer connection (see
+    // TabletopWeb.ChannelSeat). Terminal — this tab does not signal again.
+    this._superseded = false
 
     // Transformed stream for sending zoom/rotation to peer
     this._streamForPeer = null
@@ -115,6 +118,7 @@ export default class WebRTCManager {
     this.channel.on("answer", (msg) => this._handleAnswer(msg))
     this.channel.on("ice_candidate", (msg) => this._handleIceCandidate(msg))
     this.channel.on("peer_left", () => this._handlePeerLeft())
+    this.channel.on("superseded", () => this._handleSuperseded())
 
     this.channel.join()
       .receive("ok", () => {
@@ -284,6 +288,15 @@ export default class WebRTCManager {
     this.onStatusChange(status)
   }
 
+  // Signalling is emitted from async paths that can resume after the channel is
+  // gone — a superseded tab tears its channel down mid-`_createOffer`. Dropping
+  // the message is the right outcome there, so this never throws on a null
+  // channel.
+  _push(event, payload) {
+    if (!this.channel) return
+    this.channel.push(event, payload)
+  }
+
   _createPeerConnection() {
     if (this.peerConnection) {
       this.peerConnection.close()
@@ -302,7 +315,7 @@ export default class WebRTCManager {
     // When we get ICE candidates, send them to the other peer
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        this.channel.push("ice_candidate", { candidate: event.candidate })
+        this._push("ice_candidate", { candidate: event.candidate })
       }
     }
 
@@ -330,6 +343,8 @@ export default class WebRTCManager {
   }
 
   async _createOffer() {
+    if (this._superseded) return
+
     try {
       console.log("[WebRTC] Creating offer (peer joined)")
       this._createPeerConnection()
@@ -338,7 +353,7 @@ export default class WebRTCManager {
       const offer = await this.peerConnection.createOffer()
       await this.peerConnection.setLocalDescription(offer)
 
-      this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+      this._push("offer", { sdp: this.peerConnection.localDescription })
       await tuneVideoSender(this.peerConnection)
     } catch (err) {
       console.error("[WebRTC] Error creating offer:", err)
@@ -347,6 +362,8 @@ export default class WebRTCManager {
   }
 
   async _handleOffer({ sdp }) {
+    if (this._superseded) return
+
     try {
       console.log("[WebRTC] Received offer, creating answer")
       this._createPeerConnection()
@@ -360,7 +377,7 @@ export default class WebRTCManager {
       const answer = await this.peerConnection.createAnswer()
       await this.peerConnection.setLocalDescription(answer)
 
-      this.channel.push("answer", { sdp: this.peerConnection.localDescription })
+      this._push("answer", { sdp: this.peerConnection.localDescription })
       await tuneVideoSender(this.peerConnection)
     } catch (err) {
       console.error("[WebRTC] Error handling offer:", err)
@@ -389,6 +406,21 @@ export default class WebRTCManager {
         console.error("[WebRTC] Error adding ICE candidate:", err)
       }
     }
+  }
+
+  // The server gave this player's seat to a newer connection — usually the same
+  // game opened in a second tab. Only one socket per player may sit on the
+  // signalling topic (see TabletopWeb.ChannelSeat), so this tab releases the
+  // camera and stops signalling rather than fighting the newer one for it. The
+  // LiveView underneath stays live, so game state keeps updating here.
+  _handleSuperseded() {
+    console.warn("[WebRTC] Superseded — this game is open in a newer tab")
+    this._superseded = true
+
+    this.disconnect()
+    this.remoteVideoEl.srcObject = null
+    this._clearRemoteLayout()
+    this._setStatus("superseded")
   }
 
   _handlePeerLeft() {

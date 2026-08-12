@@ -22,6 +22,8 @@ defmodule TabletopWeb.PhoneCameraLive do
           <div id="phone-status" phx-update="ignore" class="badge badge-sm badge-outline">
             Connecting...
           </div>
+
+          <Layouts.game_alert_tray flash={@flash} system_announcement={@system_announcement} />
         </div>
 
         <%!-- Camera preview --%>

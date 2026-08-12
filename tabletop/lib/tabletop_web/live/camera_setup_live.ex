@@ -80,6 +80,8 @@ defmodule TabletopWeb.CameraSetupLive do
             Initializing...
           </div>
 
+          <Layouts.game_alert_tray flash={@flash} system_announcement={@system_announcement} />
+
           <button
             id="settings-btn"
             type="button"

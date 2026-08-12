@@ -363,9 +363,7 @@ defmodule TabletopWeb.Layouts do
       {render_slot(@inner_block)}
     </main>
 
-    <%!-- No `flash_group/1` here: its toasts park over the video grid. The tray
-         collects the same alerts behind one corner button instead. --%>
-    <.game_alert_tray flash={@flash} system_announcement={@system_announcement} />
+    <%!-- No `flash_group/1` here: its toasts park over the video grid. --%>
     <.notification_sounds />
     """
   end
@@ -416,20 +414,24 @@ defmodule TabletopWeb.Layouts do
   end
 
   @doc """
-  Every alert the game view can raise, collapsed into one corner button.
+  Every alert the game view can raise, collapsed behind one top-bar button.
 
   The game layout is a fullscreen video grid: a toast parked over it hides the
   thing the player is actually looking at, and the system announcement in
-  particular stays up until dismissed. So instead of floating cards, this puts
-  a single small button bottom-right with an unread count, and the alerts
-  themselves in a panel that only opens when the player asks for it.
+  particular stays up until dismissed. So instead of floating cards, this is a
+  bell with an unread count that sits inline among the other top-bar controls,
+  and a panel that drops beneath it only when the player asks for it.
 
-  **Connection loss is deliberately not in the panel.** `#connection-status` in
-  the game top bar tracks the *WebRTC peer*, not the LiveView socket, so these
-  two are the only signal that the socket itself has dropped — and a dropped
-  socket is exactly when nothing can prompt the player to open a tray. They
-  render as compact pills beside the button instead: still unmissable, still
-  small enough not to obstruct.
+  Rendered by each game-layout page inside its top bar rather than by
+  `Layouts.game`, because there is no fixed corner to put it in: bottom-right is
+  the opponent's life total, and top-right is the page's own controls. Being a
+  sibling of those controls is the only placement that covers nothing.
+
+  **Connection loss is deliberately not in the panel.** `#connection-status`
+  tracks the *WebRTC peer*, not the LiveView socket, so these two are the only
+  signal that the socket itself has dropped — and a dropped socket is exactly
+  when nothing can prompt the player to open a tray. They sit beside the bell as
+  badges, matching the status badge already next to them.
 
   Tray entries do not auto-hide the way `flash_group/1`'s toasts do. An alert
   that erased itself after five seconds would leave the unread count lying, and
@@ -444,36 +446,17 @@ defmodule TabletopWeb.Layouts do
 
   def game_alert_tray(assigns) do
     ~H"""
-    <div
-      id="game-alert-tray"
-      phx-hook=".AlertTray"
-      class="fixed bottom-4 right-4 z-[60] flex flex-col items-end gap-2"
-    >
-      <%!-- Hidden until the hook finds something in it, so an empty tray puts
-            nothing at all over the video. `aria-live` is on the panel rather
-            than the button so a screen reader announces the alert text itself. --%>
-      <div
-        id="game-alert-panel"
-        data-panel
-        hidden
-        aria-live="polite"
-        class="flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2"
-      >
-        <.system_announcement announcement={@system_announcement} variant={:tray} />
-        <.flash kind={:info} flash={@flash} variant={:tray} />
-        <.flash kind={:error} flash={@flash} variant={:tray} />
-      </div>
-
+    <div id="game-alert-tray" phx-hook=".AlertTray" class="relative flex items-center gap-2">
       <div
         id="client-error"
         role="alert"
         hidden
         phx-disconnected={show(".phx-client-error #client-error") |> JS.remove_attribute("hidden")}
         phx-connected={hide("#client-error") |> JS.set_attribute({"hidden", ""})}
-        class="alert alert-error w-auto gap-2 px-3 py-2 shadow-lg"
+        class="badge badge-sm badge-error gap-1"
       >
-        <.icon name="hero-arrow-path" class="size-4 shrink-0 motion-safe:animate-spin" />
-        <span class="text-sm">{gettext("Reconnecting…")}</span>
+        <.icon name="hero-arrow-path" class="size-3 shrink-0 motion-safe:animate-spin" />
+        {gettext("Reconnecting…")}
       </div>
 
       <div
@@ -482,12 +465,14 @@ defmodule TabletopWeb.Layouts do
         hidden
         phx-disconnected={show(".phx-server-error #server-error") |> JS.remove_attribute("hidden")}
         phx-connected={hide("#server-error") |> JS.set_attribute({"hidden", ""})}
-        class="alert alert-error w-auto gap-2 px-3 py-2 shadow-lg"
+        class="badge badge-sm badge-error gap-1"
       >
-        <.icon name="hero-arrow-path" class="size-4 shrink-0 motion-safe:animate-spin" />
-        <span class="text-sm">{gettext("Something went wrong — reconnecting…")}</span>
+        <.icon name="hero-arrow-path" class="size-3 shrink-0 motion-safe:animate-spin" />
+        {gettext("Reconnecting…")}
       </div>
 
+      <%!-- Hidden until the hook finds something in the panel, so an empty tray
+            adds nothing to the bar at all. --%>
       <button
         data-toggle
         type="button"
@@ -500,6 +485,21 @@ defmodule TabletopWeb.Layouts do
         <span data-count class="indicator-item badge badge-xs badge-primary"></span>
         <.icon name="hero-bell" class="size-5" />
       </button>
+
+      <%!-- Drops beneath the bell rather than pushing the bar around. `aria-live`
+            is on the panel rather than the button so a screen reader announces
+            the alert text itself. --%>
+      <div
+        id="game-alert-panel"
+        data-panel
+        hidden
+        aria-live="polite"
+        class="absolute right-0 top-full z-[70] mt-2 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 text-left"
+      >
+        <.system_announcement announcement={@system_announcement} variant={:tray} />
+        <.flash kind={:info} flash={@flash} variant={:tray} />
+        <.flash kind={:error} flash={@flash} variant={:tray} />
+      </div>
     </div>
     <script :type={ColocatedHook} name=".AlertTray">
       export default {

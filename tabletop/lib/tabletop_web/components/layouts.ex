@@ -6,7 +6,6 @@ defmodule TabletopWeb.Layouts do
   use TabletopWeb, :html
 
   # Community links surfaced in the navbar/footer.
-  # TODO: replace with the real invite/repo URLs.
   @discord_url "https://discord.gg/25QAegj6gJ"
   @github_url "https://github.com/IAmThermite/fab-tabletop"
   @patreon_url "https://patreon.com/c/FaBTabletop"

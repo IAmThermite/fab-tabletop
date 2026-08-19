@@ -45,9 +45,16 @@ function onReady(module) {
   setTimeout(() => { clearInterval(poll); if (!cvReady) self.postMessage({ type: "error", message: "OpenCV init timed out" }) }, 30000)
 })()
 
-// Card must be at least 5% but no more than 60% of image area
+// Card must be at least 5% but no more than 90% of the detect region's area.
+// The upper bound is deliberately loose: the region handed to this worker is
+// already a small square centred on the click (`DETECT_RATIO`), so a card
+// filling most of it is the normal case, not a false positive. A tighter cap
+// backfires badly — at 0.60 any card taller than 0.92x the region's side is
+// rejected while its *art window* (34% of the card's area, see below) still
+// passes every gate, so the scanner silently deskews the art as if it were the
+// whole card.
 const MIN_CARD_AREA_RATIO = 0.05
-const MAX_CARD_AREA_RATIO = 0.60
+const MAX_CARD_AREA_RATIO = 0.90
 
 // Portrait card aspect ratio: long/short ~1.2 to 2.0 (standard FaB is ~1.4)
 const MIN_ASPECT = 1.1
@@ -272,13 +279,87 @@ function aabbIntersectionArea(a, b) {
   return w * h
 }
 
+// A FaB card's art window sits inside the card at 80% of its width and 42% of
+// its height — 34% of the card's area, and an aspect of 1.36 against the card's
+// 1.40. Neither the area gate nor the aspect gate can separate the two, so a
+// contour found on the printed art frame is a fully valid "card" candidate that
+// happens to be the wrong rectangle. `looksLikeInnerArtWindow` is the only
+// thing that tells them apart.
+const ART_W_RATIO = 1 - 2 * ART_X_INSET
+
+// How far the measured span may drift from the art rect's nominal ratio, and
+// how far off-centre it may sit on the card's cross axis.
+const ART_WINDOW_TOLERANCE = 0.10
+const ART_WINDOW_MAX_OFFSET = 0.08
+
+/**
+ * Extent of `inner`'s corners expressed in `outer`'s own (u, v) basis, where u
+ * runs along outer's TL->TR edge and v along its TL->BL edge, both normalized
+ * to 0..1. Working in the quad's basis rather than in axis-aligned bounding
+ * boxes is what keeps the art-window test valid for a tilted card — an AABB
+ * ratio drifts with the tilt angle and stops matching by ~20°.
+ */
+function relativeExtent(inner, outer) {
+  const [tl, tr, , bl] = outer
+  const ux = tr.x - tl.x, uy = tr.y - tl.y
+  const vx = bl.x - tl.x, vy = bl.y - tl.y
+  const uLen2 = ux * ux + uy * uy
+  const vLen2 = vx * vx + vy * vy
+  if (uLen2 < 1 || vLen2 < 1) return null
+
+  let uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity
+  for (const p of inner) {
+    const dx = p.x - tl.x, dy = p.y - tl.y
+    const u = (dx * ux + dy * uy) / uLen2
+    const v = (dx * vx + dy * vy) / vLen2
+    if (u < uMin) uMin = u
+    if (u > uMax) uMax = u
+    if (v < vMin) vMin = v
+    if (v > vMax) vMax = v
+  }
+
+  return {
+    uSpan: uMax - uMin,
+    vSpan: vMax - vMin,
+    uOffset: Math.abs((uMin + uMax) / 2 - 0.5),
+    vOffset: Math.abs((vMin + vMax) / 2 - 0.5),
+  }
+}
+
+/**
+ * Does `inner` sit inside `outer` the way a card's art window sits inside its
+ * card? Both axis assignments are tried, since `orderCorners` labels a card
+ * lying sideways with its long edge as TL->TR. The art window is centred across
+ * the card's width and offset *along* its height, never sideways, so the
+ * cross-axis offset is checked too.
+ *
+ * Deliberately narrow, because the merge-blob case below lands in the same
+ * containment band and needs the opposite answer: a card inside a side-by-side
+ * blob spans ~48% of the blob's width and ~100% of its height, and a stacked
+ * one is the transpose. Both miss these windows on the span nearest 1.0.
+ */
+function looksLikeInnerArtWindow(inner, outer) {
+  const e = relativeExtent(inner, outer)
+  if (!e) return false
+
+  const fits = (across, along, offset) =>
+    Math.abs(across - ART_W_RATIO) < ART_WINDOW_TOLERANCE &&
+    Math.abs(along - ART_H_RATIO) < ART_WINDOW_TOLERANCE &&
+    offset < ART_WINDOW_MAX_OFFSET
+
+  return fits(e.uSpan, e.vSpan, e.uOffset) || fits(e.vSpan, e.uSpan, e.vOffset)
+}
+
 /**
  * Greedy suppression over candidate quads:
  *   - High IoU pair (>0.6): keep the higher-scored one (standard NMS — same
  *     physical card detected via inner+outer edge contours).
  *   - High containment (>0.8) with the smaller quad at 30-70% of the larger:
  *     prefer the SMALLER one. This catches a merged two-card blob enclosing
- *     a single-card contour and picks the individual card.
+ *     a single-card contour and picks the individual card. The exception is
+ *     when the smaller quad is the larger one's own art window (34% of its
+ *     area, so squarely inside that band) — then the LARGER quad is the card
+ *     and the smaller is a feature printed on it.
  */
 function suppressCandidates(candidates) {
   const sorted = [...candidates].sort((a, b) => b.score - a.score)
@@ -299,7 +380,18 @@ function suppressCandidates(candidates) {
 
       if (iou > 0.6) { drop = true; break }
       if (containment > 0.8 && areaRatio >= 0.3 && areaRatio <= 0.7) {
-        if (cand.aabb.area < s.aabb.area) { replaceIndex = i; break }
+        const candIsInner = cand.aabb.area < s.aabb.area
+        const inner = candIsInner ? cand.ordered : s.ordered
+        const outer = candIsInner ? s.ordered : cand.ordered
+
+        if (looksLikeInnerArtWindow(inner, outer)) {
+          // Keep the outer quad — it is the whole card.
+          if (candIsInner) { drop = true }
+          else { replaceIndex = i }
+          break
+        }
+
+        if (candIsInner) { replaceIndex = i; break }
         drop = true
         break
       }

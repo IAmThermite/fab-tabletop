@@ -14,7 +14,7 @@ primary_region = 'iad'
 
 [env]
   ECTO_IPV6 = 'true'
-  PHX_HOST = 'fabtabletop.fly.dev'
+  PHX_HOST = 'fabtabletop.net'
   PHX_SERVER = 'true'
   PORT = '4000'
   OTEL_BSP_SCHEDULE_DELAY_MILLIS = '1000'

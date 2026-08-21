@@ -173,9 +173,10 @@ defmodule TabletopWeb.GameLive.Show do
     {:noreply, push_navigate(socket, to: post_game_path(socket))}
   end
 
-  def handle_info({:game_update, side, delta, actor_user_id}, socket)
+  # The session broadcasts the snapshot alongside the delta, so this renders the
+  # exact state the delta produced without calling back into the GenServer.
+  def handle_info({:game_update, side, delta, actor_user_id, state}, socket)
       when side in [:user1, :user2] do
-    state = GameSession.get_state(socket.assigns.game.id)
     socket = assign_session_state(socket, state)
     {:noreply, maybe_play_cue(socket, delta, actor_user_id)}
   end

@@ -9,8 +9,10 @@ defmodule Tabletop.Games.GameSession do
   snapshot and resume where they left off.
 
   Clients mutate state via `apply_action/3`; the GenServer applies the
-  transform from `Tabletop.Fab.GameState` and broadcasts the resulting
-  delta on the existing `game_session:<game_id>` PubSub topic.
+  transform from `Tabletop.Fab.GameState` and broadcasts
+  `{:game_update, side, delta, actor_user_id, snapshot}` on the existing
+  `game_session:<game_id>` PubSub topic. The snapshot is carried in the message
+  so subscribers never have to call back in for it — see `broadcast_update/4`.
 
   State is ephemeral — on crash the supervisor restarts with a fresh
   default and broadcasts `{:session_reset, snapshot}` so still-connected
@@ -20,6 +22,13 @@ defmodule Tabletop.Games.GameSession do
   use GenServer, restart: :transient
 
   alias Tabletop.Fab.GameState
+
+  # Rapid changes coalesce into one write this long after the last of them.
+  @save_debounce_ms 1000
+
+  # How long `terminate/2` waits for an in-flight async save before writing the
+  # final snapshot itself.
+  @save_wait_ms 2000
 
   # --- Public API ---
 
@@ -74,7 +83,8 @@ defmodule Tabletop.Games.GameSession do
       user2_id: user2_id,
       user1: Map.merge(GameState.default_player(), Map.get(db_state, :user1, %{})),
       user2: Map.merge(GameState.default_player(), Map.get(db_state, :user2, %{})),
-      save_timer: nil
+      save_timer: nil,
+      save_task: nil
     }
 
     Phoenix.PubSub.broadcast(
@@ -107,7 +117,7 @@ defmodule Tabletop.Games.GameSession do
          {:ok, new_player, delta} <- dispatch(action, player) do
       new_state = Map.put(state, target_side, new_player)
       new_state = schedule_save(new_state)
-      broadcast_update(new_state.game_id, target_side, delta, actor_user_id)
+      broadcast_update(new_state, target_side, delta, actor_user_id)
       Tabletop.Telemetry.session_action(action, :ok)
       {:reply, :ok, new_state}
     else
@@ -122,11 +132,28 @@ defmodule Tabletop.Games.GameSession do
   end
 
   @impl true
+  def handle_info(:save_state, %{save_task: nil} = state) do
+    # The write runs in a supervised Task, not here: in production it crosses
+    # the private network to a separate Postgres app, and doing it inline blocks
+    # every `apply_action`/`get_state` for this game until it lands — head-of-line
+    # latency on exactly the path a player's click travels.
+    {:noreply, %{start_save(state) | save_timer: nil}}
+  end
+
+  # A save is still in flight. Starting a second one would race it, and since
+  # both are `on_conflict: :replace_all` full-snapshot writes the older one
+  # could land last and roll the persisted state backwards. Re-arm the timer
+  # instead so the newest snapshot is written once this one finishes.
   def handle_info(:save_state, state) do
-    # Persist the current game state to the database
-    Tabletop.Games.update_game_state(state.game_id, snapshot(state))
-    # Clear the timer reference so a new save can be scheduled
-    {:noreply, %{state | save_timer: nil}}
+    {:noreply, schedule_save(%{state | save_timer: nil})}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{save_task: ref} = state) do
+    {:noreply, %{state | save_task: nil}}
+  end
+
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
+    {:noreply, state}
   end
 
   @impl true
@@ -135,14 +162,38 @@ defmodule Tabletop.Games.GameSession do
     # connected LiveViews will be reset by the restarted session's
     # `{:session_reset, _}` broadcast — worth alerting on.
     Tabletop.Telemetry.session_stop(reason)
+    # This snapshot is the newest one, so it has to be the last write. Wait out
+    # any async save rather than racing it — see the `:save_state` clauses.
+    await_save(state)
     Tabletop.Games.update_game_state(state.game_id, snapshot(state))
+  end
+
+  defp await_save(%{save_task: nil}), do: :ok
+
+  defp await_save(%{save_task: ref}) do
+    receive do
+      {:DOWN, ^ref, :process, _pid, _reason} -> :ok
+    after
+      @save_wait_ms -> :ok
+    end
+  end
+
+  defp start_save(state) do
+    snapshot = snapshot(state)
+
+    case Task.Supervisor.start_child(Tabletop.TaskSupervisor, fn ->
+           Tabletop.Games.update_game_state(state.game_id, snapshot)
+         end) do
+      {:ok, pid} -> %{state | save_task: Process.monitor(pid)}
+      _error -> state
+    end
   end
 
   # Debounced save: only schedule if no timer is already pending
   # This prevents multiple sequential writes by coalescing rapid changes
   # into a single database write after 1 second of inactivity
   defp schedule_save(%{save_timer: nil} = state) do
-    timer = Process.send_after(self(), :save_state, 1000)
+    timer = Process.send_after(self(), :save_state, @save_debounce_ms)
     %{state | save_timer: timer}
   end
 
@@ -181,11 +232,18 @@ defmodule Tabletop.Games.GameSession do
   # (above) and apply.
   defp dispatch(action, player), do: GameState.transform(player, action)
 
-  defp broadcast_update(game_id, target_side, delta, actor_user_id) do
+  # The snapshot rides along with the delta. Subscribers used to answer a
+  # broadcast with `get_state/1`, which put two synchronous calls back into this
+  # GenServer on every action (one per connected LiveView) — and those calls
+  # queue behind whatever else the process is doing. Sending the state we
+  # already computed removes that round trip, and pairs each delta with the
+  # exact state it produced instead of whatever is current by the time the
+  # subscriber gets around to asking.
+  defp broadcast_update(state, target_side, delta, actor_user_id) do
     Phoenix.PubSub.broadcast(
       Tabletop.PubSub,
-      "game_session:#{game_id}",
-      {:game_update, target_side, delta, actor_user_id}
+      "game_session:#{state.game_id}",
+      {:game_update, target_side, delta, actor_user_id, snapshot(state)}
     )
   end
 end

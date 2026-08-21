@@ -31,6 +31,10 @@ defmodule Tabletop.Application do
         Tabletop.Repo,
         {DNSCluster, query: Application.get_env(:tabletop, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Tabletop.PubSub},
+        # Fire-and-forget work that must not block the process that starts it —
+        # currently `GameSession`'s debounced state save, which would otherwise
+        # hold up every action for that game while the write is in flight.
+        {Task.Supervisor, name: Tabletop.TaskSupervisor},
         %{id: :game_channels_pg, start: {:pg, :start_link, [:game_channels]}},
         {Registry, keys: :unique, name: Tabletop.Games.LeaveTimerRegistry},
         {Registry, keys: :duplicate, name: Tabletop.Games.GameConnectionRegistry},

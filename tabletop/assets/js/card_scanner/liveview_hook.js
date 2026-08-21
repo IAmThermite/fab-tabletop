@@ -30,9 +30,22 @@ const MAX_MATCH_RETRIES = 2
 let _worker = null
 let _requestCounter = 0
 
+// Undigested fallback for dev/test, where no cache manifest is loaded and the
+// meta tag renders this same path anyway.
+const WORKER_SRC_FALLBACK = "/assets/js/card_scanner/scanner_worker.js"
+
+// The digested worker URL, rendered into the root layout. This module is bundled
+// into a colocated hook, so a `~p` sigil here would never be evaluated — and the
+// undigested path is a stable URL the CDN caches for hours, which lets a deploy
+// pair a fresh `app.js` with the previous worker.
+function workerSrc() {
+  const meta = document.querySelector('meta[name="scanner-worker-src"]')
+  return meta?.getAttribute("content") || WORKER_SRC_FALLBACK
+}
+
 function getWorker() {
   if (_worker) return _worker
-  _worker = new Worker("/assets/js/card_scanner/scanner_worker.js")
+  _worker = new Worker(workerSrc())
   _worker.onmessage = (event) => {
     if (event.data.type === "ready") {
       console.log(`${LOG} OpenCV worker ready`)

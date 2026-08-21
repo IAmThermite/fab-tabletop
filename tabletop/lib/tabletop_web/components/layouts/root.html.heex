@@ -17,6 +17,15 @@
       name="sentry-environment"
       content={to_string(Application.get_env(:sentry, :environment_name))}
     />
+    <%!--
+      The card scanner's Web Worker is started from a colocated hook, which is
+      extracted verbatim at compile time — a `~p` sigil inside it would never be
+      evaluated. So the digested URL is rendered here and read from the DOM.
+      Hardcoding the undigested path in JS instead leaves the worker on a stable
+      URL that the CDN caches for hours, so a deploy can pair a fresh `app.js`
+      with a stale worker and silently break scanning until the edge expires it.
+    --%>
+    <meta name="scanner-worker-src" content={~p"/assets/js/card_scanner/scanner_worker.js"} />
     <link rel="icon" type="image/svg+xml" href={~p"/images/logo-mark.svg"} />
     <.live_title default="Tabletop" suffix=" · FaB Tabletop">
       {assigns[:page_title]}

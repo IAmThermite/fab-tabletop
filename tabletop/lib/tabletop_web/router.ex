@@ -126,22 +126,22 @@ defmodule TabletopWeb.Router do
       ] do
       live("/users/settings", UserLive.Settings, :edit)
     end
-
-    post("/users/update-password", UserSessionController, :update_password)
   end
-
-  # require user to be recently athenticated (sudo mode) to access these routes
   scope "/", TabletopWeb do
-    pipe_through([:browser, :require_authenticated_user])
+    pipe_through([:browser, :require_authenticated_user, :require_sudo_mode])
 
     live_session :require_authenticated_user_and_sudo_mode,
       on_mount: [
         Sentry.LiveViewHook,
         {TabletopWeb.UserAuth, :require_authenticated},
+        {TabletopWeb.UserAuth, :require_sudo_mode},
+        {TabletopWeb.UserNotifications, :default},
         {TabletopWeb.SystemAnnouncements, :default}
       ] do
-      live("/users/settings/confirm-password", UserLive.Settings, :confirm_password)
+      live("/users/settings/password", UserLive.Settings, :password)
     end
+
+    post("/users/update-password", UserSessionController, :update_password)
   end
 
   scope "/", TabletopWeb do

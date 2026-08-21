@@ -13,134 +13,166 @@ defmodule TabletopWeb.UserLive.Settings do
       current_scope={@current_scope}
       system_announcement={@system_announcement}
     >
-      <div class="text-center">
-        <.link navigate={~p"/camera-setup"} class="btn btn-primary">
-          Camera Setup
-        </.link>
-      </div>
+      <%!-- The password form lives on its own sudo-gated route (see the router);
+            everything else on this page is reachable while merely logged in. --%>
+      <div :if={@live_action == :password} class="mx-auto max-w-sm">
+        <div class="text-center">
+          <.header>
+            Change password
+            <:subtitle>Pick a new password for your account.</:subtitle>
+          </.header>
+        </div>
 
-      <hr />
+        <.form
+          for={@password_form}
+          id="password_form"
+          action={~p"/users/update-password"}
+          method="post"
+          phx-change="validate_password"
+          phx-submit="update_password"
+          phx-trigger-action={@trigger_submit}
+        >
+          <input
+            name={@password_form[:email].name}
+            type="hidden"
+            id="hidden_user_email"
+            autocomplete="username"
+            value={@current_email}
+          />
+          <.input
+            field={@password_form[:password]}
+            type="password"
+            label="New password"
+            autocomplete="new-password"
+            required
+            minlength={Accounts.User.min_password_length()}
+          />
+          <.input
+            field={@password_form[:password_confirmation]}
+            type="password"
+            label="Confirm new password"
+            autocomplete="new-password"
+          />
+          <.button variant="primary" phx-disable-with="Saving...">
+            Save Password
+          </.button>
+        </.form>
 
-      <div class="text-center">
-        <.header>
-          Account Settings
-        </.header>
-      </div>
-
-      <.form
-        for={@password_form}
-        id="password_form"
-        action={~p"/users/update-password"}
-        method="post"
-        phx-change="validate_password"
-        phx-submit="update_password"
-        phx-trigger-action={@trigger_submit}
-      >
-        <input
-          name={@password_form[:email].name}
-          type="hidden"
-          id="hidden_user_email"
-          autocomplete="username"
-          value={@current_email}
-        />
-        <.input
-          field={@password_form[:password]}
-          type="password"
-          label="New password"
-          autocomplete="new-password"
-          required
-          minlength={Accounts.User.min_password_length()}
-        />
-        <.input
-          field={@password_form[:password_confirmation]}
-          type="password"
-          label="Confirm new password"
-          autocomplete="new-password"
-        />
-        <.button variant="primary" phx-disable-with="Saving...">
-          Save Password
-        </.button>
-      </.form>
-
-      <hr class="my-8" />
-
-      <div class="text-center">
-        <.header>Preferences</.header>
-      </div>
-
-      <.form
-        for={@language_form}
-        id="language_form"
-        phx-change="validate_language"
-        phx-submit="update_language"
-      >
-        <.input
-          field={@language_form[:language]}
-          type="select"
-          label="Preferred language"
-          prompt="No preference"
-          options={Tabletop.Languages.options()}
-        />
-        <p class="text-sm text-zinc-500 mt-1">
-          When set, new games you create default to this language.
+        <p class="text-center text-sm mt-4">
+          <.link navigate={~p"/users/settings"} class="font-semibold text-brand hover:underline">
+            Back to settings
+          </.link>
         </p>
-        <.button variant="primary" phx-disable-with="Saving...">
-          Save Preferences
-        </.button>
-      </.form>
+      </div>
 
-      <%!-- Client-managed (localStorage) toggle — phx-update="ignore" so a
+      <div :if={@live_action == :edit}>
+        <div class="text-center">
+          <.link navigate={~p"/camera-setup"} class="btn btn-primary">
+            Camera Setup
+          </.link>
+        </div>
+
+        <hr />
+
+        <div class="text-center">
+          <.header>
+            Account Settings
+          </.header>
+        </div>
+
+        <div class="text-center mt-4">
+          <%!-- A plain `href`, not `navigate`: the full page load is what puts
+                the request through the `:require_sudo_mode` plug, which stores
+                `user_return_to` before bouncing to the login page, so
+                re-authenticating comes back here. --%>
+          <.link href={~p"/users/settings/password"} class="btn btn-primary btn-soft">
+            Change password
+          </.link>
+          <p class="text-sm text-zinc-500 mt-2">
+            You may be asked to log in again first.
+          </p>
+        </div>
+
+        <hr class="my-8" />
+
+        <div class="text-center">
+          <.header>Preferences</.header>
+        </div>
+
+        <.form
+          for={@language_form}
+          id="language_form"
+          phx-change="validate_language"
+          phx-submit="update_language"
+        >
+          <.input
+            field={@language_form[:language]}
+            type="select"
+            label="Preferred language"
+            prompt="No preference"
+            options={Tabletop.Languages.options()}
+          />
+          <p class="text-sm text-zinc-500 mt-1">
+            When set, new games you create default to this language.
+          </p>
+          <.button variant="primary" phx-disable-with="Saving...">
+            Save Preferences
+          </.button>
+        </.form>
+
+        <%!-- Client-managed (localStorage) toggle — phx-update="ignore" so a
             form re-render on this page can't reset the checkbox. Opponent
             volume isn't here: it's game-screen-only (set in the game's bar /
             settings dialog). --%>
-      <div
-        id="sound-settings"
-        phx-hook=".SoundSettings"
-        phx-update="ignore"
-        class="mt-8 space-y-3"
-      >
-        <label class="flex items-center justify-between gap-3 cursor-pointer">
-          <span class="label-text">Effect volume</span>
-          <input
-            id="settings-effect-volume"
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            class="range range-sm flex-1 max-w-xs"
-          />
-        </label>
-        <p class="text-sm text-zinc-500">
-          Volume of chimes for opponent connect/disconnect, game end, and mute toggles. Set to
-          zero to silence them. Saved on this device.
-        </p>
+        <div
+          id="sound-settings"
+          phx-hook=".SoundSettings"
+          phx-update="ignore"
+          class="mt-8 space-y-3"
+        >
+          <label class="flex items-center justify-between gap-3 cursor-pointer">
+            <span class="label-text">Effect volume</span>
+            <input
+              id="settings-effect-volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              class="range range-sm flex-1 max-w-xs"
+            />
+          </label>
+          <p class="text-sm text-zinc-500">
+            Volume of chimes for opponent connect/disconnect, game end, and mute toggles. Set to
+            zero to silence them. Saved on this device.
+          </p>
+        </div>
+
+        <script :type={ColocatedHook} name=".SoundSettings">
+          import { sounds } from "@/js/sounds.js"
+
+          export default {
+            mounted() {
+              const volume = this.el.querySelector("#settings-effect-volume")
+
+              // Keep the slider in sync with the engine (and other surfaces).
+              const sync = ({ volume: vol }) => {
+                volume.value = vol
+              }
+              sync({ volume: sounds.getVolume() })
+              this._unsub = sounds.onChange(sync)
+
+              volume.addEventListener("input", () => {
+                sounds.setVolume(parseFloat(volume.value))
+                // Blip at the new volume so the player hears the level.
+                sounds.play("volume_blip", { dedupeKey: "effect_vol_blip" })
+              })
+            },
+            destroyed() {
+              if (this._unsub) this._unsub()
+            },
+          }
+        </script>
       </div>
-
-      <script :type={ColocatedHook} name=".SoundSettings">
-        import { sounds } from "@/js/sounds.js"
-
-        export default {
-          mounted() {
-            const volume = this.el.querySelector("#settings-effect-volume")
-
-            // Keep the slider in sync with the engine (and other surfaces).
-            const sync = ({ volume: vol }) => {
-              volume.value = vol
-            }
-            sync({ volume: sounds.getVolume() })
-            this._unsub = sounds.onChange(sync)
-
-            volume.addEventListener("input", () => {
-              sounds.setVolume(parseFloat(volume.value))
-              // Blip at the new volume so the player hears the level.
-              sounds.play("volume_blip", { dedupeKey: "effect_vol_blip" })
-            })
-          },
-          destroyed() {
-            if (this._unsub) this._unsub()
-          },
-        }
-      </script>
     </Layouts.app>
     """
   end
@@ -176,14 +208,17 @@ defmodule TabletopWeb.UserLive.Settings do
   def handle_event("update_password", params, socket) do
     %{"user" => user_params} = params
     user = socket.assigns.current_scope.user
-    true = Accounts.sudo_mode?(user)
 
-    case Accounts.change_user_password(user, user_params) do
-      %{valid?: true} = changeset ->
-        {:noreply, assign(socket, trigger_submit: true, password_form: to_form(changeset))}
+    if Accounts.sudo_mode?(user) do
+      case Accounts.change_user_password(user, user_params) do
+        %{valid?: true} = changeset ->
+          {:noreply, assign(socket, trigger_submit: true, password_form: to_form(changeset))}
 
-      changeset ->
-        {:noreply, assign(socket, password_form: to_form(changeset, action: :insert))}
+        changeset ->
+          {:noreply, assign(socket, password_form: to_form(changeset, action: :insert))}
+      end
+    else
+      {:noreply, redirect(socket, to: ~p"/users/settings/password")}
     end
   end
 

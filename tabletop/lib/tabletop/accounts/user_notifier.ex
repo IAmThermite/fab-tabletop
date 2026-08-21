@@ -1,6 +1,8 @@
 defmodule Tabletop.Accounts.UserNotifier do
   import Swoosh.Email
 
+  require Logger
+
   alias Tabletop.Mailer
 
   # Delivers the email using the application mailer.
@@ -15,8 +17,17 @@ defmodule Tabletop.Accounts.UserNotifier do
       |> subject(subject)
       |> text_body(body)
 
-    with {:ok, _metadata} <- Mailer.deliver(email) do
-      {:ok, email}
+    case Mailer.deliver(email) do
+      {:ok, _metadata} ->
+        {:ok, email}
+
+      {:error, reason} ->
+        Logger.error(
+          "Email delivery failed: subject=#{inspect(subject)} from=#{inspect(from)} " <>
+            "reason=#{inspect(reason)}"
+        )
+
+        {:error, reason}
     end
   end
 

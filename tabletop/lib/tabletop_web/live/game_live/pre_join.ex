@@ -24,7 +24,6 @@ defmodule TabletopWeb.GameLive.PreJoin do
         data-game-id={@game.id}
         data-user-token={@user_token}
         data-ice-servers={Jason.encode!(@ice_servers)}
-        data-camera-relay-token={@camera_relay_token}
         data-relay-user-id={@relay_user_id}
         data-skip-allowed={to_string(@mode == :creator)}
         class="flex flex-col h-full"
@@ -566,7 +565,6 @@ defmodule TabletopWeb.GameLive.PreJoin do
     |> assign(:game, game)
     |> assign(:mode, :creator)
     |> assign(:user_token, user_token)
-    |> assign(:camera_relay_token, camera_relay_token)
     |> assign(:relay_user_id, scope.user.id)
     |> assign(:ice_servers, Tabletop.Turn.ice_servers(scope.user.id))
     |> assign(:qr_svg, CameraRelayToken.qr_svg(socket, scope.user.id))
@@ -595,7 +593,6 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:game, game)
         |> assign(:mode, :joiner)
         |> assign(:user_token, user_token)
-        |> assign(:camera_relay_token, camera_relay_token)
         |> assign(:relay_user_id, scope.user.id)
         |> assign(:ice_servers, Tabletop.Turn.ice_servers(scope.user.id))
         |> assign(:qr_svg, CameraRelayToken.qr_svg(socket, scope.user.id))
@@ -618,13 +615,11 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:game, game)
         |> assign(:mode, :joiner)
         |> assign(:user_token, "")
-        |> assign(:camera_relay_token, "")
         |> assign(:relay_user_id, "")
         # Still rendered once before the push_navigate lands, so the template's
         # ice-server attribute needs a value. No credential is minted for a
         # page the user is being bounced off.
         |> assign(:ice_servers, [])
-        |> assign(:relay_user_id, "")
         |> assign(:qr_svg, "")
         |> assign(:hero_options, [])
         |> assign(:selected_hero, nil)

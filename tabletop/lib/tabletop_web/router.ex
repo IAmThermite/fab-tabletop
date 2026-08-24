@@ -127,6 +127,7 @@ defmodule TabletopWeb.Router do
       live("/users/settings", UserLive.Settings, :edit)
     end
   end
+
   scope "/", TabletopWeb do
     pipe_through([:browser, :require_authenticated_user, :require_sudo_mode])
 

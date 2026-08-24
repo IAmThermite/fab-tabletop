@@ -23,7 +23,6 @@ defmodule TabletopWeb.CameraSetupLive do
         data-game-id={@game_id}
         data-user-token={@user_token}
         data-ice-servers={Jason.encode!(@ice_servers)}
-        data-camera-relay-token={@camera_relay_token}
         data-relay-user-id={@relay_user_id}
         class="flex flex-col h-full"
       >

@@ -41,6 +41,9 @@ defmodule Tabletop.Games.LeaveTimer do
     # one's `terminate/2` runs. If the user already has another live
     # connection, there is nothing to schedule.
     if user_connected?(game_id, user_id) do
+      # The reconnecting LiveView already mounted — this disconnect was a
+      # refresh, not a departure.
+      Tabletop.Telemetry.leave_timer_scheduled(:already_reconnected)
       :ok
     else
       key = {game_id, user_id}
@@ -49,9 +52,17 @@ defmodule Tabletop.Games.LeaveTimer do
              Tabletop.Games.LeaveTimerSupervisor,
              {__MODULE__, {key, scope}}
            ) do
-        {:ok, _pid} -> :ok
-        {:error, {:already_started, _pid}} -> :ok
-        error -> error
+        {:ok, _pid} ->
+          Tabletop.Telemetry.leave_timer_scheduled(:armed)
+          :ok
+
+        {:error, {:already_started, _pid}} ->
+          Tabletop.Telemetry.leave_timer_scheduled(:already_armed)
+          :ok
+
+        error ->
+          Tabletop.Telemetry.leave_timer_scheduled(:error)
+          error
       end
     end
   end
@@ -60,8 +71,12 @@ defmodule Tabletop.Games.LeaveTimer do
     key = {game_id, user_id}
 
     case Registry.lookup(Tabletop.Games.LeaveTimerRegistry, key) do
-      [{pid, _}] -> GenServer.stop(pid, :normal)
-      [] -> :ok
+      [{pid, _}] ->
+        Tabletop.Telemetry.leave_timer_resolved(:cancelled)
+        GenServer.stop(pid, :normal)
+
+      [] ->
+        :ok
     end
   end
 
@@ -92,8 +107,10 @@ defmodule Tabletop.Games.LeaveTimer do
     # connection by the time the timer fires, they reconnected (e.g. a page
     # refresh) and the game should not be ended.
     if user_connected?(state.game_id, state.user_id) do
+      Tabletop.Telemetry.leave_timer_resolved(:reconnected)
       {:stop, :normal, state}
     else
+      Tabletop.Telemetry.leave_timer_resolved(:game_terminated)
       game = Games.get_game!(state.scope, state.game_id)
       Games.terminate_game(state.scope, game)
       {:stop, :normal, state}

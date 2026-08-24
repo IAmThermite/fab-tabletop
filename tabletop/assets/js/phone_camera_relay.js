@@ -5,6 +5,7 @@
 // one-way WebRTC connection to send video to the desktop.
 
 import { Socket } from "phoenix"
+import { hintVideoDetail, preferVideoCodecs, tuneVideoSender } from "./webrtc_tuning"
 
 // Fallback used only if the server doesn't supply iceServers (STUN-only).
 const DEFAULT_ICE_SERVERS = [
@@ -24,10 +25,18 @@ export default class PhoneCameraRelay {
     this.peerConnection = null
     this.localStream = null
     this._status = null
+    // Set when a newer phone socket takes this user's relay seat (see
+    // TabletopWeb.ChannelSeat) — the QR scanned twice, or the page reopened.
+    // Terminal: this page does not signal again.
+    this._superseded = false
   }
 
   async start(stream) {
     this.localStream = stream
+    // This hop is the *first* of two lossy generations — the desktop decodes
+    // this stream and re-encodes it for the opponent — so detail lost here is
+    // gone for good. Tune it exactly like the game link.
+    hintVideoDetail(stream)
     this._setStatus("connecting")
 
     this.socket = new Socket("/socket", {
@@ -39,14 +48,22 @@ export default class PhoneCameraRelay {
     // only used to authenticate the socket connection.
     this.channel = this.socket.channel(`camera_relay:${this.relayUserId}`, {})
 
-    this.channel.on("peer_joined", () => this._createOffer())
+    // The phone is the end the server nominates to offer — its offer is what
+    // carries the camera tracks — but the decision lives server-side so a
+    // desktop and phone rejoining in the same instant still produce exactly
+    // one offer. See `TabletopWeb.CameraRelayChannel.request_offer/1`.
+    this.channel.on("make_offer", () => this._createOffer())
+    this.channel.on("peer_joined", () => {
+      console.log("[PhoneRelay] Desktop joined the relay")
+    })
     this.channel.on("peer_exists", () => {
-      console.log("[PhoneRelay] Desktop already connected, waiting for offer")
+      console.log("[PhoneRelay] Desktop already on the relay")
     })
     this.channel.on("offer", (msg) => this._handleOffer(msg))
     this.channel.on("answer", (msg) => this._handleAnswer(msg))
     this.channel.on("ice_candidate", (msg) => this._handleIceCandidate(msg))
     this.channel.on("peer_left", () => this._handlePeerLeft())
+    this.channel.on("superseded", () => this._handleSuperseded())
 
     this.channel
       .join()
@@ -65,6 +82,7 @@ export default class PhoneCameraRelay {
   async replaceStream(newStream) {
     const oldStream = this.localStream
     this.localStream = newStream
+    hintVideoDetail(newStream)
 
     if (this.peerConnection) {
       const newVideoTrack = newStream.getVideoTracks()[0]
@@ -73,6 +91,8 @@ export default class PhoneCameraRelay {
         .find((s) => s.track?.kind === "video")
       if (sender && newVideoTrack) {
         await sender.replaceTrack(newVideoTrack)
+        // A fresh track can arrive with default encodings.
+        await tuneVideoSender(this.peerConnection)
       }
 
       const newAudioTrack = newStream.getAudioTracks()[0]
@@ -134,7 +154,7 @@ export default class PhoneCameraRelay {
 
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        this.channel.push("ice_candidate", { candidate: event.candidate })
+        this._push("ice_candidate", { candidate: event.candidate })
       }
     }
 
@@ -150,14 +170,25 @@ export default class PhoneCameraRelay {
     }
   }
 
+  // Signalling is emitted from async paths that can resume after the channel is
+  // gone, so this never throws on a torn-down channel.
+  _push(event, payload) {
+    if (!this.channel) return
+    this.channel.push(event, payload)
+  }
+
   async _createOffer() {
+    if (this._superseded) return
+
     try {
       console.log("[PhoneRelay] Creating offer")
       this._createPeerConnection()
+      preferVideoCodecs(this.peerConnection)
 
       const offer = await this.peerConnection.createOffer()
       await this.peerConnection.setLocalDescription(offer)
-      this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+      this._push("offer", { sdp: this.peerConnection.localDescription })
+      await tuneVideoSender(this.peerConnection)
     } catch (err) {
       console.error("[PhoneRelay] Error creating offer:", err)
       this._setStatus("error")
@@ -165,6 +196,8 @@ export default class PhoneCameraRelay {
   }
 
   async _handleOffer({ sdp }) {
+    if (this._superseded) return
+
     try {
       console.log("[PhoneRelay] Received offer, creating answer")
       this._createPeerConnection()
@@ -172,9 +205,12 @@ export default class PhoneCameraRelay {
       await this.peerConnection.setRemoteDescription(
         new RTCSessionDescription(sdp)
       )
+      preferVideoCodecs(this.peerConnection)
+
       const answer = await this.peerConnection.createAnswer()
       await this.peerConnection.setLocalDescription(answer)
-      this.channel.push("answer", { sdp: this.peerConnection.localDescription })
+      this._push("answer", { sdp: this.peerConnection.localDescription })
+      await tuneVideoSender(this.peerConnection)
     } catch (err) {
       console.error("[PhoneRelay] Error handling offer:", err)
       this._setStatus("error")
@@ -188,6 +224,7 @@ export default class PhoneCameraRelay {
         await this.peerConnection.setRemoteDescription(
           new RTCSessionDescription(sdp)
         )
+        await tuneVideoSender(this.peerConnection)
       }
     } catch (err) {
       console.error("[PhoneRelay] Error handling answer:", err)
@@ -203,6 +240,18 @@ export default class PhoneCameraRelay {
         console.error("[PhoneRelay] Error adding ICE candidate:", err)
       }
     }
+  }
+
+  // A newer phone socket took this user's relay seat — the QR scanned a second
+  // time, usually. Only one phone may sit on the relay topic (see
+  // TabletopWeb.ChannelSeat), so this page stops relaying and says so rather
+  // than fighting the newer one over the desktop's connection.
+  _handleSuperseded() {
+    console.warn("[PhoneRelay] Superseded — this camera is relaying from a newer tab")
+    this._superseded = true
+
+    this.disconnect()
+    this._setStatus("superseded")
   }
 
   _handlePeerLeft() {

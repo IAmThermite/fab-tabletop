@@ -24,6 +24,9 @@ export default class CameraRelayReceiver {
     this.channel = null
     this.peerConnection = null
     this._status = null
+    // Set when a newer desktop socket takes this user's relay seat (see
+    // TabletopWeb.ChannelSeat). Terminal — this receiver does not signal again.
+    this._superseded = false
   }
 
   start() {
@@ -38,14 +41,22 @@ export default class CameraRelayReceiver {
     // connection above is authenticated by the user-socket token.
     this.channel = this.socket.channel(`camera_relay:${this.relayUserId}`, {})
 
-    this.channel.on("peer_joined", () => this._createOffer())
+    // The server nominates the phone to offer, so in practice this end
+    // answers — but the binding stays symmetric, because which end offers is
+    // the server's decision to change, not a rule baked in here. See
+    // `TabletopWeb.CameraRelayChannel.request_offer/1`.
+    this.channel.on("make_offer", () => this._createOffer())
+    this.channel.on("peer_joined", () => {
+      console.log("[RelayReceiver] Phone joined the relay")
+    })
     this.channel.on("peer_exists", () => {
-      console.log("[RelayReceiver] Phone already connected, waiting for offer")
+      console.log("[RelayReceiver] Phone already on the relay")
     })
     this.channel.on("offer", (msg) => this._handleOffer(msg))
     this.channel.on("answer", (msg) => this._handleAnswer(msg))
     this.channel.on("ice_candidate", (msg) => this._handleIceCandidate(msg))
     this.channel.on("peer_left", () => this._handlePeerLeft())
+    this.channel.on("superseded", () => this._handleSuperseded())
 
     this.channel
       .join()
@@ -91,7 +102,7 @@ export default class CameraRelayReceiver {
 
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        this.channel.push("ice_candidate", { candidate: event.candidate })
+        this._push("ice_candidate", { candidate: event.candidate })
       }
     }
 
@@ -115,9 +126,18 @@ export default class CameraRelayReceiver {
     }
   }
 
+  // Signalling is emitted from async paths that can resume after the channel is
+  // gone, so this never throws on a torn-down channel.
+  _push(event, payload) {
+    if (!this.channel) return
+    this.channel.push(event, payload)
+  }
+
   async _createOffer() {
+    if (this._superseded) return
+
     try {
-      console.log("[RelayReceiver] Creating offer (phone joined)")
+      console.log("[RelayReceiver] Creating offer")
       this._createPeerConnection()
 
       // Add a transceiver to receive video (we don't send anything)
@@ -126,7 +146,7 @@ export default class CameraRelayReceiver {
 
       const offer = await this.peerConnection.createOffer()
       await this.peerConnection.setLocalDescription(offer)
-      this.channel.push("offer", { sdp: this.peerConnection.localDescription })
+      this._push("offer", { sdp: this.peerConnection.localDescription })
     } catch (err) {
       console.error("[RelayReceiver] Error creating offer:", err)
       this._setStatus("error")
@@ -134,6 +154,8 @@ export default class CameraRelayReceiver {
   }
 
   async _handleOffer({ sdp }) {
+    if (this._superseded) return
+
     try {
       console.log("[RelayReceiver] Received offer, creating answer")
       this._createPeerConnection()
@@ -143,7 +165,7 @@ export default class CameraRelayReceiver {
       )
       const answer = await this.peerConnection.createAnswer()
       await this.peerConnection.setLocalDescription(answer)
-      this.channel.push("answer", { sdp: this.peerConnection.localDescription })
+      this._push("answer", { sdp: this.peerConnection.localDescription })
     } catch (err) {
       console.error("[RelayReceiver] Error handling offer:", err)
       this._setStatus("error")
@@ -174,6 +196,20 @@ export default class CameraRelayReceiver {
         console.error("[RelayReceiver] Error adding ICE candidate:", err)
       }
     }
+  }
+
+  // A newer desktop socket took this user's relay seat — the same page open in
+  // a second tab, or a page that supersedes this one (camera setup, pre-join,
+  // the game). Only one desktop may sit on the relay topic (see
+  // TabletopWeb.ChannelSeat), so this one stands down and reports the phone as
+  // disconnected, which is what it now is *for this tab*.
+  _handleSuperseded() {
+    console.warn("[RelayReceiver] Superseded — the phone is relaying to a newer tab")
+    this._superseded = true
+
+    this.disconnect()
+    this._setStatus("superseded")
+    this.onDisconnect()
   }
 
   _handlePeerLeft() {

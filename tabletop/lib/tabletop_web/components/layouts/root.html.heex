@@ -4,6 +4,28 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
+    <%!--
+      Browser error reporting, into its own Sentry project (SENTRY_FRONTEND_DSN,
+      not the server's SENTRY_DSN). A DSN is a public identifier, not a secret —
+      the browser SDK is designed to ship it in client code.
+
+      Rendered here rather than baked in at build time so one image works across
+      environments; unset leaves the attribute empty and the client SDK inert.
+    --%>
+    <meta name="sentry-dsn" content={sentry_browser_dsn() || ""} />
+    <meta
+      name="sentry-environment"
+      content={to_string(Application.get_env(:sentry, :environment_name))}
+    />
+    <%!--
+      The card scanner's Web Worker is started from a colocated hook, which is
+      extracted verbatim at compile time — a `~p` sigil inside it would never be
+      evaluated. So the digested URL is rendered here and read from the DOM.
+      Hardcoding the undigested path in JS instead leaves the worker on a stable
+      URL that the CDN caches for hours, so a deploy can pair a fresh `app.js`
+      with a stale worker and silently break scanning until the edge expires it.
+    --%>
+    <meta name="scanner-worker-src" content={~p"/assets/js/card_scanner/scanner_worker.js"} />
     <link rel="icon" type="image/svg+xml" href={~p"/images/logo-mark.svg"} />
     <.live_title default="Tabletop" suffix=" · FaB Tabletop">
       {assigns[:page_title]}
@@ -32,7 +54,22 @@
           setTheme(localStorage.getItem("phx:theme") || "system");
         }
         window.addEventListener("storage", (e) => e.key === "phx:theme" && setTheme(e.newValue || "system"));
-        
+
+        // Hide a system announcement this browser already dismissed, before the
+        // first paint. The server can't know what was dismissed (it's a
+        // localStorage note), so it always renders the banner; the LiveView hook
+        // that hides it can only run once the socket connects, which on a full
+        // page load is long after the dead render has painted — the flash the
+        // visitor sees. Same reason the theme is applied here: <head> is the only
+        // place that beats the paint. The key is `<uuid>-<unix>`, and the pattern
+        // test keeps a tampered value from breaking out of the selector.
+        const dismissedAnnouncement = localStorage.getItem("tabletop:dismissed-announcement");
+        if (dismissedAnnouncement && /^[a-z0-9-]+$/.test(dismissedAnnouncement)) {
+          const style = document.createElement("style");
+          style.textContent = '[data-announcement-key="' + dismissedAnnouncement + '"]{display:none}';
+          document.head.appendChild(style);
+        }
+
         // Native delegated click handler rather than a LiveView JS.dispatch command:
         // the theme toggle also renders on dead views (e.g. /about) where LiveSocket
         // never connects, so a phx-click would be inert there. closest() handles

@@ -49,7 +49,37 @@ defmodule Tabletop.Games.GameSessionTest do
     test "broadcasts game_update with target side and actor id", %{game_id: game_id} do
       :ok = GameSession.apply_action(game_id, 1001, {:toggle_damage, :physical})
 
-      assert_receive {:game_update, :user1, {:damage_toggled, :physical, true}, 1001}
+      assert_receive {:game_update, :user1, {:damage_toggled, :physical, true}, 1001, %{}}
+    end
+
+    test "the broadcast carries the snapshot the delta produced", %{game_id: game_id} do
+      :ok = GameSession.apply_action(game_id, 1001, {:change_life, -5})
+
+      # Subscribers render straight from this snapshot instead of calling back
+      # in for it, so it has to be the state *after* the delta — not merely
+      # whatever is current by the time the message is handled.
+      assert_receive {:game_update, :user1, {:life_changed, 35}, 1001, snapshot}
+      assert %{user1: %{life: 35}, user2: %{life: 40}} = snapshot
+
+      :ok = GameSession.apply_action(game_id, 1002, {:change_life, -3})
+      assert_receive {:game_update, :user2, {:life_changed, 37}, 1002, snapshot}
+      assert %{user1: %{life: 35}, user2: %{life: 37}} = snapshot
+    end
+
+    test "stays responsive across save cycles and stray monitor messages",
+         %{game_id: game_id} do
+      pid = GenServer.whereis({:via, Registry, {Tabletop.Games.GameSessionRegistry, game_id}})
+
+      # The save now runs in a Task, so the session sees :DOWN messages. A
+      # :DOWN it doesn't recognise (or a second :save_state while one is still
+      # in flight) must not take the session down with it.
+      send(pid, :save_state)
+      send(pid, :save_state)
+      send(pid, {:DOWN, make_ref(), :process, self(), :normal})
+
+      :ok = GameSession.apply_action(game_id, 1001, {:change_life, -1})
+      assert %{user1: %{life: 39}} = GameSession.get_state(game_id)
+      assert Process.alive?(pid)
     end
 
     test "move_tile routes to the named target side regardless of actor", %{game_id: game_id} do
@@ -59,7 +89,45 @@ defmodule Tabletop.Games.GameSessionTest do
       assert %{user2: %{tile_positions: %{"arcane" => %{x: 25.0, y: 30.0}}}} =
                GameSession.get_state(game_id)
 
-      assert_receive {:game_update, :user2, {:tile_moved, "arcane", 25.0, 30.0}, 1001}
+      assert_receive {:game_update, :user2, {:tile_moved, "arcane", 25.0, 30.0}, 1001, %{}}
+    end
+
+    test "proxy tokens route to the named target side regardless of actor",
+         %{game_id: game_id} do
+      # user1 marks user2 …
+      :ok = GameSession.apply_action(game_id, 1001, {:add_proxy_token, 1002, "Mark"})
+      # … and gives themselves a Runechant.
+      :ok = GameSession.apply_action(game_id, 1001, {:add_proxy_token, 1001, "Runechant"})
+
+      assert %{
+               user1: %{proxy_tokens: %{"Runechant" => 1}},
+               user2: %{proxy_tokens: %{"Mark" => 1}}
+             } = GameSession.get_state(game_id)
+
+      assert_receive {:game_update, :user2, {:proxy_token_changed, "Mark", 1}, 1001, %{}}
+      assert_receive {:game_update, :user1, {:proxy_token_changed, "Runechant", 1}, 1001, %{}}
+    end
+
+    test "either player can clear a proxy token from either side", %{game_id: game_id} do
+      :ok = GameSession.apply_action(game_id, 1001, {:add_proxy_token, 1002, "Mark"})
+      :ok = GameSession.apply_action(game_id, 1001, {:add_proxy_token, 1001, "Frostbite"})
+
+      # The recipient dismisses the Mark they were given …
+      :ok = GameSession.apply_action(game_id, 1002, {:toggle_proxy_token, 1002, "Mark"})
+      # … and clears one off the other player's board too.
+      :ok = GameSession.apply_action(game_id, 1002, {:remove_proxy_token, 1001, "Frostbite"})
+
+      assert %{user1: %{proxy_tokens: %{}}, user2: %{proxy_tokens: %{}}} =
+               GameSession.get_state(game_id)
+    end
+
+    test "proxy tokens survive a board reset", %{game_id: game_id} do
+      :ok = GameSession.apply_action(game_id, 1001, {:add_proxy_token, 1001, "Frostbite"})
+      :ok = GameSession.apply_action(game_id, 1001, {:toggle_damage, :physical})
+      :ok = GameSession.apply_action(game_id, 1001, {:reset_board})
+
+      assert %{user1: %{proxy_tokens: %{"Frostbite" => 1}, physical: %{active: false}}} =
+               GameSession.get_state(game_id)
     end
 
     test "returns error for unknown user", %{game_id: game_id} do
@@ -90,8 +158,8 @@ defmodule Tabletop.Games.GameSessionTest do
                user2: %{mic: true, camera: false}
              } = GameSession.get_state(game_id)
 
-      assert_receive {:game_update, :user1, {:media_changed, :mic, false}, 1001}
-      assert_receive {:game_update, :user2, {:media_changed, :camera, false}, 1002}
+      assert_receive {:game_update, :user1, {:media_changed, :mic, false}, 1001, %{}}
+      assert_receive {:game_update, :user2, {:media_changed, :camera, false}, 1002, %{}}
     end
 
     test "set_media rejects unknown kinds", %{game_id: game_id} do

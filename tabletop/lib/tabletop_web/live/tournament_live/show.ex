@@ -145,7 +145,12 @@ defmodule TabletopWeb.TournamentLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-4xl">
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+      max_width="max-w-4xl"
+    >
       <.header>
         {@tournament.name}
         <:subtitle>
@@ -260,7 +265,7 @@ defmodule TabletopWeb.TournamentLive.Show do
 
   defp tabs(assigns) do
     ~H"""
-    <div role="tablist" class="tabs tabs-bordered">
+    <div role="tablist" class="tabs tabs-border">
       <.link
         patch={~p"/tournaments/#{@tournament}?tab=standings"}
         role="tab"
@@ -306,7 +311,7 @@ defmodule TabletopWeb.TournamentLive.Show do
     <div :if={@rounds == []} class="opacity-60">No rounds have been played yet.</div>
 
     <div :if={@rounds != []}>
-      <div role="tablist" class="tabs tabs-boxed mb-4">
+      <div role="tablist" class="tabs tabs-box mb-4">
         <.link
           :for={r <- @rounds}
           patch={~p"/tournaments/#{@tournament}?tab=matches&round=#{r.id}"}

@@ -147,7 +147,12 @@ defmodule TabletopWeb.TournamentLive.Form do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-3xl">
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+      max_width="max-w-3xl"
+    >
       <.header>
         {@page_title}
         <:subtitle>

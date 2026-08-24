@@ -27,15 +27,27 @@ defmodule TabletopWeb.UserSessionController do
 
   def update_password(conn, %{"user" => user_params} = params) do
     user = conn.assigns.current_scope.user
-    true = Accounts.sudo_mode?(user)
-    {:ok, {_user, expired_tokens}} = Accounts.update_user_password(user, user_params)
 
-    # disconnect all existing LiveViews with old sessions
-    UserAuth.disconnect_sessions(expired_tokens)
+    if Accounts.sudo_mode?(user) do
+      case Accounts.update_user_password(user, user_params) do
+        {:ok, {_user, expired_tokens}} ->
+          # disconnect all existing LiveViews with old sessions
+          UserAuth.disconnect_sessions(expired_tokens)
 
-    conn
-    |> put_session(:user_return_to, ~p"/users/settings")
-    |> create(params, "Password updated successfully!")
+          conn
+          |> put_session(:user_return_to, ~p"/users/settings")
+          |> create(params, "Password updated successfully!")
+
+        # The LiveView only triggers this POST for a valid changeset, so this is
+        # a hand-rolled request; send it back to the form rather than raising.
+        {:error, _changeset} ->
+          conn
+          |> put_flash(:error, "Password update failed. Please try again.")
+          |> redirect(to: ~p"/users/settings/password")
+      end
+    else
+      UserAuth.require_sudo_mode(conn, [])
+    end
   end
 
   def confirm(conn, %{"token" => token}) do

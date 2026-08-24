@@ -4,7 +4,11 @@ defmodule TabletopWeb.UserLive.Login do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+    >
       <div class="mx-auto max-w-sm space-y-4">
         <div class="text-center">
           <.header>
@@ -55,6 +59,14 @@ defmodule TabletopWeb.UserLive.Login do
             label="Password"
             autocomplete="current-password"
           />
+          <p class="text-right text-sm mt-1 mb-3">
+            <.link
+              navigate={~p"/users/reset-password"}
+              class="font-semibold text-brand hover:underline"
+            >
+              Forgot your password?
+            </.link>
+          </p>
           <.button class="btn btn-primary w-full" name={@form[:remember_me].name} value="true">
             Log in and stay logged in <span aria-hidden="true">→</span>
           </.button>

@@ -6,7 +6,11 @@ defmodule TabletopWeb.UserLive.ConfirmationPending do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+    >
       <div class="mx-auto max-w-sm text-center space-y-6">
         <.header>
           Thanks for registering!

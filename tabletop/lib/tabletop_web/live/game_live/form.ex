@@ -10,7 +10,11 @@ defmodule TabletopWeb.GameLive.Form do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+    >
       <.header>
         {@page_title}
         <:subtitle>Use this form to manage game records in your database.</:subtitle>

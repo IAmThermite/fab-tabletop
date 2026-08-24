@@ -10,6 +10,25 @@ defmodule Tabletop.GamesTest do
     hero.slug
   end
 
+  # Spawns a process that registers itself as a live pre-join screen (as a
+  # connected GameLive.PreJoin does) and stays alive for the duration of the
+  # test, so `release_reservation/2` sees a second tab holding the same seat.
+  defp track_reservation_in_process(game_id, scope) do
+    test_pid = self()
+
+    pid =
+      spawn(fn ->
+        Games.track_reservation(game_id, scope)
+        send(test_pid, :reservation_tracked)
+        Process.sleep(:infinity)
+      end)
+
+    assert_receive :reservation_tracked
+    on_exit(fn -> Process.exit(pid, :kill) end)
+
+    pid
+  end
+
   describe "games" do
     alias Tabletop.Games.Game
 
@@ -327,6 +346,44 @@ defmodule Tabletop.GamesTest do
       assert game1.joining_user_id == scope2.user.id
       assert {:ok, game2} = Games.reserve_join(scope2, target)
       assert game2.joining_user_id == scope2.user.id
+    end
+
+    test "release_reservation/2 clears the reservation when the last tab closes" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      target = game_fixture(scope1)
+
+      {:ok, _} = Games.reserve_join(scope2, target)
+
+      assert :ok = Games.release_reservation(scope2, target.id)
+      assert Repo.get!(Tabletop.Games.Game, target.id).joining_user_id == nil
+    end
+
+    test "release_reservation/2 keeps the seat while another pre-join tab holds it" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      target = game_fixture(scope1)
+
+      {:ok, _} = Games.reserve_join(scope2, target)
+      # A second pre-join tab on the same game. Closing either one used to
+      # release the seat the other was still relying on, leaving it open for a
+      # third player to take.
+      track_reservation_in_process(target.id, scope2)
+
+      assert :ok = Games.release_reservation(scope2, target.id)
+      assert Repo.get!(Tabletop.Games.Game, target.id).joining_user_id == scope2.user.id
+    end
+
+    test "release_reservation/2 ignores a reservation held by a different user" do
+      scope1 = user_scope_fixture()
+      scope2 = user_scope_fixture()
+      scope3 = user_scope_fixture()
+      target = game_fixture(scope1)
+
+      {:ok, _} = Games.reserve_join(scope2, target)
+
+      assert :ok = Games.release_reservation(scope3, target.id)
+      assert Repo.get!(Tabletop.Games.Game, target.id).joining_user_id == scope2.user.id
     end
 
     test "reserve_join/2 refuses when a different user already holds an unexpired reservation" do

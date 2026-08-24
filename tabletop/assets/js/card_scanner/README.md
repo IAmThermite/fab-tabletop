@@ -31,14 +31,17 @@ User Click → LiveView Hook → OpenCV Worker → Recognition Pipeline → Back
 
 ### 1. User Interaction (`liveview_hook.js`)
 
-When a user clicks on the game area canvas:
+When a user clicks the board:
 
 ```javascript
 gameArea.addEventListener("click", async (e) => {
   showLoading(e.clientX, e.clientY)
 
+  // Grab the region around the click, once, so retries reuse the same pixels
+  const captured = captureDetectRegion(sourceEl, e.clientX, e.clientY, isFlipped())
+
   // Detect + deskew the card and compute its pHashes
-  const result = await captureAndDetect(canvasEl, e.clientX, e.clientY, isFlipped(), gameArea)
+  const result = await detectAndHash(captured, regionScale, gameArea, isFlipped(), first)
 
   // Send hashes to the backend for a pHash match
   if (result?.phashes?.length) {
@@ -48,10 +51,17 @@ gameArea.addEventListener("click", async (e) => {
 ```
 
 **Key steps:**
-- Convert click coordinates from CSS pixels to canvas pixels
+- Convert click coordinates from CSS pixels to source pixels
 - Handle camera flip (if applicable)
-- Capture a square region around the click (35% of canvas dimensions)
+- Capture a square region around the click (35% of the source's shorter side)
 - Display loading indicator
+
+`sourceEl` is whatever is on screen. In a game that is the remote `<video>`
+element directly — nothing mirrors its frames into a canvas — so only the clicked
+region is ever copied out, into a reused scratch canvas. The camera-setup page
+passes its test canvas instead; both are valid `drawImage` sources and both
+expose an intrinsic pixel size, which is the only thing `captureDetectRegion`
+needs from them.
 
 ### 2. Card Detection (`scanner_worker.js`)
 
@@ -80,7 +90,7 @@ For each strategy:
 
 Contours are filtered using multiple criteria:
 
-- **Area ratio**: Card must be 5-60% of image area
+- **Area ratio**: Card must be 5-90% of the detect region's area. The upper bound is loose on purpose — the region is already a small square centred on the click, so a card filling most of it is normal. At 60% a card taller than 0.92x the region's side was rejected while its art window still passed, and the scanner deskewed the art as if it were the card.
 - **Aspect ratio**: Long/short side must be between 1.1-2.0 (standard FaB cards ~1.4)
 - **Rectangularity**: Opposite sides must be within 75% of each other
 - **Corner angles**: All corners must be within 25° of 90°
@@ -98,6 +108,7 @@ For each contour:
 Greedy suppression removes duplicate detections:
 - High IoU (>0.6): Keep higher-scored quad
 - High containment (>0.8) with 30-70% area ratio: Prefer smaller quad (catches merged two-card blobs)
+  - **Exception**: unless the smaller quad is the larger one's own **art window**. A FaB art rect is 80% of the card's width by 42% of its height — 34% of its area, squarely inside that band, and an aspect of 1.36 against the card's 1.40 — so neither the area gate nor the aspect gate separates them, and without this exception the rule deliberately picks the art. `looksLikeInnerArtWindow` measures the inner quad in the outer quad's own (u, v) basis (rotation-invariant, unlike a bounding-box ratio) and requires ~0.80 x ~0.42 spans centred across the card's width. A card inside a side-by-side blob spans ~48% x ~100%, and a stacked one is the transpose, so both miss those windows.
 
 #### 2.5 Perspective Transform
 

@@ -6,10 +6,65 @@ defmodule TabletopWeb.Layouts do
   use TabletopWeb, :html
 
   # Community links surfaced in the navbar/footer.
-  # TODO: replace with the real invite/repo URLs.
   @discord_url "https://discord.gg/25QAegj6gJ"
   @github_url "https://github.com/IAmThermite/fab-tabletop"
   @patreon_url "https://patreon.com/c/FaBTabletop"
+
+  @doc """
+  Invite link for the community Discord — the primary contact channel named by
+  the policy pages, which read it from here rather than hard-coding a copy.
+  """
+  def discord_url, do: @discord_url
+
+  @doc """
+  Public source repository, and the written-record contact channel named by the
+  policy pages.
+  """
+  def github_url, do: @github_url
+
+  @doc """
+  The Sentry DSN to hand to the browser SDK, or `nil` when it is not configured.
+
+  This is the **frontend** project's DSN (`SENTRY_FRONTEND_DSN`), not the
+  server's. Browser and server report into separate Sentry projects so their
+  very different noise profiles — an ad-blocker mangling a request versus a
+  `GameSession` crashing — do not share an issue stream or alert rules.
+
+  Returning `nil` leaves the client SDK uninitialised, so an environment without
+  the variable is silent with no separate opt-out, matching the server.
+  """
+  def sentry_browser_dsn do
+    :tabletop
+    |> Application.get_env(:sentry_frontend_dsn)
+    |> public_dsn()
+  end
+
+  @doc """
+  Strips any secret from a DSN, leaving the public key.
+
+  A DSN is a public identifier meant to travel in client code — but only the
+  modern form is. The pre-2016 format embedded a secret
+  (`https://public:secret@host/project`), which Sentry still parses, and
+  rendering one of those into every page would publish it. For a modern DSN this
+  is a no-op; for a legacy one it is the difference between leaking and not.
+
+  Split out from `sentry_browser_dsn/0` so the sanitising is testable
+  independently of where the value comes from.
+  """
+  def public_dsn(nil), do: nil
+
+  def public_dsn(dsn) when is_binary(dsn) do
+    case URI.parse(dsn) do
+      %URI{userinfo: userinfo} = uri when is_binary(userinfo) ->
+        public_key = userinfo |> String.split(":", parts: 2) |> hd()
+        URI.to_string(%{uri | userinfo: public_key})
+
+      # No userinfo means no key at all, so this is not a DSN we can hand to the
+      # SDK. Returning nil leaves it uninitialised, the safe default.
+      %URI{} ->
+        nil
+    end
+  end
 
   # Embed all files in layouts/* within this module.
   # The default root.html.heex file contains the HTML
@@ -38,7 +93,12 @@ defmodule TabletopWeb.Layouts do
     doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
   )
 
-  attr(:max_width, :string, default: "max-w-2xl", doc: "the max width class for the main content")
+  attr(:max_width, :string, default: "max-w-4xl", doc: "the max width class for the main content")
+
+  attr(:system_announcement, :map,
+    default: nil,
+    doc: "the active site-wide announcement, from `TabletopWeb.SystemAnnouncements`"
+  )
 
   slot(:inner_block, required: true)
 
@@ -77,7 +137,13 @@ defmodule TabletopWeb.Layouts do
     >
     </div>
     <div class="flex min-h-screen flex-col">
-      <header class="navbar gap-2 border-b border-base-300 bg-base-100/40 backdrop-blur px-4 sm:px-6 lg:px-8">
+      <%!-- `relative z-30` is load-bearing. `backdrop-blur` makes this header its
+           own stacking context, which traps the user-menu dropdown inside it —
+           the dropdown's z-index is then only ever compared against the header's
+           other children, never against the page. The main content panel below
+           is a stacking context for the same reason and comes later in the DOM,
+           so without an explicit z-index here it paints over the open dropdown. --%>
+      <header class="navbar relative z-30 gap-2 border-b border-base-300 bg-base-100/40 backdrop-blur px-4 sm:px-6 lg:px-8">
         <div class="flex-1">
           <.link navigate={~p"/"} class="inline-flex items-center gap-3">
             <img src={~p"/images/banner.png"} alt="FaB Tabletop" class="h-12 w-auto" />
@@ -137,6 +203,9 @@ defmodule TabletopWeb.Layouts do
                 class="dropdown-content menu bg-base-100 rounded-box z-50 mt-2 w-44 p-2 shadow-lg border border-base-300"
               >
                 <li><.link href={~p"/users/settings"}>Settings</.link></li>
+                <li :if={Tabletop.Accounts.Scope.admin?(@current_scope)}>
+                  <.link navigate={~p"/admin/announcements"}>Announcements</.link>
+                </li>
                 <li><.link href={~p"/users/log-out"} method="delete">Log out</.link></li>
               </ul>
             </div>
@@ -153,6 +222,10 @@ defmodule TabletopWeb.Layouts do
              height) and is centred at the page's max width, leaving the image
              visible in the surrounding margins. --%>
         <div class={["mx-auto", @max_width]}>
+          <%!-- Sits above the content panel rather than inside it so it reads as
+               chrome, and so it is the first thing under the header on every
+               standard page. The game layout uses the toast variant instead. --%>
+          <.system_announcement announcement={@system_announcement} />
           <div class="space-y-4 rounded-box border border-base-300 bg-base-100/80 backdrop-blur p-4 sm:p-6">
             {render_slot(@inner_block)}
           </div>
@@ -214,8 +287,11 @@ defmodule TabletopWeb.Layouts do
         <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
           <span class="font-display font-bold text-base-content/70">FaB Tabletop</span>
 
-          <nav class="flex items-center gap-4 text-base-content/70">
+          <nav class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-base-content/70">
             <.link navigate={~p"/about"} class="link link-hover">About</.link>
+            <.link navigate={~p"/privacy"} class="link link-hover">Privacy</.link>
+            <.link navigate={~p"/terms"} class="link link-hover">Terms</.link>
+            <.link navigate={~p"/code-of-conduct"} class="link link-hover">Code of Conduct</.link>
             <a href={@discord_url} target="_blank" rel="noopener noreferrer" class="link link-hover">
               Discord
             </a>
@@ -273,6 +349,11 @@ defmodule TabletopWeb.Layouts do
     doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
   )
 
+  attr(:system_announcement, :map,
+    default: nil,
+    doc: "the active site-wide announcement, from `TabletopWeb.SystemAnnouncements`"
+  )
+
   slot(:inner_block, required: true)
 
   def game(assigns) do
@@ -281,7 +362,8 @@ defmodule TabletopWeb.Layouts do
       {render_slot(@inner_block)}
     </main>
 
-    <.flash_group flash={@flash} />
+    <%!-- No `flash_group/1` here: its toasts park over the video grid. --%>
+    <.notification_sounds />
     """
   end
 
@@ -326,10 +408,192 @@ defmodule TabletopWeb.Layouts do
       </.flash>
     </div>
 
-    <%!-- Plays the audio cue that accompanies a tournament toast. Present on
-          every page (flash_group sits in both the app and game layouts) and
-          listens on its own event so it never collides with the in-game
-          `#game-sounds` hook, which owns `play_sound`. --%>
+    <.notification_sounds />
+    """
+  end
+
+  @doc """
+  Every alert the game view can raise, collapsed behind one top-bar button.
+
+  The game layout is a fullscreen video grid: a toast parked over it hides the
+  thing the player is actually looking at, and the system announcement in
+  particular stays up until dismissed. So instead of floating cards, this is a
+  bell with an unread count that sits inline among the other top-bar controls,
+  and a panel that drops beneath it only when the player asks for it.
+
+  Rendered by each game-layout page inside its top bar rather than by
+  `Layouts.game`, because there is no fixed corner to put it in: bottom-right is
+  the opponent's life total, and top-right is the page's own controls. Being a
+  sibling of those controls is the only placement that covers nothing.
+
+  **Connection loss is deliberately not in the panel.** `#connection-status`
+  tracks the *WebRTC peer*, not the LiveView socket, so these two are the only
+  signal that the socket itself has dropped — and a dropped socket is exactly
+  when nothing can prompt the player to open a tray. They sit beside the bell as
+  badges, matching the status badge already next to them.
+
+  Tray entries do not auto-hide the way `flash_group/1`'s toasts do. An alert
+  that erased itself after five seconds would leave the unread count lying, and
+  the whole point of collapsing them is that they wait until they're read.
+  """
+  attr(:flash, :map, required: true, doc: "the map of flash messages")
+
+  attr(:system_announcement, :map,
+    default: nil,
+    doc: "the active site-wide announcement, from `TabletopWeb.SystemAnnouncements`"
+  )
+
+  def game_alert_tray(assigns) do
+    ~H"""
+    <div id="game-alert-tray" phx-hook=".AlertTray" class="relative flex items-center gap-2">
+      <div
+        id="client-error"
+        role="alert"
+        hidden
+        phx-disconnected={show(".phx-client-error #client-error") |> JS.remove_attribute("hidden")}
+        phx-connected={hide("#client-error") |> JS.set_attribute({"hidden", ""})}
+        class="badge badge-sm badge-error gap-1"
+      >
+        <.icon name="hero-arrow-path" class="size-3 shrink-0 motion-safe:animate-spin" />
+        {gettext("Reconnecting…")}
+      </div>
+
+      <div
+        id="server-error"
+        role="alert"
+        hidden
+        phx-disconnected={show(".phx-server-error #server-error") |> JS.remove_attribute("hidden")}
+        phx-connected={hide("#server-error") |> JS.set_attribute({"hidden", ""})}
+        class="badge badge-sm badge-error gap-1"
+      >
+        <.icon name="hero-arrow-path" class="size-3 shrink-0 motion-safe:animate-spin" />
+        {gettext("Reconnecting…")}
+      </div>
+
+      <%!-- Hidden until the hook finds something in the panel, so an empty tray
+            adds nothing to the bar at all. --%>
+      <button
+        data-toggle
+        type="button"
+        hidden
+        aria-expanded="false"
+        aria-controls="game-alert-panel"
+        class="btn btn-circle btn-sm indicator"
+        title={gettext("Alerts")}
+      >
+        <span data-count class="indicator-item badge badge-xs badge-primary"></span>
+        <.icon name="hero-bell" class="size-5" />
+      </button>
+
+      <%!-- Drops beneath the bell rather than pushing the bar around. `aria-live`
+            is on the panel rather than the button so a screen reader announces
+            the alert text itself. --%>
+      <div
+        id="game-alert-panel"
+        data-panel
+        hidden
+        aria-live="polite"
+        class="absolute right-0 top-full z-[70] mt-2 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 text-left"
+      >
+        <.system_announcement announcement={@system_announcement} variant={:tray} />
+        <.flash kind={:info} flash={@flash} variant={:tray} />
+        <.flash kind={:error} flash={@flash} variant={:tray} />
+      </div>
+    </div>
+    <script :type={ColocatedHook} name=".AlertTray">
+      export default {
+        mounted() {
+          this.el.querySelector("[data-toggle]").addEventListener("click", () => this.toggle())
+
+          // Not every alert leaves through the server. Dismissing the
+          // announcement is a localStorage note the hook applies by setting
+          // `hidden`, and clearing a flash hides it with a JS transition before
+          // the round trip lands — neither produces a patch here, so without
+          // this the badge would keep counting alerts that are already gone.
+          this._observer = new MutationObserver(() => this.sync())
+          this._observer.observe(this.panel(), {
+            subtree: true,
+            childList: true,
+            attributeFilter: ["hidden", "style", "class"],
+          })
+
+          this.sync()
+        },
+
+        destroyed() { this._observer?.disconnect() },
+
+        // Recomputed from the DOM rather than tracked, so server-sent and
+        // client-side removals are counted the same way.
+        updated() { this.sync() },
+
+        toggle() {
+          this.setOpen(this.panel().hidden)
+        },
+
+        // Every write here is guarded, and that is load-bearing rather than
+        // tidiness. A DOM write queues a MutationObserver record even when it
+        // changes nothing, and the panel's own `hidden` attribute sits inside
+        // the subtree the observer above watches — so writing it unconditionally
+        // re-enters sync() as a microtask, which writes it again, which... The
+        // event loop never gets control back and the tab freezes. Since an empty
+        // tray calls setOpen(false) on every sync, that is the resting state of
+        // every page in this layout, not an edge case.
+        setOpen(open) {
+          const panel = this.panel()
+          const button = this.el.querySelector("[data-toggle]")
+          const expanded = String(open)
+
+          if (panel.hidden !== !open) panel.hidden = !open
+          if (button.getAttribute("aria-expanded") !== expanded) {
+            button.setAttribute("aria-expanded", expanded)
+          }
+        },
+
+        sync() {
+          const count = this.visibleAlerts().length
+          const button = this.el.querySelector("[data-toggle]")
+          const countEl = this.el.querySelector("[data-count]")
+
+          // The badge and button live outside [data-panel], so these two can't
+          // re-trigger the observer — but they are guarded on the same principle,
+          // so moving them inside the panel later can't reintroduce the freeze.
+          if (countEl.textContent !== String(count)) countEl.textContent = count
+          if (button.hidden !== (count === 0)) button.hidden = count === 0
+
+          // An emptied tray closes itself; leaving an open, empty panel over
+          // the video is the obstruction this whole component exists to avoid.
+          if (count === 0) this.setOpen(false)
+
+          // Nudge, don't interrupt: something new is worth noticing, but
+          // opening the panel would put a card back over the board.
+          if (count > this._lastCount) {
+            button.classList.remove("motion-safe:animate-bounce")
+            void button.offsetWidth
+            button.classList.add("motion-safe:animate-bounce")
+            setTimeout(() => button.classList.remove("motion-safe:animate-bounce"), 1500)
+          }
+          this._lastCount = count
+        },
+
+        visibleAlerts() {
+          return [...this.panel().querySelectorAll("[data-alert]")].filter(
+            (el) => !el.hidden && getComputedStyle(el).display !== "none"
+          )
+        },
+
+        panel() { return this.el.querySelector("[data-panel]") },
+      }
+    </script>
+    """
+  end
+
+  @doc """
+  Plays the audio cue that accompanies a notification toast. Rendered by both
+  layouts, and listening on its own event so it never collides with the in-game
+  `#game-sounds` hook, which owns `play_sound`.
+  """
+  def notification_sounds(assigns) do
+    ~H"""
     <div id="notification-sounds" phx-hook=".NotificationSounds"></div>
     <script :type={ColocatedHook} name=".NotificationSounds">
       import { sounds } from "@/js/sounds.js"

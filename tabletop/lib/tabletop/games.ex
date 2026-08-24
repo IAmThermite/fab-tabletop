@@ -7,6 +7,7 @@ defmodule Tabletop.Games do
   alias Tabletop.Repo
 
   alias Tabletop.Games.Game
+  alias Tabletop.Games.HeroLeaderboard
   alias Tabletop.Heroes
   alias Tabletop.Accounts.Scope
 
@@ -118,12 +119,15 @@ defmodule Tabletop.Games do
       who have not left); a user can only be in one game at a time, so this is a
       distinct head-count
     * `:popular_heroes` — `%{format => [{hero_slug, count}]}`, the most-chosen
-      heroes across games created in the last `days` days (default 7), most
-      popular first, capped per format
+      heroes across recent activity, most popular first, capped per format
 
-  Cheap enough to recompute on every lobby broadcast.
+  Every lobby LiveView recomputes this on every game broadcast, so the two
+  live counts are single grouped queries over the small set of games that are
+  open or in progress right now. The leaderboard covers a multi-day window and
+  would be the one scan here, so it is served from
+  `Tabletop.Games.HeroLeaderboard`'s periodically refreshed cache instead.
   """
-  def activity_stats(days \\ 7) do
+  def activity_stats do
     open_by_format = open_games_by_format()
     active = active_game_stats()
 
@@ -132,7 +136,7 @@ defmodule Tabletop.Games do
       open_total: open_by_format |> Map.values() |> Enum.sum(),
       active_games: active.games,
       active_players: active.players,
-      popular_heroes: popular_heroes_by_format(days)
+      popular_heroes: HeroLeaderboard.get()
     }
   end
 
@@ -154,56 +158,49 @@ defmodule Tabletop.Games do
     |> Map.new()
   end
 
-  # Active games and the number of players actually seated in them. We pull the
-  # left-at/opponent columns for the (small) set of active games and tally alive
-  # seats in Elixir, since "still present" is a per-seat condition.
+  # Active games and the number of players actually seated in them. "Still
+  # present" is a per-seat condition, so each seat gets its own filtered count
+  # over the same scan and the two are added up — one row back instead of one
+  # per active game.
   defp active_game_stats do
-    seats =
+    %{games: games, seat1: seat1, seat2: seat2} =
       from(g in Game,
         where: g.status == :active,
-        select: {g.user1_left_at, g.user2_id, g.user2_left_at}
+        select: %{
+          games: count(g.id),
+          seat1: filter(count(g.id), is_nil(g.user1_left_at)),
+          seat2: filter(count(g.id), not is_nil(g.user2_id) and is_nil(g.user2_left_at))
+        }
       )
-      |> Repo.all()
+      |> Repo.one()
 
-    players =
-      Enum.reduce(seats, 0, fn {user1_left_at, user2_id, user2_left_at}, acc ->
-        acc +
-          if(is_nil(user1_left_at), do: 1, else: 0) +
-          if(not is_nil(user2_id) and is_nil(user2_left_at), do: 1, else: 0)
-      end)
-
-    %{games: length(seats), players: players}
+    %{games: games, players: seat1 + seat2}
   end
 
   @hero_leaderboard_limit 3
 
-  # Top heroes piloted per format across recent activity — casual games and
-  # tournaments alike. For a game, both seats count: the creator's `hero` and the
-  # opponent's `user2_hero` (so a hero is credited whether chosen at create time
-  # or at join time; a mirror match credits it once per pilot). Competitive games
-  # count too — hiding a hero from the lobby list doesn't hide it from this
-  # aggregate. Tournament play is folded in via `Tournaments.recent_hero_entries/1`,
-  # which yields one entry per player per tournament so a tournament's many round
-  # games don't multiply a player's hero (those match games carry no hero on the
-  # `Game` row, so they never double-count here). Blank heroes are skipped.
-  # Tallied in Elixir (like `active_game_stats`) to keep the format-enum cast
-  # straightforward across every source. Returns at most `@hero_leaderboard_limit`
-  # heroes per format.
-  defp popular_heroes_by_format(days) do
-    cutoff = DateTime.add(DateTime.utc_now(), -days * 24 * 60 * 60, :second)
+  @doc """
+  Top heroes piloted per format since `cutoff`, as `%{format => [{hero_slug, count}]}`,
+  most popular first and capped at #{@hero_leaderboard_limit} per format.
 
-    game_entries =
-      from(g in Game,
-        where: g.inserted_at >= ^cutoff,
-        select: {g.format, g.hero, g.user2_hero}
-      )
-      |> Repo.all()
-      |> Enum.flat_map(fn {format, hero, user2_hero} ->
-        hero_entry(format, hero) ++ hero_entry(format, user2_hero)
-      end)
+  Counts casual games and tournaments alike. For a game, both seats count: the
+  creator's `hero` and the opponent's `user2_hero` (so a hero is credited whether
+  chosen at create time or at join time; a mirror match credits it once per
+  pilot). Competitive games count too — hiding a hero from the lobby list doesn't
+  hide it from this aggregate. Tournament play is folded in via
+  `Tournaments.recent_hero_counts/1`, which counts one entry per player per
+  tournament so a tournament's many round games don't multiply a player's hero
+  (those match games carry no hero on the `Game` row, so they never double-count
+  here). Blank heroes are skipped.
 
-    (game_entries ++ Tabletop.Tournaments.recent_hero_entries(cutoff))
-    |> Enum.frequencies()
+  This is the scan behind the lobby's activity panel, so callers should go
+  through `Tabletop.Games.HeroLeaderboard` rather than calling it per request.
+  """
+  def popular_heroes_by_format(%DateTime{} = cutoff) do
+    (game_hero_counts(cutoff) ++ Tabletop.Tournaments.recent_hero_counts(cutoff))
+    |> Enum.reduce(%{}, fn {format, hero, count}, acc ->
+      Map.update(acc, {format, hero}, count, &(&1 + count))
+    end)
     |> Enum.group_by(
       fn {{format, _hero}, _count} -> format end,
       fn {{_format, hero}, count} -> {hero, count} end
@@ -211,19 +208,36 @@ defmodule Tabletop.Games do
     |> Map.new(fn {format, heroes} ->
       top =
         heroes
-        |> Enum.sort_by(fn {_hero, count} -> count end, :desc)
+        # Ties break alphabetically: SQL gives no row-order guarantee, so without
+        # a total order the visible ranking could reshuffle on every refresh.
+        |> Enum.sort_by(fn {hero, count} -> {-count, hero} end)
         |> Enum.take(@hero_leaderboard_limit)
 
       {format, top}
     end)
   end
 
-  # A single `{format, hero}` tally entry when the hero slug is present, else none.
-  defp hero_entry(format, hero) when is_binary(hero) do
-    if String.trim(hero) == "", do: [], else: [{format, hero}]
-  end
+  # Hero pick counts from recent games, as `{format, hero_slug, count}`. `unnest`
+  # expands each game into one row per seat so Postgres can group and count them
+  # directly — the alternative ships every game row in the window back to be
+  # tallied in Elixir, which is a table scan's worth of data per caller.
+  defp game_hero_counts(cutoff) do
+    seats =
+      from(g in Game,
+        where: g.inserted_at >= ^cutoff,
+        select: %{
+          format: g.format,
+          hero: fragment("unnest(array[?, ?])", g.hero, g.user2_hero)
+        }
+      )
 
-  defp hero_entry(_format, _hero), do: []
+    from(s in subquery(seats),
+      where: not is_nil(s.hero) and fragment("btrim(?) <> ''", s.hero),
+      group_by: [s.format, s.hero],
+      select: {s.format, s.hero, count(s.hero)}
+    )
+    |> Repo.all()
+  end
 
   @doc """
   Gets a single game the scoped user is a participant in (creator or opponent).
@@ -352,6 +366,10 @@ defmodule Tabletop.Games do
            game
            |> Game.changeset(attrs, scope)
            |> Repo.update() do
+      # Subscribers (the game page renders both players' names) expect an
+      # {:updated, game} payload with :user/:user2 loaded — the caller's struct
+      # may not have them, and every other broadcast site preloads.
+      game = Repo.preload(game, [:user, :user2])
       broadcast_game(scope, {:updated, game})
       {:ok, game}
     end
@@ -433,9 +451,53 @@ defmodule Tabletop.Games do
   end
 
   @doc """
-  Releases a join reservation. Called when user leaves the pre-join screen.
+  Registers the calling process (a connected pre-join LiveView) as holding the
+  join reservation for `game_id`. The registration is dropped automatically by
+  the Registry when the process exits.
+
+  Reservations are per *user*, but pre-join screens are per *process*, so
+  `release_reservation/2` needs to know whether the user still has another one
+  open — see there. Reuses `GameConnectionRegistry` under a distinct key shape;
+  `Tabletop.Games.LeaveTimer` keys the same registry by a plain
+  `{game_id, user_id}` pair, and Registry keys match exactly, so the two never
+  see each other's entries.
+  """
+  def track_reservation(game_id, %Scope{} = scope) do
+    Registry.register(
+      Tabletop.Games.GameConnectionRegistry,
+      reservation_key(game_id, scope.user.id),
+      nil
+    )
+  end
+
+  @doc """
+  Releases a join reservation. Called when a user leaves the pre-join screen.
+
+  A no-op while the user still has another pre-join LiveView open for the same
+  game: with two tabs on one game, closing either would otherwise drop the
+  reservation the other is still relying on to hold the seat, leaving it open
+  for a third player to take.
   """
   def release_reservation(%Scope{} = scope, game_id) do
+    if reservation_held_elsewhere?(game_id, scope.user.id) do
+      :ok
+    else
+      do_release_reservation(scope, game_id)
+    end
+  end
+
+  # True if a process *other than the caller* still holds a pre-join screen for
+  # this user and game. The caller is excluded because the LiveView calling this
+  # from `terminate/2` is still registered while it runs.
+  defp reservation_held_elsewhere?(game_id, user_id) do
+    Tabletop.Games.GameConnectionRegistry
+    |> Registry.lookup(reservation_key(game_id, user_id))
+    |> Enum.any?(fn {pid, _} -> pid != self() end)
+  end
+
+  defp reservation_key(game_id, user_id), do: {:join_reservation, game_id, user_id}
+
+  defp do_release_reservation(%Scope{} = scope, game_id) do
     {count, _} =
       from(g in Game,
         where: g.id == ^game_id,
@@ -596,16 +658,28 @@ defmodule Tabletop.Games do
   def get_current_game_for_user(nil), do: nil
 
   @doc """
-  Returns the most recent game *created* by the scoped user (any status), or
-  `nil` if they have never created one. Powers the lobby's "quick match" button,
-  which re-seeds the create form from a previous game's settings. Only games the
-  user created are considered, since the hero/decklist on a joined game belong to
-  the other player.
+  Returns the most recent game the scoped user *created through the create form*
+  (any status), or `nil` if they have never created one. Powers the lobby's
+  "quick match" button, which re-seeds that form from a previous game's settings.
+
+  Only games the user created are considered, since the hero/decklist on a joined
+  game belong to the other player.
+
+  Tournament matches are excluded even though they are stored as ordinary `Game`
+  rows with player 1 as `user_id`: `Tournaments.create_match_game!/5` builds them
+  with `Game.match_changeset/2`, which carries no hero, decklist or language of
+  its own. Seeding from one hands the player a blank hero and decklist under a
+  machine-generated title, and the form then fails its own `validate_required`.
+  `hero` is the discriminator — `changeset/3` requires it, `match_changeset/2`
+  never sets it — which keeps this query out of the Tournaments schemas.
   """
   def get_last_created_game(%Scope{user: user}) do
     from(g in Game,
       where: g.user_id == ^user.id,
-      order_by: [desc: g.inserted_at],
+      where: not is_nil(g.hero),
+      # `inserted_at` is second-precision, so two rows can tie; the id keeps the
+      # pick stable rather than leaving it to the query plan.
+      order_by: [desc: g.inserted_at, desc: g.id],
       limit: 1
     )
     |> Repo.one()

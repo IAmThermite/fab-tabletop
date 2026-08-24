@@ -9,6 +9,7 @@ defmodule TabletopWeb.GameLive.Show do
   alias Tabletop.Games.LeaveTimer
   alias Tabletop.Games.GameSession
   alias Tabletop.Tournaments
+  alias TabletopWeb.CameraRelayToken
 
   on_mount {TabletopWeb.UserAuth, :require_authenticated}
 
@@ -58,10 +59,6 @@ defmodule TabletopWeb.GameLive.Show do
         if connected?(socket), do: GameSession.get_state(game.id), else: empty_state()
 
       user_token = Phoenix.Token.sign(socket, "user socket", user_id)
-      camera_relay_token = Phoenix.Token.sign(socket, "camera relay", user_id)
-
-      qr_url = "#{TabletopWeb.Endpoint.url()}/phone-camera/#{camera_relay_token}"
-      qr_svg = qr_url |> EQRCode.encode() |> EQRCode.svg(width: 200)
 
       {:ok,
        socket
@@ -72,8 +69,7 @@ defmodule TabletopWeb.GameLive.Show do
        |> assign(:user_id, user_id)
        |> assign(:user1_id, game.user_id)
        |> assign(:user2_id, game.user2_id)
-       |> assign(:camera_relay_token, camera_relay_token)
-       |> assign(:qr_svg, qr_svg)
+       |> assign(:qr_svg, CameraRelayToken.qr_svg(socket, user_id))
        |> assign(:peer_connected, false)
        |> assign_session_state(session_state)
        |> assign(:abilities_open, false)
@@ -81,6 +77,8 @@ defmodule TabletopWeb.GameLive.Show do
        |> assign(:create_token_open, false)
        |> assign(:create_proxy_token_open, false)
        |> assign(:proxy_tokens_expanded, false)
+       |> assign(:proxy_token_target, "opponent")
+       |> assign(:proxy_tokens_tab, "my")
        |> assign(:preview_open, false)
        |> assign(:open_cards, [])
        |> assign(:tournament_match, Tournaments.get_match_by_game_id(game.id))
@@ -176,9 +174,10 @@ defmodule TabletopWeb.GameLive.Show do
     {:noreply, push_navigate(socket, to: post_game_path(socket))}
   end
 
-  def handle_info({:game_update, side, delta, actor_user_id}, socket)
+  # The session broadcasts the snapshot alongside the delta, so this renders the
+  # exact state the delta produced without calling back into the GenServer.
+  def handle_info({:game_update, side, delta, actor_user_id, state}, socket)
       when side in [:user1, :user2] do
-    state = GameSession.get_state(socket.assigns.game.id)
     socket = assign_session_state(socket, state)
     {:noreply, maybe_play_cue(socket, delta, actor_user_id)}
   end
@@ -242,16 +241,21 @@ defmodule TabletopWeb.GameLive.Show do
   # the game session. `move_tile` arrives with a raw owner ("my"/"opponent")
   # which we resolve to the target user so either player's tiles can be dragged.
   def apply_game_action(socket, {:move_tile, owner, tile_id, x, y}) do
-    target_user_id =
-      case owner do
-        "my" -> socket.assigns.user_id
-        "opponent" -> opponent_user_id(socket.assigns)
-      end
+    dispatch(socket, {:move_tile, target_user_id(socket, owner), tile_id, x, y})
+  end
 
-    dispatch(socket, {:move_tile, target_user_id, tile_id, x, y})
+  # Proxy tokens name the side the token sits on, so either player can put one
+  # on either board and either player can clear it.
+  @proxy_token_actions [:add_proxy_token, :remove_proxy_token, :toggle_proxy_token]
+
+  def apply_game_action(socket, {action, target, name}) when action in @proxy_token_actions do
+    dispatch(socket, {action, target_user_id(socket, target), name})
   end
 
   def apply_game_action(socket, action), do: dispatch(socket, action)
+
+  defp target_user_id(socket, "my"), do: socket.assigns.user_id
+  defp target_user_id(socket, "opponent"), do: opponent_user_id(socket.assigns)
 
   defp dispatch(socket, action) do
     case GameSession.apply_action(socket.assigns.game.id, socket.assigns.user_id, action) do

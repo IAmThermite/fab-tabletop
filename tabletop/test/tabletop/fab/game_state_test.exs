@@ -346,9 +346,105 @@ defmodule Tabletop.Fab.GameStateTest do
       assert new_player.tile_positions["amp"] == %{x: 30.0, y: 40.0}
     end
 
+    test "applies proxy token actions and ignores the target element" do
+      assert {:ok, player, {:proxy_token_changed, "Frostbite", 1}} =
+               GameState.transform(
+                 GameState.default_player(),
+                 {:add_proxy_token, "opponent", "Frostbite"}
+               )
+
+      assert player.proxy_tokens == %{"Frostbite" => 1}
+
+      assert {:ok, player, {:proxy_token_changed, "Frostbite", 0}} =
+               GameState.transform(player, {:remove_proxy_token, "my", "Frostbite"})
+
+      assert player.proxy_tokens == %{}
+
+      assert {:ok, player, {:proxy_token_changed, "Mark", 1}} =
+               GameState.transform(player, {:toggle_proxy_token, "opponent", "Mark"})
+
+      assert player.proxy_tokens == %{"Mark" => 1}
+    end
+
     test "returns an error for an unknown action" do
       assert {:error, :unknown_action} =
                GameState.transform(GameState.default_player(), {:bogus_action, 1})
+    end
+  end
+
+  describe "proxy tokens" do
+    test "adding stacks non-singleton tokens" do
+      player = GameState.default_player()
+
+      {:ok, player, {:proxy_token_changed, "Frostbite", 1}} =
+        GameState.add_proxy_token(player, "Frostbite")
+
+      {:ok, player, {:proxy_token_changed, "Frostbite", 2}} =
+        GameState.add_proxy_token(player, "Frostbite")
+
+      assert player.proxy_tokens == %{"Frostbite" => 2}
+    end
+
+    test "adding caps singleton tokens at one" do
+      player = GameState.default_player()
+
+      {:ok, player, _} = GameState.add_proxy_token(player, "Mark")
+
+      assert {:ok, player, {:proxy_token_changed, "Mark", 1}} =
+               GameState.add_proxy_token(player, "Mark")
+
+      assert player.proxy_tokens == %{"Mark" => 1}
+    end
+
+    test "removing decrements and drops the key at zero" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.add_proxy_token(player, "Frostbite")
+      {:ok, player, _} = GameState.add_proxy_token(player, "Frostbite")
+
+      {:ok, player, {:proxy_token_changed, "Frostbite", 1}} =
+        GameState.remove_proxy_token(player, "Frostbite")
+
+      assert player.proxy_tokens == %{"Frostbite" => 1}
+
+      {:ok, player, {:proxy_token_changed, "Frostbite", 0}} =
+        GameState.remove_proxy_token(player, "Frostbite")
+
+      assert player.proxy_tokens == %{}
+    end
+
+    test "removing an absent token is a no-op" do
+      assert {:ok, player, {:proxy_token_changed, "Frostbite", 0}} =
+               GameState.remove_proxy_token(GameState.default_player(), "Frostbite")
+
+      assert player.proxy_tokens == %{}
+    end
+
+    test "toggling flips a token on and off" do
+      player = GameState.default_player()
+
+      {:ok, player, {:proxy_token_changed, "Mark", 1}} =
+        GameState.toggle_proxy_token(player, "Mark")
+
+      {:ok, player, {:proxy_token_changed, "Mark", 0}} =
+        GameState.toggle_proxy_token(player, "Mark")
+
+      assert player.proxy_tokens == %{}
+    end
+
+    test "rejects names outside the token catalogue" do
+      player = GameState.default_player()
+
+      assert {:error, :invalid_token} = GameState.add_proxy_token(player, "Nonsense")
+      assert {:error, :invalid_token} = GameState.remove_proxy_token(player, "Nonsense")
+      assert {:error, :invalid_token} = GameState.toggle_proxy_token(player, "Nonsense")
+      assert {:error, :invalid_token} = GameState.add_proxy_token(player, :mark)
+    end
+
+    test "accepts self-facing tokens, not just opponent debuffs" do
+      assert {:ok, player, {:proxy_token_changed, "Runechant", 1}} =
+               GameState.add_proxy_token(GameState.default_player(), "Runechant")
+
+      assert player.proxy_tokens == %{"Runechant" => 1}
     end
   end
 
@@ -381,6 +477,135 @@ defmodule Tabletop.Fab.GameStateTest do
         GameState.move_tile(GameState.default_player(), "foo", 50.0, 250.0)
 
       assert new_player.tile_positions["foo"] == %{x: 50.0, y: 100.0}
+    end
+  end
+
+  describe "tile stacking" do
+    # A tile is a fixed ~30px tall on a board that can be as short as ~640px, so
+    # the gap between stacked tiles has to stay wide enough (~5% of the board)
+    # to clear one there. Tighter than a tile's own height and they overlap.
+    @one_tile_tall 4.0
+
+    test "stacks new tiles clear of each other" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+      {:ok, player, _} = GameState.toggle_goagain(player)
+
+      ys =
+        ~w(physical arcane goagain)
+        |> Enum.map(&player.tile_positions[&1].y)
+        |> Enum.sort()
+
+      for [above, below] <- Enum.chunk_every(ys, 2, 1, :discard) do
+        assert below - above >= @one_tile_tall
+      end
+    end
+
+    test "closes the gap under a tile that leaves the stack" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+      {:ok, player, _} = GameState.toggle_goagain(player)
+
+      %{"physical" => physical, "arcane" => arcane, "goagain" => goagain} = player.tile_positions
+
+      # Sanity: the three stacked into one column, top to bottom.
+      assert physical.y < arcane.y and arcane.y < goagain.y
+
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+
+      # The tile below slides up into the vacated slot; the one above stays.
+      assert player.tile_positions["physical"] == physical
+      assert player.tile_positions["goagain"] == arcane
+    end
+
+    test "keeps the spacing of the tiles that slide up" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+      {:ok, player, _} = GameState.toggle_goagain(player)
+
+      %{"arcane" => arcane, "goagain" => goagain} = player.tile_positions
+      spacing = goagain.y - arcane.y
+
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+
+      assert player.tile_positions["goagain"].y - player.tile_positions["arcane"].y == spacing
+    end
+
+    test "leaves a tile parked away from the stack where it is" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+
+      {:ok, player, {:custom_counter_added, id, _}} =
+        GameState.add_custom_counter(player, "Energy")
+
+      # Same column, but far enough down to be its own thing rather than part
+      # of the stack.
+      column_x = player.tile_positions["physical"].x
+      {:ok, player, _} = GameState.move_tile(player, id, column_x, 80.0)
+
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+
+      assert player.tile_positions[id] == %{x: column_x, y: 80.0}
+    end
+
+    test "closes the gap under a tile dragged out of the column" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+      {:ok, player, _} = GameState.toggle_goagain(player)
+
+      %{"arcane" => arcane} = player.tile_positions
+
+      {:ok, player, _} = GameState.move_tile(player, "arcane", 60.0, 50.0)
+
+      assert player.tile_positions["arcane"] == %{x: 60.0, y: 50.0}
+      assert player.tile_positions["goagain"] == arcane
+    end
+
+    test "leaves the stack alone when a tile is only nudged within its column" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+      {:ok, player, _} = GameState.toggle_goagain(player)
+
+      %{"physical" => physical, "arcane" => arcane, "goagain" => goagain} = player.tile_positions
+
+      # Arranging the stack by hand must not make the tiles below jump.
+      {:ok, player, _} =
+        GameState.move_tile(player, "physical", physical.x + 2.0, physical.y - 2.0)
+
+      assert player.tile_positions["arcane"] == arcane
+      assert player.tile_positions["goagain"] == goagain
+    end
+
+    test "leaves the stack alone when a grouped tile is dragged away" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+      {:ok, player, _} = GameState.toggle_effect(player, "ability", "Dominate")
+      {:ok, player, _} = GameState.toggle_damage(player, :arcane)
+
+      arcane = player.tile_positions["arcane"]
+
+      # A group moves as a unit and keeps its shape, so it leaves no hole.
+      {:ok, player, _} = GameState.move_tile(player, "ability:Dominate", 60.0, 50.0)
+
+      assert player.tile_positions["arcane"] == arcane
+    end
+
+    test "leaves a tile in another column where it is" do
+      player = GameState.default_player()
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+
+      {:ok, player, {:custom_counter_added, id, _}} =
+        GameState.add_custom_counter(player, "Energy")
+
+      {:ok, player, _} = GameState.move_tile(player, id, 70.0, 20.0)
+      {:ok, player, _} = GameState.toggle_damage(player, :physical)
+
+      assert player.tile_positions[id] == %{x: 70.0, y: 20.0}
     end
   end
 

@@ -204,6 +204,80 @@ defmodule Tabletop.Accounts do
     UserNotifier.deliver_confirmation_instructions(user, confirmation_url_fun.(encoded_token))
   end
 
+  ## Reset password
+
+  @doc ~S"""
+  Delivers reset password instructions to the given user.
+
+  Callers must not vary their response depending on whether a user was found —
+  that would leak which addresses are registered. Look the user up, call this
+  only when there is one, and show the same message either way.
+
+  ## Examples
+
+      iex> deliver_user_reset_password_instructions(user, &url(~p"/users/reset-password/#{&1}"))
+      {:ok, %{to: ..., body: ...}}
+
+  """
+  def deliver_user_reset_password_instructions(%User{} = user, reset_password_url_fun)
+      when is_function(reset_password_url_fun, 1) do
+    {encoded_token, user_token} = UserToken.build_email_token(user, "reset_password")
+    Repo.insert!(user_token)
+    UserNotifier.deliver_reset_password_instructions(user, reset_password_url_fun.(encoded_token))
+  end
+
+  @doc """
+  Gets the user by reset password token.
+
+  Returns `nil` when the token is unknown, expired, or was sent to an address
+  the user no longer holds.
+
+  ## Examples
+
+      iex> get_user_by_reset_password_token("validtoken")
+      %User{}
+
+      iex> get_user_by_reset_password_token("invalidtoken")
+      nil
+
+  """
+  def get_user_by_reset_password_token(token) do
+    case UserToken.verify_reset_password_token_query(token) do
+      {:ok, query} -> Repo.one(query)
+      :error -> nil
+    end
+  end
+
+  @doc """
+  Resets the user password.
+
+  Every token belonging to the user is deleted, which both burns the reset link
+  and signs out any session an attacker may already hold. An account that never
+  clicked its confirmation link is confirmed here, since completing a reset
+  proves control of the mailbox.
+
+  ## Examples
+
+      iex> reset_user_password(user, %{password: "new long password"})
+      {:ok, {%User{}, [...]}}
+
+      iex> reset_user_password(user, %{password: "abc"})
+      {:error, %Ecto.Changeset{}}
+
+  """
+  def reset_user_password(user, attrs) do
+    user
+    |> User.password_changeset(attrs)
+    |> maybe_confirm_user(user)
+    |> update_user_and_delete_all_tokens()
+  end
+
+  defp maybe_confirm_user(changeset, %User{confirmed_at: nil}) do
+    Ecto.Changeset.put_change(changeset, :confirmed_at, DateTime.utc_now(:second))
+  end
+
+  defp maybe_confirm_user(changeset, _user), do: changeset
+
   @doc """
   Deletes the signed token with the given context.
   """

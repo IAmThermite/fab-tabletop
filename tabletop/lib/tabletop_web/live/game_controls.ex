@@ -13,8 +13,9 @@ defmodule TabletopWeb.GameControls do
     * the setup preview applies it locally to its own preview state
 
   The action vocabulary matches `Tabletop.Fab.GameState.transform/2`. `move_tile`
-  is passed through with its raw `owner` ("my"/"opponent"); the host resolves it
-  (the live game can move either player's tiles, the preview only its own).
+  and the `*_proxy_token` actions are passed through with their raw target
+  ("my"/"opponent"); the host resolves it (the live game can act on either
+  player's side, the preview only on its own).
 
   ## Host requirements
 
@@ -22,8 +23,9 @@ defmodule TabletopWeb.GameControls do
 
     * implement `apply_game_action(socket, action)` returning `{:noreply, socket}`
     * assign `:abilities_open`, `:on_hits_open`, `:create_token_open`,
-      `:create_proxy_token_open`, and `:proxy_tokens_expanded` in `mount/3`
-      (the sidebar dropdown toggles read/flip these).
+      `:create_proxy_token_open`, `:proxy_tokens_expanded`, `:proxy_token_target`
+      and `:proxy_tokens_tab` in `mount/3` (the sidebar dropdown toggles and the
+      proxy-token target/tab selectors read/flip these).
 
   New sidebar/tile functionality therefore only needs: a transform + a
   `GameState.transform/2` clause, one `handle_event` clause here, and the UI
@@ -86,17 +88,17 @@ defmodule TabletopWeb.GameControls do
         )
       end
 
-      # --- Proxy tokens ---
-      def handle_event("add_proxy_token", %{"type" => name}, socket) do
-        apply_game_action(socket, {:add_proxy_token, name})
+      # --- Proxy tokens --- (target is resolved by the host's apply_game_action/2)
+      def handle_event("add_proxy_token", %{"type" => name, "target" => target}, socket) do
+        apply_game_action(socket, {:add_proxy_token, target, name})
       end
 
-      def handle_event("remove_proxy_token", %{"type" => name}, socket) do
-        apply_game_action(socket, {:remove_proxy_token, name})
+      def handle_event("remove_proxy_token", %{"type" => name, "target" => target}, socket) do
+        apply_game_action(socket, {:remove_proxy_token, target, name})
       end
 
-      def handle_event("toggle_proxy_token", %{"type" => name}, socket) do
-        apply_game_action(socket, {:toggle_proxy_token, name})
+      def handle_event("toggle_proxy_token", %{"type" => name, "target" => target}, socket) do
+        apply_game_action(socket, {:toggle_proxy_token, target, name})
       end
 
       # --- Life / chain ---
@@ -142,6 +144,19 @@ defmodule TabletopWeb.GameControls do
 
       def handle_event("toggle_dropdown", %{"name" => "proxy_tokens_panel"}, socket) do
         {:noreply, assign(socket, :proxy_tokens_expanded, !socket.assigns.proxy_tokens_expanded)}
+      end
+
+      # Which side the proxy-token picker adds to, and which side the expanded
+      # panel is showing. Both are "my"/"opponent" strings so they can be handed
+      # straight back as the action target.
+      def handle_event("set_proxy_token_target", %{"target" => target}, socket)
+          when target in ["my", "opponent"] do
+        {:noreply, assign(socket, :proxy_token_target, target)}
+      end
+
+      def handle_event("set_proxy_tokens_tab", %{"target" => target}, socket)
+          when target in ["my", "opponent"] do
+        {:noreply, assign(socket, :proxy_tokens_tab, target)}
       end
 
       # --- Shared param coercion helpers ---

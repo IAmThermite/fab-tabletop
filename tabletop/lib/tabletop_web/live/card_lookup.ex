@@ -17,14 +17,56 @@ defmodule TabletopWeb.CardLookup do
         card: %Tabletop.Cards.Card{},        # gameplay identity (name, pitch, normalized_name, tokens)
         card_print: %Tabletop.Cards.CardPrint{},  # printing (image_url, set_code, hashes)
         pitch_variants: [%Card{} preloaded with canonical print],
-        alternate_matches: [%{card: %Card{}, card_print: %CardPrint{}}, ...],
+        matches: [%{card: %Card{}, card_print: %CardPrint{}}, ...],
         debug: %{...}
       }
+
+  `matches` holds *every* candidate the lookup returned, including the one
+  currently displayed, in a fixed order — `switch_match` only moves the
+  selection, never the list. Keep it that way: the `<select>` in
+  `card_popouts/1` is patched while the user has it focused, and LiveView
+  preserves the focused select's value across that patch
+  (`isChangedSelect/2`). Drop the picked option from the list and the select
+  is left pointing at a value that no longer exists, which renders blank.
 
   Usage:
 
       use TabletopWeb.CardLookup
   """
+
+  @doc """
+  Emits the card-scan telemetry event for one `open_card` attempt.
+
+  Lives on the module rather than inside `__using__/1` so the logic is defined
+  once instead of being injected into every host LiveView. `region_scale` is
+  `1.0` on the scanner's first attempt and larger once it has started growing
+  the capture region, so `first_try` separates clean reads from ones that only
+  landed after a retry — a hit rate that depends on retries is a different
+  problem from one that doesn't.
+  """
+  def record_card_scan(phashes, possible_pairs, started_at, region_scale) do
+    duration = System.monotonic_time() - started_at
+    first_try? = region_scale <= 1.0
+
+    case possible_pairs do
+      [%{card_print: card_print} | _] when not is_nil(card_print) ->
+        case Tabletop.Cards.best_phash_match(phashes, card_print) do
+          {arm, distance} ->
+            Tabletop.Telemetry.card_scan(duration, :match, first_try?, distance, arm)
+
+          nil ->
+            # Matched via an arm we can't reconstruct (e.g. the popout swapped in
+            # a pitch variant's print). Still a match — just no distance to report.
+            Tabletop.Telemetry.card_scan(duration, :match, first_try?)
+        end
+
+      [_ | _] ->
+        Tabletop.Telemetry.card_scan(duration, :match, first_try?)
+
+      [] ->
+        Tabletop.Telemetry.card_scan(duration, :miss, first_try?)
+    end
+  end
 
   defmacro __using__(_opts) do
     quote do
@@ -49,6 +91,8 @@ defmodule TabletopWeb.CardLookup do
           end
 
         # Recognition is pHash-only — no OCR. (Manual name search uses `search_card`.)
+        scan_started_at = System.monotonic_time()
+
         possible_pairs =
           if has_phash?(phashes) do
             Cards.find_by_p_hash_similarity(phashes)
@@ -57,6 +101,13 @@ defmodule TabletopWeb.CardLookup do
           else
             []
           end
+
+        TabletopWeb.CardLookup.record_card_scan(
+          phashes,
+          possible_pairs,
+          scan_started_at,
+          region_scale
+        )
 
         # Sort pitch-matched cards to front
         possible_pairs =
@@ -179,54 +230,24 @@ defmodule TabletopWeb.CardLookup do
         {:noreply, assign(socket, :open_cards, cards)}
       end
 
-      def handle_event("switch_match", %{"card_id" => _id, "normalized_name" => ""}, socket) do
-        {:noreply, socket}
-      end
-
       def handle_event("switch_match", %{"card_id" => id, "normalized_name" => name}, socket) do
         cards =
           Enum.map(socket.assigns.open_cards, fn open_card ->
-            if open_card.id == id do
-              case Enum.find(open_card.alternate_matches, &(&1.card.normalized_name == name)) do
-                nil ->
-                  open_card
+            # `matches` stays put — only the selection moves. See the moduledoc.
+            with true <- open_card.id == id,
+                 true <- open_card.card.normalized_name != name,
+                 pair when not is_nil(pair) <-
+                   Enum.find(open_card.matches, &(&1.card.normalized_name == name)) do
+              {selected_card, selected_print, pitch_variants} = resolve_display(pair, nil)
 
-                new_pair ->
-                  # Rotate old card+print back into alternates
-                  old_alt = %{card: open_card.card, card_print: open_card.card_print}
-
-                  new_alternates =
-                    [
-                      old_alt
-                      | Enum.reject(
-                          open_card.alternate_matches,
-                          &(&1.card.normalized_name == name)
-                        )
-                    ]
-                    |> Enum.uniq_by(& &1.card.normalized_name)
-
-                  new_pitch_variants =
-                    Cards.find_pitch_variants(new_pair.card, new_pair.card_print.set_code)
-
-                  selected_card =
-                    if new_pitch_variants != [],
-                      do: Enum.find(new_pitch_variants, new_pair.card, &(&1.pitch == 1)),
-                      else: new_pair.card
-
-                  selected_print =
-                    Card.canonical_print(selected_card, new_pair.card_print.set_code) ||
-                      new_pair.card_print
-
-                  %{
-                    open_card
-                    | card: selected_card,
-                      card_print: selected_print,
-                      pitch_variants: new_pitch_variants,
-                      alternate_matches: new_alternates
-                  }
-              end
+              %{
+                open_card
+                | card: selected_card,
+                  card_print: selected_print,
+                  pitch_variants: pitch_variants
+              }
             else
-              open_card
+              _ -> open_card
             end
           end)
 
@@ -315,30 +336,7 @@ defmodule TabletopWeb.CardLookup do
 
       defp build_open_card(possible_pairs, x, y, detected_pitch, debug_info) do
         first = List.first(possible_pairs)
-
-        pitch_variants =
-          Cards.find_pitch_variants(first.card, first.card_print && first.card_print.set_code)
-
-        selected_card =
-          cond do
-            pitch_variants == [] ->
-              first.card
-
-            detected_pitch ->
-              Enum.find(pitch_variants, first.card, &(&1.pitch == detected_pitch))
-
-            true ->
-              Enum.find(pitch_variants, first.card, &(&1.pitch == 1))
-          end
-
-        selected_print =
-          Card.canonical_print(selected_card, first.card_print && first.card_print.set_code) ||
-            first.card_print
-
-        alternates =
-          possible_pairs
-          |> Enum.reject(&(&1.card.normalized_name == first.card.normalized_name))
-          |> Enum.uniq_by(& &1.card.normalized_name)
+        {selected_card, selected_print, pitch_variants} = resolve_display(first, detected_pitch)
 
         %{
           id: System.unique_integer([:positive]) |> Integer.to_string(),
@@ -347,9 +345,29 @@ defmodule TabletopWeb.CardLookup do
           card: selected_card,
           card_print: selected_print,
           pitch_variants: pitch_variants,
-          alternate_matches: alternates,
+          matches: Enum.uniq_by(possible_pairs, & &1.card.normalized_name),
           debug: debug_info
         }
+      end
+
+      # Given a matched {card, card_print} pair, pick the card + print the
+      # popout should actually show: the pitch the scanner detected when it
+      # detected one, else pitch 1, with that card's canonical print biased
+      # toward the matched print's set.
+      defp resolve_display(pair, detected_pitch) do
+        set_code = pair.card_print && pair.card_print.set_code
+        pitch_variants = Cards.find_pitch_variants(pair.card, set_code)
+
+        selected_card =
+          cond do
+            pitch_variants == [] -> pair.card
+            detected_pitch -> Enum.find(pitch_variants, pair.card, &(&1.pitch == detected_pitch))
+            true -> Enum.find(pitch_variants, pair.card, &(&1.pitch == 1))
+          end
+
+        selected_print = Card.canonical_print(selected_card, set_code) || pair.card_print
+
+        {selected_card, selected_print, pitch_variants}
       end
     end
   end

@@ -4,6 +4,13 @@ defmodule Tabletop.Accounts.User do
 
   @primary_key {:id, Ecto.UUID, autogenerate: true}
 
+  # Minimum password length, enforced on registration, password change and
+  # password reset — everything funnels through `validate_password/2`.
+  @min_password_length 4
+
+  @doc "Minimum number of characters a password must have."
+  def min_password_length, do: @min_password_length
+
   schema "users" do
     field(:email, :string, writable: :insert)
     field(:password, :string, virtual: true, redact: true)
@@ -25,41 +32,32 @@ defmodule Tabletop.Accounts.User do
     cast(user, attrs, [:language])
   end
 
+  @doc """
+  Registration changeset.
+
+  Email and username are both checked for uniqueness before the insert, so the
+  form can report a clash on the field that caused it; the `unique_constraint/2`
+  calls catch the race between that check and the insert.
+  """
   def changeset(user, attrs) do
     user
     |> cast(attrs, [:email, :password, :name])
     |> validate_required([:email, :password, :name])
-    |> validate_email(validate_unique: true)
+    |> validate_email()
     |> validate_password(hash_password: true)
+    |> unsafe_validate_unique(:name, Tabletop.Repo)
     |> unique_constraint(:name)
     |> unique_constraint(:email)
   end
 
-  defp validate_email(changeset, opts) do
-    changeset =
-      changeset
-      |> validate_required([:email])
-      |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+$/,
-        message: "must have the @ sign and no spaces"
-      )
-      |> validate_length(:email, max: 160)
-
-    if Keyword.get(opts, :validate_unique, true) do
-      changeset
-      |> unsafe_validate_unique(:email, Tabletop.Repo)
-      |> unique_constraint(:email)
-      |> validate_email_changed()
-    else
-      changeset
-    end
-  end
-
-  defp validate_email_changed(changeset) do
-    if get_field(changeset, :email) && get_change(changeset, :email) == nil do
-      add_error(changeset, :email, "did not change")
-    else
-      changeset
-    end
+  defp validate_email(changeset) do
+    changeset
+    |> validate_required([:email])
+    |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+$/,
+      message: "must have the @ sign and no spaces"
+    )
+    |> validate_length(:email, max: 160)
+    |> unsafe_validate_unique(:email, Tabletop.Repo)
   end
 
   @doc """
@@ -87,6 +85,11 @@ defmodule Tabletop.Accounts.User do
   defp validate_password(changeset, opts) do
     changeset
     |> validate_required([:password])
+    |> validate_length(:password, min: @min_password_length)
+    # Bcrypt only reads the first 72 bytes, so reject longer passwords rather
+    # than silently truncating them. Both length checks run before hashing so
+    # the LiveView (`hash_password: false`) surfaces them while typing.
+    |> validate_length(:password, max: 72, count: :bytes)
     |> maybe_hash_password(opts)
   end
 
@@ -96,8 +99,6 @@ defmodule Tabletop.Accounts.User do
 
     if hash_password? && password && changeset.valid? do
       changeset
-      # If using Bcrypt, then further validate it is at most 72 bytes long
-      |> validate_length(:password, max: 72, count: :bytes)
       # Hashing could be done with `Ecto.Changeset.prepare_changes/2`, but that
       # would keep the database transaction open longer and hurt performance.
       |> put_change(:hashed_password, Bcrypt.hash_pwd_salt(password))

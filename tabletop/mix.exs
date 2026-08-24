@@ -21,7 +21,7 @@ defmodule Tabletop.MixProject do
   def application do
     [
       mod: {Tabletop.Application, []},
-      extra_applications: [:logger, :runtime_tools] ++ extra_applications(Mix.env())
+      extra_applications: [:logger, :runtime_tools, :inets, :ssl] ++ extra_applications(Mix.env())
     ]
   end
 
@@ -53,6 +53,9 @@ defmodule Tabletop.MixProject do
       {:phoenix_live_view, "~> 1.1.0"},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.3"},
+      # Backs the dashboard's "Ecto Stats" page. Not a dev-only dep — the
+      # dashboard is mounted in production too (see router.ex).
+      {:ecto_psql_extras, "~> 0.8"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
       {:heroicons,
@@ -66,6 +69,16 @@ defmodule Tabletop.MixProject do
       {:req, "~> 0.5"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
+      {:prom_ex, "~> 1.11.0"},
+      # Tracing → Grafana Tempo over OTLP (push-based).
+      {:opentelemetry_api, "~> 1.5"},
+      {:opentelemetry, "~> 1.7"},
+      {:opentelemetry_exporter, "~> 1.10"},
+      {:opentelemetry_phoenix, "~> 2.0"},
+      {:opentelemetry_bandit, "~> 0.3"},
+      {:opentelemetry_ecto, "~> 1.2"},
+      # Error tracking. Complements the Grafana stack rather than overlapping it
+      {:sentry, "~> 13.4"},
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},

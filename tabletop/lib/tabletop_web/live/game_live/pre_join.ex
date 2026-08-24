@@ -4,6 +4,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
   alias Tabletop.Games
   alias Tabletop.Games.Game
   alias Tabletop.Heroes
+  alias TabletopWeb.CameraRelayToken
 
   on_mount {TabletopWeb.UserAuth, :require_authenticated}
 
@@ -12,7 +13,11 @@ defmodule TabletopWeb.GameLive.PreJoin do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.game flash={@flash} current_scope={@current_scope}>
+    <Layouts.game
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+    >
       <div
         id="pre-join"
         phx-hook=".PreJoinCamera"
@@ -67,6 +72,8 @@ defmodule TabletopWeb.GameLive.PreJoin do
           <div id="pre-join-status" phx-update="ignore" class="badge badge-sm badge-outline">
             Initializing...
           </div>
+
+          <Layouts.game_alert_tray flash={@flash} system_announcement={@system_announcement} />
         </div>
 
         <%!-- Waiting-for-opponent banner (creator only, no active joiner) --%>
@@ -553,9 +560,6 @@ defmodule TabletopWeb.GameLive.PreJoin do
     end
 
     user_token = Phoenix.Token.sign(socket, "user socket", scope.user.id)
-    camera_relay_token = Phoenix.Token.sign(socket, "camera relay", scope.user.id)
-    qr_url = "#{TabletopWeb.Endpoint.url()}/phone-camera/#{camera_relay_token}"
-    qr_svg = qr_url |> EQRCode.encode() |> EQRCode.svg(width: 200)
 
     socket
     |> assign(:page_title, "Pre-Join: #{game.title}")
@@ -565,7 +569,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
     |> assign(:camera_relay_token, camera_relay_token)
     |> assign(:relay_user_id, scope.user.id)
     |> assign(:ice_servers, Tabletop.Turn.ice_servers(scope.user.id))
-    |> assign(:qr_svg, qr_svg)
+    |> assign(:qr_svg, CameraRelayToken.qr_svg(socket, scope.user.id))
     |> assign(:hero_options, [])
     |> assign(:selected_hero, nil)
   end
@@ -578,13 +582,13 @@ defmodule TabletopWeb.GameLive.PreJoin do
     case Games.reserve_join(scope, game) do
       {:ok, game} ->
         if connected?(socket) do
+          # Registered before the expiry timer so `terminate/2` can tell whether
+          # this user still has another pre-join tab holding the same seat.
+          Games.track_reservation(game.id, scope)
           Process.send_after(self(), :reservation_expired, @reservation_timeout_ms)
         end
 
         user_token = Phoenix.Token.sign(socket, "user socket", scope.user.id)
-        camera_relay_token = Phoenix.Token.sign(socket, "camera relay", scope.user.id)
-        qr_url = "#{TabletopWeb.Endpoint.url()}/phone-camera/#{camera_relay_token}"
-        qr_svg = qr_url |> EQRCode.encode() |> EQRCode.svg(width: 200)
 
         socket
         |> assign(:page_title, "Pre-Join: #{game.title}")
@@ -594,7 +598,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:camera_relay_token, camera_relay_token)
         |> assign(:relay_user_id, scope.user.id)
         |> assign(:ice_servers, Tabletop.Turn.ice_servers(scope.user.id))
-        |> assign(:qr_svg, qr_svg)
+        |> assign(:qr_svg, CameraRelayToken.qr_svg(socket, scope.user.id))
         |> assign(:hero_options, Heroes.options_for(game.format))
         |> assign(:selected_hero, nil)
 
@@ -620,6 +624,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
         # ice-server attribute needs a value. No credential is minted for a
         # page the user is being bounced off.
         |> assign(:ice_servers, [])
+        |> assign(:relay_user_id, "")
         |> assign(:qr_svg, "")
         |> assign(:hero_options, [])
         |> assign(:selected_hero, nil)

@@ -5,6 +5,7 @@ defmodule TabletopWeb.GameLive.Index do
   alias Tabletop.Accounts.Scope
   alias Tabletop.Games
   alias Tabletop.Games.Game
+  alias Tabletop.Games.HeroLeaderboard
   alias Tabletop.Heroes
   alias Tabletop.Languages
   alias Tabletop.Tournaments
@@ -13,7 +14,12 @@ defmodule TabletopWeb.GameLive.Index do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} max_width="max-w-7xl">
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+      max_width="max-w-7xl"
+    >
       <.notification_banners items={@notification_items} />
       <div id="game-index" phx-hook=".GameIndex">
         <%!-- Anonymous intro / marketing header. A native <details> drives the
@@ -77,11 +83,11 @@ defmodule TabletopWeb.GameLive.Index do
                   :if={shot.src}
                   src={shot.src}
                   alt={shot.alt}
-                  class="aspect-video w-full object-cover"
+                  class="w-full object-cover"
                 />
                 <div
                   :if={!shot.src}
-                  class="flex aspect-video flex-col items-center justify-center gap-1.5 p-2 text-center"
+                  class="flex flex-col items-center justify-center gap-1.5 p-2 text-center"
                 >
                   <.icon name="hero-photo" class="size-6 text-base-content/30" />
                   <span class="text-xs text-base-content/40">{shot.caption}</span>
@@ -455,10 +461,14 @@ defmodule TabletopWeb.GameLive.Index do
                 </div>
               </div>
 
-              <%!-- Popular heroes by format, last 7 days --%>
+              <%!-- Popular heroes by format. The window is the leaderboard's own,
+                   so the label can't drift from the data behind it. --%>
               <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
                 <h3 class="font-semibold mb-3">
-                  Popular heroes <span class="text-xs font-normal text-zinc-500">· last 7 days</span>
+                  Popular heroes
+                  <span class="text-xs font-normal text-zinc-500">
+                    · last {HeroLeaderboard.window_days()} days
+                  </span>
                 </h3>
 
                 <div :if={@popular_heroes_any?} class="space-y-3">
@@ -604,33 +614,42 @@ defmodule TabletopWeb.GameLive.Index do
         </div>
       </div>
 
-      <dialog :if={@show_join_private} id="join-private-dialog" class="modal modal-open">
-        <div class="modal-box">
-          <h3 class="text-lg font-bold mb-4">Join private game</h3>
-          <.form
-            for={%{}}
-            as={:join_private}
-            phx-submit="join_private"
-            class="space-y-3"
-          >
-            <.input
-              name="code"
-              value=""
-              type="text"
-              label="Game code or link"
-              placeholder="Paste a game code or link"
-              autocomplete="off"
-            />
-            <div class="modal-action">
-              <button type="button" phx-click="close_join_private" class="btn">
-                Cancel
-              </button>
-              <.button variant="primary" type="submit">Join</.button>
-            </div>
-          </.form>
-        </div>
-        <div class="modal-backdrop" phx-click="close_join_private"></div>
-      </dialog>
+      <%!-- Teleported to <body>. daisyUI's `.modal` is `position: fixed`, but the
+           content panel in `Layouts.app` sets `backdrop-filter`, which makes it
+           the containing block for fixed descendants — rendered in place the
+           modal sizes itself to the panel instead of the viewport, so the
+           backdrop dims only part of the page and click-outside misses the
+           margins. Note for tests: LiveViewTest can't select elements inside a
+           portal; render `#join-private-portal` or drive the event on the view. --%>
+      <.portal id="join-private-portal" target="body">
+        <dialog :if={@show_join_private} id="join-private-dialog" class="modal modal-open">
+          <div class="modal-box">
+            <h3 class="text-lg font-bold mb-4">Join private game</h3>
+            <.form
+              for={%{}}
+              as={:join_private}
+              phx-submit="join_private"
+              class="space-y-3"
+            >
+              <.input
+                name="code"
+                value=""
+                type="text"
+                label="Game code or link"
+                placeholder="Paste a game code or link"
+                autocomplete="off"
+              />
+              <div class="modal-action">
+                <button type="button" phx-click="close_join_private" class="btn">
+                  Cancel
+                </button>
+                <.button variant="primary" type="submit">Join</.button>
+              </div>
+            </.form>
+          </div>
+          <div class="modal-backdrop" phx-click="close_join_private"></div>
+        </dialog>
+      </.portal>
     </Layouts.app>
 
     <script :type={ColocatedHook} name=".GameIndex">
@@ -707,6 +726,9 @@ defmodule TabletopWeb.GameLive.Index do
 
   # Seed the create form from the user's last game so they can rematch with one
   # extra click. We only fill the form — the user still presses Start to create.
+  # The copied fields must stay in sync with `Game.changeset/3`'s cast list: a
+  # castable field missing here silently falls back to the schema default, so a
+  # private game would come back as a public one.
   def handle_event("quick_match", _params, socket) do
     case socket.assigns.last_game do
       nil ->
@@ -722,6 +744,7 @@ defmodule TabletopWeb.GameLive.Index do
           title: last.title,
           hero: last.hero,
           decklist: last.decklist,
+          private: last.private,
           competitive: last.competitive
         }
 
@@ -843,19 +866,25 @@ defmodule TabletopWeb.GameLive.Index do
   end
 
   @impl true
-  def handle_info({type, %Game{}}, socket)
-      when type in [:created, :updated, :deleted] do
-    {:noreply,
-     socket
-     |> assign_current_game(socket.assigns.current_scope)
-     |> assign_last_game(socket.assigns.current_scope)
-     |> assign_games()
-     |> assign_activity()}
+  def handle_info({type, %Game{} = game}, socket) when type in [:created, :updated, :deleted] do
+    socket =
+      if involves?(socket.assigns.current_scope, game) do
+        socket
+        |> assign_current_game(socket.assigns.current_scope)
+        |> assign_last_game(socket.assigns.current_scope)
+      else
+        socket
+      end
+
+    {:noreply, socket |> assign_games() |> assign_activity()}
   end
 
   def handle_info({:tournaments_updated}, socket) do
     {:noreply, assign_tournaments(socket)}
   end
+
+  defp involves?(%Scope{user: %{id: id}}, %Game{} = g), do: g.user_id == id or g.user2_id == id
+  defp involves?(nil, _), do: false
 
   defp assign_current_game(socket, %Scope{} = scope) do
     assign(socket, :current_game, Games.get_current_game_for_user(scope))
@@ -931,16 +960,29 @@ defmodule TabletopWeb.GameLive.Index do
   defp pluralize(1, unit), do: "1 #{unit} ago"
   defp pluralize(n, unit), do: "#{n} #{unit}s ago"
 
-  # Screenshots shown in the anonymous intro header. `src` is nil until real
-  # captures land in priv/static/images/home/ — set each one to its
-  # `~p"/images/home/<file>"` path (e.g. `~p"/images/home/lobby.png"`) to swap
-  # the placeholder for the image.
+  # Screenshots shown in the anonymous intro header
   defp intro_screenshots do
     [
-      %{src: nil, alt: "Lobby — browse and create games", caption: "The lobby"},
-      %{src: nil, alt: "Live webcam play against your opponent", caption: "Webcam play"},
-      %{src: nil, alt: "Life and combat-chain tracking", caption: "Built-in trackers"},
-      %{src: nil, alt: "Scan a card to look it up", caption: "Card scanning"}
+      %{
+        src: ~p"/images/home/join-or-create-game.webp",
+        alt: "Join or create a game to play",
+        caption: "Join or create a game"
+      },
+      %{
+        src: ~p"/images/home/game-board.webp",
+        alt: "Live webcam play against your opponent",
+        caption: "Webcam play"
+      },
+      %{
+        src: ~p"/images/home/card-search.gif",
+        alt: "Scan a card to look it up",
+        caption: "Card scanning"
+      },
+      %{
+        src: ~p"/images/home/effect-stacking.webp",
+        alt: "Combat-chain tracking",
+        caption: "Built-in trackers"
+      }
     ]
   end
 

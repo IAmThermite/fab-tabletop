@@ -12,6 +12,11 @@ tabletop/priv/static/assets
 tabletop/priv/static/cache_manifest.json
 tabletop/priv/cert
 
+# Editing sources kept beside the served images (~263MB). Nothing in lib/ or
+# assets/ references them, but `COPY tabletop/priv priv` bakes everything under
+# priv into the release, so without this they ship to Fly on every deploy.
+tabletop/priv/static/images/**/*_orig.*
+
 # Vendored card data: the build only needs the precomputed card.json
 # (see infrastructure/Dockerfile). The rest of the submodule — csvs/, web/,
 # other languages — is ~60MB of dead weight in the build context.

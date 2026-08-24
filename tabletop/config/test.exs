@@ -7,6 +7,13 @@ config :bcrypt_elixir, :log_rounds, 1
 # tests override this to exercise the "too soon" guard.
 config :tabletop, :check_in_min_seconds, 0
 
+# Never refresh the popular-heroes cache in the background: the server holds its
+# own connection, which the Ecto sandbox does not own, and a cache one async test
+# populated would leak into the rest. Reads compute inline instead. Tests that
+# exercise the cache itself allow the server on their connection and call
+# `HeroLeaderboard.refresh/0` directly.
+config :tabletop, :hero_leaderboard_refresh_ms, nil
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used
@@ -46,3 +53,14 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# No metrics listener under test — a fixed port would collide between
+# concurrently running suites. PromEx itself still starts, so the telemetry
+# handlers are attached and the emit calls are exercised.
+config :tabletop, :metrics_port, nil
+
+# Starts Sentry's test registry so `Sentry.Test` can intercept events in-process
+# instead of over HTTP. Without it, `start_collecting_sentry_reports/0` exits
+# with a missing `Sentry.Test.Registry`. No DSN is set, so nothing can escape to
+# the real Sentry either way.
+config :sentry, test_mode: true

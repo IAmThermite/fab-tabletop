@@ -7,7 +7,11 @@ defmodule TabletopWeb.UserLive.Registration do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      system_announcement={@system_announcement}
+    >
       <div class="mx-auto max-w-sm">
         <div class="text-center">
           <.header>
@@ -47,12 +51,31 @@ defmodule TabletopWeb.UserLive.Registration do
             label="Password"
             autocomplete="new-password"
             required
+            minlength={User.min_password_length()}
             phx-mounted={JS.focus()}
           />
+          <p class="text-sm text-zinc-500 mt-1">
+            At least {User.min_password_length()} characters.
+          </p>
 
           <.button phx-disable-with="Creating account..." class="btn btn-primary w-full">
             Create an account
           </.button>
+
+          <p class="text-sm text-zinc-500 mt-3 text-center">
+            By creating an account you agree to our <.link
+              navigate={~p"/terms"}
+              class="link link-hover font-semibold"
+            >
+              Terms of Service
+            </.link>,
+            <.link navigate={~p"/code-of-conduct"} class="link link-hover font-semibold">
+              Code of Conduct
+            </.link>
+            and <.link navigate={~p"/privacy"} class="link link-hover font-semibold">
+              Privacy Policy
+            </.link>.
+          </p>
         </.form>
       </div>
     </Layouts.app>
@@ -75,11 +98,10 @@ defmodule TabletopWeb.UserLive.Registration do
   def handle_event("save", %{"user" => user_params}, socket) do
     case Accounts.register_user(user_params) do
       {:ok, user} ->
-        {:ok, _} =
-          Accounts.deliver_user_confirmation_instructions(
-            user,
-            &url(~p"/users/confirm/#{&1}")
-          )
+        Accounts.deliver_user_confirmation_instructions(
+          user,
+          &url(~p"/users/confirm/#{&1}")
+        )
 
         {:noreply,
          socket

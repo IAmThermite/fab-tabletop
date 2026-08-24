@@ -44,10 +44,97 @@
 @custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
 @custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
 
+/* Click acknowledgement for server-backed controls.
+   Every game control is authoritative — the button does nothing locally, it
+   asks the session GenServer and waits for the broadcast to come back. That
+   round trip is one network RTT, so on a link far from the Fly region the tile
+   can take a few hundred milliseconds to appear and the click reads as dropped.
+   Nothing here makes the tile arrive sooner; it makes the *press* land at once:
+
+     :active            fires on pointer-down, before any JS runs
+     .phx-click-loading is added by LiveView from event dispatch until the
+                        server acks, so the pressed look holds for exactly as
+                        long as the player is actually waiting (the form-level
+                        .phx-submit-loading does the same for the one control
+                        that is a submit rather than a click)
+
+   Uses the standalone `scale` property rather than `transform: scale()` so it
+   composes with (instead of clobbering) the transforms Tailwind and the tile
+   layer already put on these elements. Transition only on the way out — an
+   ease-in would defeat the point. */
+button[phx-click],
+form[phx-submit] button[type="submit"] {
+  transition: scale 120ms ease-out, filter 120ms ease-out;
+}
+
+button[phx-click]:not(:disabled):active,
+button[phx-click]:not(:disabled).phx-click-loading,
+form[phx-submit] button[type="submit"]:not(:disabled):active,
+form[phx-submit].phx-submit-loading button[type="submit"]:not(:disabled) {
+  scale: 0.94;
+  filter: brightness(0.88);
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button[phx-click]:not(:disabled):active,
+  button[phx-click]:not(:disabled).phx-click-loading,
+  form[phx-submit] button[type="submit"]:not(:disabled):active,
+  form[phx-submit].phx-submit-loading button[type="submit"]:not(:disabled) {
+    scale: 1;
+  }
+}
+
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session],
 [data-phx-teleported-src] {
   display: contents
+}
+
+/* Game tiles (life/damage/effect markers pinned to a spot on a player's board).
+   Their coordinates are stored in *board* space — percentages of the video
+   frame, as placed by the player who owns them — and carried on the per-tile
+   `--tile-x`/`--tile-y` custom properties rather than on `left`/`top` directly.
+   That indirection is what lets a viewer whose board is drawn rotated 180°
+   (the default for the opponent's canvas — see the flip toggle in the game
+   settings dialog) mirror the tiles onto the matching side of the board without
+   the server, which never sees that client-side toggle, re-rendering anything.
+   Only the position mirrors: the tile itself stays upright and readable. */
+.game-tile {
+  left: var(--tile-x);
+  top: var(--tile-y);
+}
+
+[data-board-flipped="true"] .game-tile {
+  left: calc(100% - var(--tile-x));
+  top: calc(100% - var(--tile-y));
+}
+
+/* Hover popovers anchor to whichever side of the tile has room, chosen
+   server-side from the tile's board coordinates. A flipped board mirrors the
+   tile's visual position, so the anchor has to mirror with it. */
+[data-board-flipped="true"] .tile-popover-x-left {
+  right: auto;
+  margin-right: 0;
+  left: 100%;
+  margin-left: 0.5rem;
+}
+
+[data-board-flipped="true"] .tile-popover-x-right {
+  left: auto;
+  margin-left: 0;
+  right: 100%;
+  margin-right: 0.5rem;
+}
+
+[data-board-flipped="true"] .tile-popover-y-top {
+  top: auto;
+  bottom: 0;
+}
+
+[data-board-flipped="true"] .tile-popover-y-bottom {
+  bottom: auto;
+  top: 0;
 }
 
 /* This file is for your main application CSS */

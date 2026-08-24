@@ -12,7 +12,17 @@ defmodule TabletopWeb.UserLive.SettingsTest do
         |> log_in_user(user_fixture())
         |> live(~p"/users/settings")
 
-      assert html =~ "Save Password"
+      assert html =~ "Account Settings"
+      assert html =~ "Change password"
+    end
+
+    test "stays reachable once sudo mode has lapsed", %{conn: conn} do
+      {:ok, _lv, html} =
+        conn
+        |> log_in_user(user_fixture(), token_authenticated_at: stale_login())
+        |> live(~p"/users/settings")
+
+      assert html =~ "Change password"
     end
 
     test "redirects if user is not logged in", %{conn: conn} do
@@ -21,6 +31,30 @@ defmodule TabletopWeb.UserLive.SettingsTest do
       assert {:redirect, %{to: path, flash: flash}} = redirect
       assert path == ~p"/users/log-in"
       assert %{"error" => "You must log in to access this page."} = flash
+    end
+  end
+
+  describe "change password page" do
+    test "redirects to log in when sudo mode has lapsed", %{conn: conn} do
+      conn =
+        conn
+        |> log_in_user(user_fixture(), token_authenticated_at: stale_login())
+        |> get(~p"/users/settings/password")
+
+      assert redirected_to(conn) == ~p"/users/log-in"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
+               "You must re-authenticate to access this page."
+
+      # Re-authenticating has to come back to the page that demanded it.
+      assert get_session(conn, :user_return_to) == ~p"/users/settings/password"
+    end
+
+    test "redirects if user is not logged in", %{conn: conn} do
+      assert {:error, redirect} = live(conn, ~p"/users/settings/password")
+
+      assert {:redirect, %{to: path}} = redirect
+      assert path == ~p"/users/log-in"
     end
   end
 
@@ -33,7 +67,7 @@ defmodule TabletopWeb.UserLive.SettingsTest do
     test "updates the user password", %{conn: conn, user: user} do
       new_password = valid_user_password()
 
-      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      {:ok, lv, _html} = live(conn, ~p"/users/settings/password")
 
       form =
         form(lv, "#password_form", %{
@@ -59,7 +93,7 @@ defmodule TabletopWeb.UserLive.SettingsTest do
     end
 
     test "renders errors with invalid data (phx-change)", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      {:ok, lv, _html} = live(conn, ~p"/users/settings/password")
 
       result =
         lv
@@ -76,7 +110,7 @@ defmodule TabletopWeb.UserLive.SettingsTest do
     end
 
     test "renders errors with invalid data (phx-submit)", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      {:ok, lv, _html} = live(conn, ~p"/users/settings/password")
 
       result =
         lv
@@ -91,5 +125,25 @@ defmodule TabletopWeb.UserLive.SettingsTest do
       assert result =~ "Save Password"
       assert result =~ "does not match password"
     end
+
+    test "rejects the POST outright once sudo mode has lapsed", %{conn: conn, user: user} do
+      offset_user_token(get_session(conn, :user_token), -30, :minute)
+      new_password = valid_user_password()
+
+      conn =
+        post(conn, ~p"/users/update-password", %{
+          "user" => %{
+            "email" => user.email,
+            "password" => new_password,
+            "password_confirmation" => new_password
+          }
+        })
+
+      assert redirected_to(conn) == ~p"/users/log-in"
+      refute Accounts.get_user_by_email_and_password(user.email, new_password)
+    end
   end
+
+  # Anything older than the 20-minute sudo window (`Accounts.sudo_mode?/2`).
+  defp stale_login, do: DateTime.add(DateTime.utc_now(:second), -30, :minute)
 end

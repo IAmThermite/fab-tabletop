@@ -21,11 +21,19 @@ defmodule TabletopWeb.GameComponents do
     desc = Map.get(assigns.tile, :description_html)
 
     # Anchor the popover on the side with more room so it never gets clipped.
+    # The side is picked from the tile's *board* coordinates; on a flipped board
+    # the tile is drawn mirrored, so the `tile-popover-*` marker classes let
+    # app.css mirror the anchor to match (the server never sees the client-side
+    # flip toggle, so it can't decide this on its own).
     horizontal_class =
-      if assigns.tile.x > 50, do: "right-full mr-2", else: "left-full ml-2"
+      if assigns.tile.x > 50,
+        do: "tile-popover-x-left right-full mr-2",
+        else: "tile-popover-x-right left-full ml-2"
 
     vertical_class =
-      if assigns.tile.y > 50, do: "bottom-0", else: "top-0"
+      if assigns.tile.y > 50,
+        do: "tile-popover-y-bottom bottom-0",
+        else: "tile-popover-y-top top-0"
 
     assigns =
       assigns
@@ -65,6 +73,7 @@ defmodule TabletopWeb.GameComponents do
   attr :on_hits_open, :boolean, default: false
   attr :create_token_open, :boolean, default: false
   attr :create_proxy_token_open, :boolean, default: false
+  attr :proxy_token_target, :string, default: "opponent"
 
   def game_sidebar(assigns) do
     ~H"""
@@ -369,7 +378,9 @@ defmodule TabletopWeb.GameComponents do
 
       <div class="flex-1"></div>
 
-      <%!-- Create Proxy Token --%>
+      <%!-- Create Proxy Token. The list is unfiltered — any token can go on
+            either side — so the target selector, not the catalogue, decides who
+            receives it, and the counts shown are the target's. --%>
       <div class="relative">
         <button
           type="button"
@@ -385,12 +396,29 @@ defmodule TabletopWeb.GameComponents do
         </button>
         <ul
           :if={@create_proxy_token_open}
-          class="absolute z-40 list-none bg-base-100 rounded-box p-2 shadow-lg mb-1 bottom-full left-full ml-2 grid grid-cols-2 gap-x-4 gap-y-1 w-[26rem] border border-base-300"
+          class="absolute z-40 list-none bg-base-100 rounded-box p-2 shadow-lg mb-1 bottom-full left-full ml-2 grid grid-cols-2 gap-x-4 gap-y-1 w-[26rem] max-h-[70vh] overflow-y-auto border border-base-300"
         >
-          <li class="col-span-2 text-[10px] uppercase tracking-wide font-bold opacity-60 px-1 pb-1 border-b border-base-300">
-            Add Proxy Token
+          <li class="col-span-2 flex items-center gap-2 px-1 pb-2 border-b border-base-300 sticky top-0 bg-base-100 z-10">
+            <span class="text-[10px] uppercase tracking-wide font-bold opacity-60">
+              Give token to
+            </span>
+            <div class="join ml-auto">
+              <button
+                :for={{target, label} <- [{"my", "Me"}, {"opponent", "Opponent"}]}
+                type="button"
+                class={[
+                  "btn btn-xs join-item",
+                  @proxy_token_target == target && "btn-active btn-success"
+                ]}
+                phx-click="set_proxy_token_target"
+                phx-value-target={target}
+                aria-pressed={to_string(@proxy_token_target == target)}
+              >
+                {label}
+              </button>
+            </div>
           </li>
-          <%= for {_key, token} <- Tabletop.Fab.Effects.tokens_for_opponent() do %>
+          <%= for {_key, token} <- Tabletop.Fab.Effects.proxy_token_list() do %>
             <li class="flex items-center gap-1">
               <div class="flex items-center gap-1 flex-1 min-w-0 px-0.5 py-0.5">
                 <.icon
@@ -405,9 +433,10 @@ defmodule TabletopWeb.GameComponents do
                   :if={token[:singleton]}
                   type="checkbox"
                   class="checkbox checkbox-xs checkbox-success"
-                  checked={Map.get(@game_state.my.proxy_tokens || %{}, token[:name], 0) > 0}
+                  checked={proxy_token_count(@game_state, @proxy_token_target, token[:name]) > 0}
                   phx-click="toggle_proxy_token"
                   phx-value-type={token[:name]}
+                  phx-value-target={@proxy_token_target}
                 />
                 <button
                   :if={!token[:singleton]}
@@ -415,11 +444,12 @@ defmodule TabletopWeb.GameComponents do
                   class="btn btn-xs btn-circle btn-error"
                   phx-click="remove_proxy_token"
                   phx-value-type={token[:name]}
+                  phx-value-target={@proxy_token_target}
                 >
                   -
                 </button>
                 <span :if={!token[:singleton]} class="text-xs font-bold w-3 text-center">
-                  {Map.get(@game_state.my.proxy_tokens || %{}, token[:name], 0)}
+                  {proxy_token_count(@game_state, @proxy_token_target, token[:name])}
                 </span>
                 <button
                   :if={!token[:singleton]}
@@ -427,6 +457,7 @@ defmodule TabletopWeb.GameComponents do
                   class="btn btn-xs btn-circle btn-success"
                   phx-click="add_proxy_token"
                   phx-value-type={token[:name]}
+                  phx-value-target={@proxy_token_target}
                 >
                   +
                 </button>
@@ -480,29 +511,33 @@ defmodule TabletopWeb.GameComponents do
 
   attr :game_state, :any, required: true
   attr :expanded, :boolean, default: false
+  attr :tab, :string, default: "my"
 
+  @doc """
+  Floating panel listing the proxy tokens on *both* players.
+
+  `proxy_tokens` records the tokens sitting on a player, not the ones they
+  handed out, so this panel shows two lists and every control on it carries a
+  `phx-value-target`: either player can add to or clear either side. Collapsed
+  it is a row of chips per side; expanded it is a Yours/Opponent tab pair.
+  """
   def proxy_tokens_panel(assigns) do
-    proxy_tokens = Map.get(assigns.game_state.my, :proxy_tokens, %{})
-
-    tokens_by_name =
-      Map.new(Tabletop.Fab.Effects.tokens(), fn {_k, t} -> {t.name, t} end)
-
-    entries =
-      proxy_tokens
-      |> Enum.map(fn {name, count} -> {name, count, Map.get(tokens_by_name, name)} end)
-      |> Enum.filter(fn {_n, _c, token} -> token end)
-      |> Enum.sort_by(fn {name, _c, _t} -> name end)
-
-    total = Enum.reduce(proxy_tokens, 0, fn {_n, c}, acc -> acc + c end)
+    my_entries = proxy_token_entries(assigns.game_state.my)
+    opponent_entries = proxy_token_entries(assigns.game_state.opponent)
 
     assigns =
       assigns
-      |> assign(:entries, entries)
-      |> assign(:total, total)
+      |> assign(:my_entries, my_entries)
+      |> assign(:opponent_entries, opponent_entries)
+      |> assign(
+        :active_entries,
+        if(assigns.tab == "opponent", do: opponent_entries, else: my_entries)
+      )
+      |> assign(:total, entries_total(my_entries) + entries_total(opponent_entries))
 
     ~H"""
     <div
-      :if={@entries != []}
+      :if={@my_entries != [] or @opponent_entries != []}
       class="absolute top-2 right-2 z-30 bg-base-100/95 backdrop-blur rounded-lg shadow-lg border border-base-300 text-base-content max-w-[80%]"
     >
       <button
@@ -514,19 +549,34 @@ defmodule TabletopWeb.GameComponents do
         <span class="text-xs font-bold uppercase tracking-wide opacity-70">
           Proxy Tokens ({@total})
         </span>
-        <div :if={!@expanded} class="flex flex-wrap items-center gap-1 flex-1 min-w-0">
-          <span
-            :for={{name, count, token} <- @entries}
-            class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-900 rounded px-1.5 py-0.5 text-[11px] font-semibold"
+        <div :if={!@expanded} class="flex flex-wrap items-center gap-x-3 gap-y-1 flex-1 min-w-0">
+          <div
+            :for={
+              {label, entries, chip_class} <- [
+                {"You", @my_entries, "bg-emerald-100 text-emerald-900"},
+                {"Opp", @opponent_entries, "bg-sky-100 text-sky-900"}
+              ]
+            }
+            :if={entries != []}
+            class="flex flex-wrap items-center gap-1"
           >
-            <.icon
-              :if={token[:icon] not in [nil, ""]}
-              name={token[:icon]}
-              class="size-3 shrink-0"
-            />
-            {name}
-            <span :if={count > 1} class="opacity-70">×{count}</span>
-          </span>
+            <span class="text-[10px] uppercase font-bold opacity-50">{label}</span>
+            <span
+              :for={{name, count, token} <- entries}
+              class={[
+                "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold",
+                chip_class
+              ]}
+            >
+              <.icon
+                :if={token[:icon] not in [nil, ""]}
+                name={token[:icon]}
+                class="size-3 shrink-0"
+              />
+              {name}
+              <span :if={count > 1} class="opacity-70">×{count}</span>
+            </span>
+          </div>
         </div>
         <.icon
           name={if @expanded, do: "hero-chevron-up", else: "hero-chevron-down"}
@@ -534,55 +584,110 @@ defmodule TabletopWeb.GameComponents do
         />
       </button>
 
-      <div :if={@expanded} class="p-2 border-t border-base-300 flex flex-wrap gap-3 max-w-[60rem]">
-        <div :for={{name, count, token} <- @entries} class="flex flex-col items-center gap-1 w-60">
-          <img
-            :if={token[:card_img_src] not in [nil, ""]}
-            src={token[:card_img_src]}
-            alt={name}
-            class="w-60 rounded shadow"
-          />
-          <div
-            :if={token[:card_img_src] in [nil, ""]}
-            class="w-60 h-56 rounded bg-base-200 flex items-center justify-center text-xs p-2 text-center"
+      <div :if={@expanded} class="border-t border-base-300">
+        <div role="tablist" class="tabs tabs-border tabs-sm px-2 pt-1">
+          <button
+            :for={
+              {target, label, entries} <- [
+                {"my", "Yours", @my_entries},
+                {"opponent", "Opponent", @opponent_entries}
+              ]
+            }
+            type="button"
+            role="tab"
+            class={["tab gap-1", @tab == target && "tab-active font-semibold"]}
+            phx-click="set_proxy_tokens_tab"
+            phx-value-target={target}
+            aria-selected={to_string(@tab == target)}
           >
-            {name}
-          </div>
-          <div class="flex items-center gap-1">
-            <button
-              :if={token[:singleton]}
-              type="button"
-              class="btn btn-xs btn-circle btn-error"
-              phx-click="remove_proxy_token"
-              phx-value-type={name}
-              aria-label={"Remove #{name}"}
+            {label} <span class="opacity-60">({entries_total(entries)})</span>
+          </button>
+        </div>
+
+        <div class="p-2 flex flex-wrap gap-3 max-w-[58rem] max-h-[70vh] overflow-y-auto">
+          <p :if={@active_entries == []} class="text-xs opacity-60 px-1 py-2">
+            No proxy tokens on this side.
+          </p>
+          <div
+            :for={{name, count, token} <- @active_entries}
+            class="flex flex-col items-center gap-1 w-72"
+          >
+            <img
+              :if={token[:card_img_src] not in [nil, ""]}
+              src={token[:card_img_src]}
+              alt={name}
+              class="w-72 rounded shadow"
+            />
+            <div
+              :if={token[:card_img_src] in [nil, ""]}
+              class="w-72 aspect-[5/7] rounded bg-base-200 flex items-center justify-center text-xs p-2 text-center"
             >
-              <.icon name="hero-x-mark" class="size-3" />
-            </button>
-            <button
-              :if={!token[:singleton]}
-              type="button"
-              class="btn btn-xs btn-circle btn-error"
-              phx-click="remove_proxy_token"
-              phx-value-type={name}
-            >
-              -
-            </button>
-            <span :if={!token[:singleton]} class="text-sm font-bold w-6 text-center">{count}</span>
-            <button
-              :if={!token[:singleton]}
-              type="button"
-              class="btn btn-xs btn-circle btn-success"
-              phx-click="add_proxy_token"
-              phx-value-type={name}
-            >
-              +
-            </button>
+              {name}
+            </div>
+            <div class="flex items-center gap-1">
+              <button
+                :if={token[:singleton]}
+                type="button"
+                class="btn btn-xs btn-circle btn-error"
+                phx-click="remove_proxy_token"
+                phx-value-type={name}
+                phx-value-target={@tab}
+                aria-label={"Remove #{name}"}
+              >
+                <.icon name="hero-x-mark" class="size-3" />
+              </button>
+              <button
+                :if={!token[:singleton]}
+                type="button"
+                class="btn btn-xs btn-circle btn-error"
+                phx-click="remove_proxy_token"
+                phx-value-type={name}
+                phx-value-target={@tab}
+                aria-label={"Remove one #{name}"}
+              >
+                -
+              </button>
+              <span :if={!token[:singleton]} class="text-sm font-bold w-6 text-center">{count}</span>
+              <button
+                :if={!token[:singleton]}
+                type="button"
+                class="btn btn-xs btn-circle btn-success"
+                phx-click="add_proxy_token"
+                phx-value-type={name}
+                phx-value-target={@tab}
+                aria-label={"Add one #{name}"}
+              >
+                +
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </div>
     """
+  end
+
+  # A player's `proxy_tokens` map as `{name, count, token_definition}` triples,
+  # dropping any name the effects catalogue no longer knows about.
+  defp proxy_token_entries(player) do
+    tokens_by_name = Map.new(Tabletop.Fab.Effects.tokens(), fn {_k, t} -> {t.name, t} end)
+
+    player
+    |> Map.get(:proxy_tokens, %{})
+    |> Enum.map(fn {name, count} -> {name, count, Map.get(tokens_by_name, name)} end)
+    |> Enum.filter(fn {_n, _c, token} -> token end)
+    |> Enum.sort_by(fn {name, _c, _t} -> name end)
+  end
+
+  defp entries_total(entries), do: Enum.reduce(entries, 0, fn {_n, c, _t}, acc -> acc + c end)
+
+  # Count of `name` on whichever side the picker is currently targeting.
+  defp proxy_token_count(game_state, target, name) do
+    side = if target == "opponent", do: game_state.opponent, else: game_state.my
+
+    side
+    |> Map.get(:proxy_tokens, %{})
+    |> Map.get(name, 0)
   end
 
   attr :game_state, :any, required: true
@@ -601,114 +706,140 @@ defmodule TabletopWeb.GameComponents do
     assigns = assign(assigns, :tiles, tiles)
 
     ~H"""
-    <%= for tile <- @tiles do %>
-      <div
-        class={[
-          "group absolute select-none z-20 rounded-md shadow-lg ring-1 ring-black/10 whitespace-nowrap font-semibold bg-gradient-to-br flex items-center gap-1",
-          case @context do
-            :local ->
-              "pointer-events-none px-1 py-0.5 text-[8px] gap-0.5"
+    <%!-- Tile layer. Tile coordinates are percentages of the *board* — i.e. of
+          the video frame — not of the surrounding box, so the layer has to cover
+          exactly the rect the board is drawn in. For :local/:expanded/:setup the
+          canvas fills its container, so `inset-0` is that rect; for :remote the
+          video is letterboxed inside #game-area at a size only known once the
+          stream's dimensions are, so `applyRemoteLayout` in webrtc.js sizes this
+          layer to match it (w-full/h-full is the no-video fallback). That is
+          driven by layout events, not per frame, so a LiveView patch that
+          re-renders this layer drops the inline size — the game hook re-applies
+          it from `updated()`.
+          `data-board-flipped` is set by the game hook when the opponent's board
+          is shown rotated 180°; app.css mirrors the tile coordinates so tiles
+          track the board while their labels stay upright and readable. --%>
+    <div
+      id={"tile-layer-#{@context}"}
+      class={[
+        "absolute z-20 pointer-events-none",
+        if(@context == :remote,
+          do: "top-1/2 left-1/2 w-full h-full -translate-x-1/2 -translate-y-1/2",
+          else: "inset-0"
+        )
+      ]}
+    >
+      <%= for tile <- @tiles do %>
+        <div
+          class={[
+            "game-tile group absolute select-none z-20 rounded-md shadow-lg ring-1 ring-black/10 whitespace-nowrap font-semibold bg-gradient-to-br flex items-center gap-1",
+            case @context do
+              :local ->
+                "px-1 py-0.5 text-[8px] gap-0.5"
 
-            ctx when ctx in [:expanded, :setup] ->
-              "cursor-grab active:cursor-grabbing px-2 py-1 text-xs gap-1.5"
+              ctx when ctx in [:expanded, :setup] ->
+                "pointer-events-auto cursor-grab active:cursor-grabbing px-2 py-1 text-xs gap-1.5"
 
-            _ ->
-              "px-2 py-1 text-xs gap-1.5 #{if has_hover?(tile), do: "cursor-help", else: "pointer-events-none"}"
-          end,
-          tile_color_class(tile)
-        ]}
-        style={"left: #{tile.x}%; top: #{tile.y}%; transform: translate(-50%, -50%);"}
-        data-tile-id={tile.id}
-        data-tile-owner={tile.owner}
-        data-tile-group={tile_group_name(tile)}
-        phx-hook={if @context in [:expanded, :setup], do: "TabletopWeb.GameComponents.DraggableTile"}
-        id={"tile-#{@context}-#{tile.owner}-#{tile.id}"}
-      >
-        <%= cond do %>
-          <% tile.type == :custom_counter and @context in [:expanded, :setup] -> %>
-            <%!-- Interactive custom counter: optional name, then −/value/+ and remove. --%>
-            <span
-              :if={tile.label not in [nil, ""]}
-              class="uppercase tracking-wide leading-none"
-            >
-              {tile.label}
-            </span>
-            <div class="flex items-center gap-0.5">
+              _ ->
+                "px-2 py-1 text-xs gap-1.5 #{if has_hover?(tile), do: "pointer-events-auto cursor-help"}"
+            end,
+            tile_color_class(tile)
+          ]}
+          style={"--tile-x: #{tile.x}%; --tile-y: #{tile.y}%; transform: translate(-50%, -50%);"}
+          data-tile-id={tile.id}
+          data-tile-owner={tile.owner}
+          data-tile-group={tile_group_name(tile)}
+          phx-hook={
+            if @context in [:expanded, :setup], do: "TabletopWeb.GameComponents.DraggableTile"
+          }
+          id={"tile-#{@context}-#{tile.owner}-#{tile.id}"}
+        >
+          <%= cond do %>
+            <% tile.type == :custom_counter and @context in [:expanded, :setup] -> %>
+              <%!-- Interactive custom counter: optional name, then −/value/+ and remove. --%>
+              <span
+                :if={tile.label not in [nil, ""]}
+                class="uppercase tracking-wide leading-none"
+              >
+                {tile.label}
+              </span>
+              <div class="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  class="btn btn-xs btn-circle btn-error"
+                  phx-click="change_custom_counter"
+                  phx-value-id={tile.id}
+                  phx-value-delta="-1"
+                >
+                  -
+                </button>
+                <span class="font-bold leading-none text-sm min-w-3 text-center">{tile.value}</span>
+                <button
+                  type="button"
+                  class="btn btn-xs btn-circle btn-success"
+                  phx-click="change_custom_counter"
+                  phx-value-id={tile.id}
+                  phx-value-delta="1"
+                >
+                  +
+                </button>
+              </div>
               <button
                 type="button"
-                class="btn btn-xs btn-circle btn-error"
-                phx-click="change_custom_counter"
+                class="opacity-50 hover:opacity-100 shrink-0 ml-0.5"
+                phx-click="remove_custom_counter"
                 phx-value-id={tile.id}
-                phx-value-delta="-1"
+                aria-label="Remove counter"
               >
-                -
+                <.icon name="hero-x-mark" class="size-3" />
               </button>
-              <span class="font-bold leading-none text-sm min-w-3 text-center">{tile.value}</span>
-              <button
-                type="button"
-                class="btn btn-xs btn-circle btn-success"
-                phx-click="change_custom_counter"
-                phx-value-id={tile.id}
-                phx-value-delta="1"
-              >
-                +
-              </button>
-            </div>
-            <button
-              type="button"
-              class="opacity-50 hover:opacity-100 shrink-0 ml-0.5"
-              phx-click="remove_custom_counter"
-              phx-value-id={tile.id}
-              aria-label="Remove counter"
-            >
-              <.icon name="hero-x-mark" class="size-3" />
-            </button>
-          <% nameless_counter?(tile) -> %>
-            <%!-- Read-only nameless counter: just the number, larger. --%>
-            <span class={[
-              "font-bold leading-none",
-              case @context do
-                :local -> "text-xs"
-                _ -> "text-base"
-              end
-            ]}>
-              {tile.value}
-            </span>
-          <% true -> %>
-            <span class={[
-              "rounded-full bg-black/25 flex items-center justify-center shrink-0",
-              case @context do
-                :local -> "p-[1px]"
-                _ -> "p-1"
-              end
-            ]}>
-              <.icon
-                name={tile_icon(tile)}
-                class={
-                  case @context do
-                    :local -> "size-2"
-                    _ -> "size-3.5"
-                  end
-                }
-              />
-            </span>
-            <span class="uppercase tracking-wide leading-none">{tile.label}</span>
-            <span
-              :if={Map.get(tile, :value)}
-              class={[
-                "font-bold leading-none ml-0.5",
+            <% nameless_counter?(tile) -> %>
+              <%!-- Read-only nameless counter: just the number, larger. --%>
+              <span class={[
+                "font-bold leading-none",
                 case @context do
-                  :local -> "text-[10px]"
-                  _ -> "text-sm"
+                  :local -> "text-xs"
+                  _ -> "text-base"
                 end
-              ]}
-            >
-              {tile.value}
-            </span>
-        <% end %>
-        <.tile_hover_preview :if={@context != :local} tile={tile} />
-      </div>
-    <% end %>
+              ]}>
+                {tile.value}
+              </span>
+            <% true -> %>
+              <span class={[
+                "rounded-full bg-black/25 flex items-center justify-center shrink-0",
+                case @context do
+                  :local -> "p-[1px]"
+                  _ -> "p-1"
+                end
+              ]}>
+                <.icon
+                  name={tile_icon(tile)}
+                  class={
+                    case @context do
+                      :local -> "size-2"
+                      _ -> "size-3.5"
+                    end
+                  }
+                />
+              </span>
+              <span class="uppercase tracking-wide leading-none">{tile.label}</span>
+              <span
+                :if={Map.get(tile, :value)}
+                class={[
+                  "font-bold leading-none ml-0.5",
+                  case @context do
+                    :local -> "text-[10px]"
+                    _ -> "text-sm"
+                  end
+                ]}
+              >
+                {tile.value}
+              </span>
+          <% end %>
+          <.tile_hover_preview :if={@context != :local} tile={tile} />
+        </div>
+      <% end %>
+    </div>
 
     <%!-- Opponent life (not in local preview) --%>
     <div
@@ -731,15 +862,33 @@ defmodule TabletopWeb.GameComponents do
           let startPosPercent = null
           let siblingStarts = []
 
+          // Positions live in board coordinates (percentages of the video frame)
+          // on the `--tile-x`/`--tile-y` custom properties; app.css turns those
+          // into left/top, mirroring them when the board is drawn flipped.
+          const tilePos = (node) => ({
+            x: parseFloat(node.style.getPropertyValue("--tile-x")) || 0,
+            y: parseFloat(node.style.getPropertyValue("--tile-y")) || 0
+          })
+
+          const setTilePos = (node, x, y) => {
+            node.style.setProperty("--tile-x", x + "%")
+            node.style.setProperty("--tile-y", y + "%")
+          }
+
+          // Pointer position → board coordinates, undoing the 180° mirror when
+          // the layer is showing a flipped board.
           const toPercent = (clientX, clientY) => {
             const container = el.parentElement
             const rect = container.getBoundingClientRect()
             const x = ((clientX - rect.left) / rect.width) * 100
             const y = ((clientY - rect.top) / rect.height) * 100
-            return {
+            const clamped = {
               x: Math.max(0, Math.min(100, x)),
               y: Math.max(0, Math.min(100, y))
             }
+            return container.dataset.boardFlipped === "true"
+              ? { x: 100 - clamped.x, y: 100 - clamped.y }
+              : clamped
           }
 
           let startX = 0, startY = 0
@@ -753,21 +902,14 @@ defmodule TabletopWeb.GameComponents do
 
             startX = e.clientX
             startY = e.clientY
-            startPosPercent = {
-              x: parseFloat(el.style.left) || 0,
-              y: parseFloat(el.style.top) || 0
-            }
+            startPosPercent = tilePos(el)
 
             siblingStarts = []
             if (group) {
               const selector = `[data-tile-group="${group}"][data-tile-owner="${owner}"]`
               const siblings = Array.from(el.parentElement.querySelectorAll(selector))
                 .filter(s => s !== el)
-              siblingStarts = siblings.map(s => ({
-                el: s,
-                left: parseFloat(s.style.left) || 0,
-                top: parseFloat(s.style.top) || 0
-              }))
+              siblingStarts = siblings.map(s => ({ el: s, start: tilePos(s) }))
             }
 
             el.setPointerCapture(e.pointerId)
@@ -787,15 +929,17 @@ defmodule TabletopWeb.GameComponents do
 
             const pos = toPercent(e.clientX, e.clientY)
             currentDragPos = pos
-            el.style.left = pos.x + "%"
-            el.style.top = pos.y + "%"
+            setTilePos(el, pos.x, pos.y)
 
             if (siblingStarts.length > 0 && startPosPercent) {
               const dxPct = pos.x - startPosPercent.x
               const dyPct = pos.y - startPosPercent.y
               for (const s of siblingStarts) {
-                s.el.style.left = Math.max(0, Math.min(100, s.left + dxPct)) + "%"
-                s.el.style.top = Math.max(0, Math.min(100, s.top + dyPct)) + "%"
+                setTilePos(
+                  s.el,
+                  Math.max(0, Math.min(100, s.start.x + dxPct)),
+                  Math.max(0, Math.min(100, s.start.y + dyPct))
+                )
               }
             }
           }
@@ -843,8 +987,8 @@ defmodule TabletopWeb.GameComponents do
           if (this._isDragging && this._isDragging()) {
             const pos = this._currentDragPos()
             if (pos) {
-              this.el.style.left = pos.x + "%"
-              this.el.style.top = pos.y + "%"
+              this.el.style.setProperty("--tile-x", pos.x + "%")
+              this.el.style.setProperty("--tile-y", pos.y + "%")
             }
           }
         },
@@ -958,8 +1102,11 @@ defmodule TabletopWeb.GameComponents do
     on_hits_by_name =
       Map.new(Tabletop.Fab.Effects.on_hit_effects(), fn {_k, e} -> {e.name, e} end)
 
+    # The full catalogue, not just `tokens_for_player/0`: `valid_effect?/2`
+    # accepts any token name as a `token:` effect, so looking up the narrower
+    # list would render a tile with no icon or card art.
     tokens_by_name =
-      Map.new(Tabletop.Fab.Effects.tokens_for_player(), fn {_k, t} -> {t.name, t} end)
+      Map.new(Tabletop.Fab.Effects.tokens(), fn {_k, t} -> {t.name, t} end)
 
     effect_counts = Map.get(player_state, :effect_counts, %{})
 
@@ -1380,13 +1527,21 @@ defmodule TabletopWeb.GameComponents do
             alt={card.card.name}
             class="w-full rounded"
           />
-          <%= if length(Map.get(card, :alternate_matches, [])) > 0 do %>
+          <%!-- Every candidate is listed, in a fixed order, with the displayed
+               one marked selected — switching must not remove the option the
+               user just picked. LiveView keeps a focused select's value across
+               the patch, so a value with no matching option renders blank. --%>
+          <%= if length(Map.get(card, :matches, [])) > 1 do %>
             <form phx-change="switch_match" class="pt-1">
               <input type="hidden" name="card_id" value={card.id} />
               <select name="normalized_name" class="select select-bordered select-xs w-full">
-                <option value="" selected>{card.card.name}</option>
-                <%= for alt <- card.alternate_matches do %>
-                  <option value={alt.card.normalized_name}>{alt.card.name}</option>
+                <%= for match <- card.matches do %>
+                  <option
+                    value={match.card.normalized_name}
+                    selected={match.card.normalized_name == card.card.normalized_name}
+                  >
+                    {match.card.name}
+                  </option>
                 <% end %>
               </select>
             </form>

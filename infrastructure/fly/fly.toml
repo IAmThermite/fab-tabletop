@@ -5,6 +5,8 @@
 
 app = 'fabtabletop'
 primary_region = 'iad'
+kill_signal = 'SIGTERM'
+kill_timeout = '30s'
 
 [deploy]
   release_command = '/app/bin/migrate'
@@ -14,9 +16,10 @@ primary_region = 'iad'
 
 [env]
   ECTO_IPV6 = 'true'
-  PHX_HOST = 'fabtabletop.fly.dev'
+  PHX_HOST = 'fabtabletop.net'
   PHX_SERVER = 'true'
   PORT = '4000'
+  OTEL_BSP_SCHEDULE_DELAY_MILLIS = '1000'
 
 [http_service]
   internal_port = 4000
@@ -29,6 +32,17 @@ primary_region = 'iad'
     type = 'connections'
     hard_limit = 1000
     soft_limit = 1000
+
+# Prometheus scrape target. Fly polls this every 15s over the private 6PN
+# network and stores the result in its managed Prometheus, queryable at
+# https://api.fly.io/prometheus/<org-slug>/ from any Grafana instance.
+#
+# Deliberately NOT part of [http_service] — the port is unreachable from the
+# public internet, so the metrics need no auth of their own. Served by
+# Tabletop.PromEx.MetricsServer; keep in sync with :metrics_port in runtime.exs.
+[metrics]
+  port = 9091
+  path = "/metrics"
 
 [[vm]]
   size = 'shared-cpu-1x'

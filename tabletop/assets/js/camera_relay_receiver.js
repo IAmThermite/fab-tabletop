@@ -39,9 +39,16 @@ export default class CameraRelayReceiver {
     // connection above is authenticated by the user-socket token.
     this.channel = this.socket.channel(`camera_relay:${this.relayUserId}`, {})
 
-    this.channel.on("peer_joined", () => this._createOffer())
+    // The server nominates the phone to offer, so in practice this end
+    // answers — but the binding stays symmetric, because which end offers is
+    // the server's decision to change, not a rule baked in here. See
+    // `TabletopWeb.CameraRelayChannel.request_offer/1`.
+    this.channel.on("make_offer", () => this._createOffer())
+    this.channel.on("peer_joined", () => {
+      console.log("[RelayReceiver] Phone joined the relay")
+    })
     this.channel.on("peer_exists", () => {
-      console.log("[RelayReceiver] Phone already connected, waiting for offer")
+      console.log("[RelayReceiver] Phone already on the relay")
     })
     this.channel.on("offer", (msg) => this._handleOffer(msg))
     this.channel.on("answer", (msg) => this._handleAnswer(msg))
@@ -128,7 +135,7 @@ export default class CameraRelayReceiver {
     if (this._superseded) return
 
     try {
-      console.log("[RelayReceiver] Creating offer (phone joined)")
+      console.log("[RelayReceiver] Creating offer")
       this._createPeerConnection()
 
       // Add a transceiver to receive video (we don't send anything)

@@ -38,6 +38,22 @@ defmodule Tabletop.DataCase do
   def setup_sandbox(tags) do
     pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Tabletop.Repo, shared: not tags[:async])
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+
+    # A `GameSession` a test started — mounting the game LiveView is enough —
+    # outlives the test, and its debounced save then fires a second later
+    # against a connection that has since been checked back in, logging an
+    # ownership error on an otherwise green run. `on_exit` callbacks run in
+    # reverse registration order, so this one runs before the checkin above and
+    # each session's `terminate/2` save still has a connection to write to.
+    on_exit(&stop_game_sessions/0)
+  end
+
+  defp stop_game_sessions do
+    supervisor = Tabletop.Games.GameSessionSupervisor
+
+    for {_, pid, _, _} <- DynamicSupervisor.which_children(supervisor), is_pid(pid) do
+      DynamicSupervisor.terminate_child(supervisor, pid)
+    end
   end
 
   @doc """

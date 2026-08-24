@@ -66,6 +66,30 @@ defmodule TabletopWeb.ChannelSeat do
   """
   def release(seat), do: :pg.leave(@scope, seat, self())
 
+  @doc """
+  Whether a channel terminating for `reason` should announce `peer_left` to the
+  rest of the topic.
+
+  Two shutdowns are not departures, and announcing either tears down a peer
+  connection that nothing is left to rebuild:
+
+    * a **superseded** socket's replacement is already on the topic and about
+      to renegotiate, so from the other side nobody left;
+    * a **draining** socket is going down with the node. The media it signalled
+      into being flows peer-to-peer and survives the server disappearing
+      untouched, and the client reconnects on its own — so without this a
+      deploy drops the video of whichever player is still connected when the
+      other's socket drains, for a restart their connection never depended on.
+
+  Phoenix stops a drained socket with `{:shutdown, :draining}` and the channel
+  inherits that exact reason. A bare `:shutdown` is the same event arriving
+  without the drainer — the transport being shut down under the channel — and
+  means the same thing here.
+  """
+  def announce_departure?(reason, socket) do
+    !socket.assigns[:superseded] and reason not in [:shutdown, {:shutdown, :draining}]
+  end
+
   # Asks `pid` to stand down and blocks until it does. `:superseded` is sent
   # before the caller broadcasts `peer_joined`, and mailboxes are FIFO, so the
   # evicted channel stops without ever seeing the newcomer's announcement.

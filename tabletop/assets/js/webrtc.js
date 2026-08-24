@@ -112,8 +112,13 @@ export default class WebRTCManager {
     // Join the game channel
     this.channel = this.socket.channel(`game:${this.gameId}`, {})
 
-    this.channel.on("peer_joined", () => this._createOffer())
-    this.channel.on("peer_exists", () => console.log("[WebRTC] Peer already in channel, waiting for offer"))
+    // The server nominates one player to make the offer, so both of us
+    // reconnecting in the same instant still produces exactly one — see
+    // `TabletopWeb.GameChannel.request_offer/1`. An opponent arriving is not
+    // itself the trigger; `peer_joined` and `peer_exists` only report.
+    this.channel.on("make_offer", () => this._createOffer())
+    this.channel.on("peer_joined", () => console.log("[WebRTC] Opponent joined the channel"))
+    this.channel.on("peer_exists", () => console.log("[WebRTC] Opponent already in the channel"))
     this.channel.on("offer", (msg) => this._handleOffer(msg))
     this.channel.on("answer", (msg) => this._handleAnswer(msg))
     this.channel.on("ice_candidate", (msg) => this._handleIceCandidate(msg))
@@ -346,7 +351,7 @@ export default class WebRTCManager {
     if (this._superseded) return
 
     try {
-      console.log("[WebRTC] Creating offer (peer joined)")
+      console.log("[WebRTC] Creating offer")
       this._createPeerConnection()
       preferVideoCodecs(this.peerConnection)
 

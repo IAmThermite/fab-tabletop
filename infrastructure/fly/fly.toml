@@ -5,6 +5,8 @@
 
 app = 'fabtabletop'
 primary_region = 'iad'
+kill_signal = 'SIGTERM'
+kill_timeout = '30s'
 
 [deploy]
   release_command = '/app/bin/migrate'

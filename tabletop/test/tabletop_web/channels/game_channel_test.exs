@@ -57,7 +57,7 @@ defmodule TabletopWeb.GameChannelTest do
       refute_broadcast "peer_left", %{}
     end
 
-    test "the replacement announces itself so the opponent re-offers", ctx do
+    test "the replacement announces itself so the exchange restarts", ctx do
       {:ok, _, _host} = join_as(ctx.host_id, ctx.game.id)
       {:ok, _, _guest} = join_as(ctx.guest_id, ctx.game.id)
       host_id = ctx.host_id
@@ -77,6 +77,56 @@ defmodule TabletopWeb.GameChannelTest do
     end
   end
 
+  # Every socket in a test shares the test process as its transport, so a push
+  # to either player lands in the same mailbox. That is what these assertions
+  # need: the invariant is a count, not an address — exactly one `make_offer`
+  # per peer arrival, no matter which side arrives or in what order.
+  describe "one side offers" do
+    test "the host is asked when the guest arrives", ctx do
+      {:ok, _, _host} = join_as(ctx.host_id, ctx.game.id)
+      refute_push "make_offer", %{}
+
+      {:ok, _, _guest} = join_as(ctx.guest_id, ctx.game.id)
+
+      assert_push "make_offer", %{}
+      refute_push "make_offer", %{}
+    end
+
+    test "the host is asked when it is the one arriving", ctx do
+      {:ok, _, _guest} = join_as(ctx.guest_id, ctx.game.id)
+      refute_push "make_offer", %{}
+
+      {:ok, _, _host} = join_as(ctx.host_id, ctx.game.id)
+
+      assert_push "make_offer", %{}
+      refute_push "make_offer", %{}
+    end
+
+    test "an arrival both players see still produces one offer", ctx do
+      {:ok, _, _host} = join_as(ctx.host_id, ctx.game.id)
+      {:ok, _, _guest} = join_as(ctx.guest_id, ctx.game.id)
+      assert_push "make_offer", %{}
+
+      # Both players passing the `has_peer` check before either joined the
+      # group — what a deploy's simultaneous reconnect produces. Both announce
+      # themselves, so both see the announcement; only the host may act on it.
+      # Were arriving reason enough to offer, the two offers would close each
+      # other's connections and the video would stay dead.
+      TabletopWeb.Endpoint.broadcast!("game:#{ctx.game.id}", "peer_joined", %{
+        user_id: ctx.guest_id
+      })
+
+      assert_push "make_offer", %{}
+      refute_push "make_offer", %{}
+    end
+
+    test "a lone player is not asked to offer", ctx do
+      {:ok, _, _host} = join_as(ctx.host_id, ctx.game.id)
+
+      refute_push "make_offer", %{}
+    end
+  end
+
   describe "terminate/2" do
     test "a genuine leave still announces peer_left", ctx do
       {:ok, _, host} = join_as(ctx.host_id, ctx.game.id)
@@ -91,6 +141,21 @@ defmodule TabletopWeb.GameChannelTest do
       assert_reply ref, :ok
 
       assert_broadcast "peer_left", %{user_id: ^host_id}
+    end
+
+    test "a drained socket does not announce peer_left", ctx do
+      {:ok, _, host} = join_as(ctx.host_id, ctx.game.id)
+      {:ok, _, _guest} = join_as(ctx.guest_id, ctx.game.id)
+
+      # What Phoenix's socket drainer does on shutdown. The opponent's video is
+      # peer-to-peer and outlives the node, so this player has not left — a
+      # `peer_left` here would close a working connection on every deploy.
+      Process.unlink(host.channel_pid)
+      ref = Process.monitor(host.channel_pid)
+      send(host.channel_pid, %Phoenix.Socket.Broadcast{event: "phx_drain"})
+
+      assert_receive {:DOWN, ^ref, :process, _pid, {:shutdown, :draining}}
+      refute_broadcast "peer_left", %{}
     end
   end
 

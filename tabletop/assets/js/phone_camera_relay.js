@@ -46,9 +46,16 @@ export default class PhoneCameraRelay {
     // only used to authenticate the socket connection.
     this.channel = this.socket.channel(`camera_relay:${this.relayUserId}`, {})
 
-    this.channel.on("peer_joined", () => this._createOffer())
+    // The phone is the end the server nominates to offer — its offer is what
+    // carries the camera tracks — but the decision lives server-side so a
+    // desktop and phone rejoining in the same instant still produce exactly
+    // one offer. See `TabletopWeb.CameraRelayChannel.request_offer/1`.
+    this.channel.on("make_offer", () => this._createOffer())
+    this.channel.on("peer_joined", () => {
+      console.log("[PhoneRelay] Desktop joined the relay")
+    })
     this.channel.on("peer_exists", () => {
-      console.log("[PhoneRelay] Desktop already connected, waiting for offer")
+      console.log("[PhoneRelay] Desktop already on the relay")
     })
     this.channel.on("offer", (msg) => this._handleOffer(msg))
     this.channel.on("answer", (msg) => this._handleAnswer(msg))

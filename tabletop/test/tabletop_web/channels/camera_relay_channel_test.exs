@@ -66,6 +66,60 @@ defmodule TabletopWeb.CameraRelayChannelTest do
     end
   end
 
+  describe "one end offers" do
+    test "the phone is asked when the desktop arrives", %{user_id: user_id} do
+      {:ok, _, _phone} = join_as(user_id, :phone, user_id)
+      refute_push "make_offer", %{}
+
+      {:ok, _, _desktop} = join_as(user_id, :user, user_id)
+
+      assert_push "make_offer", %{}
+      refute_push "make_offer", %{}
+    end
+
+    test "the phone is asked when it is the one arriving", %{user_id: user_id} do
+      {:ok, _, _desktop} = join_as(user_id, :user, user_id)
+      refute_push "make_offer", %{}
+
+      {:ok, _, _phone} = join_as(user_id, :phone, user_id)
+
+      assert_push "make_offer", %{}
+      refute_push "make_offer", %{}
+    end
+
+    test "an arrival both ends see still produces one offer", %{user_id: user_id} do
+      {:ok, _, _desktop} = join_as(user_id, :user, user_id)
+      {:ok, _, _phone} = join_as(user_id, :phone, user_id)
+      assert_push "make_offer", %{}
+
+      # Both ends passing the `has_peer` check before either joined the group.
+      # Only the phone may answer that with an offer — the desktop has no
+      # camera tracks to put in one, and two offers would close each other's
+      # connections.
+      TabletopWeb.Endpoint.broadcast!("camera_relay:#{user_id}", "peer_joined", %{})
+
+      assert_push "make_offer", %{}
+      refute_push "make_offer", %{}
+    end
+  end
+
+  describe "terminate/2" do
+    test "a drained socket does not announce peer_left", %{user_id: user_id} do
+      {:ok, _, desktop} = join_as(user_id, :user, user_id)
+      {:ok, _, _phone} = join_as(user_id, :phone, user_id)
+
+      # What Phoenix's socket drainer does on shutdown. The phone goes on
+      # sending to the desktop peer-to-peer across a restart, so announcing a
+      # departure would drop the board camera for a deploy it never noticed.
+      Process.unlink(desktop.channel_pid)
+      ref = Process.monitor(desktop.channel_pid)
+      send(desktop.channel_pid, %Phoenix.Socket.Broadcast{event: "phx_drain"})
+
+      assert_receive {:DOWN, ^ref, :process, _pid, {:shutdown, :draining}}
+      refute_broadcast "peer_left", %{}
+    end
+  end
+
   defp join_as(user_id, socket_kind, relay_user_id) do
     UserSocket
     |> socket("user_socket:#{user_id}", %{user_id: user_id, socket_kind: socket_kind})

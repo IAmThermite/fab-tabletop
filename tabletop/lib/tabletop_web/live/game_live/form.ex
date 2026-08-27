@@ -47,12 +47,6 @@ defmodule TabletopWeb.GameLive.Form do
           prompt="— Select hero —"
           options={@hero_options}
         />
-        <.input
-          field={@form[:decklist]}
-          type="text"
-          label="Decklist"
-          placeholder="https://fabrary.com/..."
-        />
         <footer>
           <.button phx-disable-with="Saving..." variant="primary">Save Game</.button>
           <.button navigate={return_path(@current_scope, "index", @game)}>Cancel</.button>

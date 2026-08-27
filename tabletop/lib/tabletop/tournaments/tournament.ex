@@ -29,6 +29,7 @@ defmodule Tabletop.Tournaments.Tournament do
     field :swiss_rounds, :integer, default: 4
     field :top_cut_size, :integer, default: 8
     field :round_duration_seconds, :integer, default: 3300
+    field :requires_decklist, :boolean, default: false
     # Form-facing duration in minutes; the changeset derives the persisted
     # `round_duration_seconds` from it.
     field :round_duration_minutes, :integer, virtual: true
@@ -130,6 +131,7 @@ defmodule Tabletop.Tournaments.Tournament do
       :top_cut_size,
       :round_duration_seconds,
       :round_duration_minutes,
+      :requires_decklist,
       :starts_at
     ])
     |> put_round_duration_seconds()

@@ -71,7 +71,7 @@ defmodule TabletopWeb.TournamentLive.Show do
   end
 
   defp registration_form(%Tournament{} = t) do
-    to_form(Tournaments.change_registration(%TournamentRegistration{tournament_id: t.id}))
+    to_form(Tournaments.change_registration(%TournamentRegistration{tournament_id: t.id}, %{}, t))
   end
 
   defp user_id(%Scope{user: %{id: id}}), do: id
@@ -81,7 +81,7 @@ defmodule TabletopWeb.TournamentLive.Show do
   def handle_event("validate-registration", %{"tournament_registration" => params}, socket) do
     changeset =
       %TournamentRegistration{tournament_id: socket.assigns.tournament.id}
-      |> Tournaments.change_registration(params)
+      |> Tournaments.change_registration(params, socket.assigns.tournament)
       |> Map.put(:action, :validate)
 
     {:noreply, assign(socket, :registration_form, to_form(changeset))}
@@ -555,7 +555,11 @@ defmodule TabletopWeb.TournamentLive.Show do
         <.input
           field={@form[:decklist_url]}
           type="text"
-          label="Fabrary decklist URL"
+          label={
+            if @tournament.requires_decklist,
+              do: "Fabrary decklist URL",
+              else: "Fabrary decklist URL (optional)"
+          }
           placeholder="https://fabrary.net/decks/..."
         />
         <.button variant="primary" phx-disable-with="Registering...">Register</.button>
@@ -676,7 +680,10 @@ defmodule TabletopWeb.TournamentLive.Show do
               <span :if={r.dropped_at} class="badge badge-ghost badge-sm ml-2">dropped</span>
             </div>
           </div>
-          <div :if={can_view_decklist?(r, @current_scope, @tournament)} class="shrink-0">
+          <div
+            :if={r.decklist_url && can_view_decklist?(r, @current_scope, @tournament)}
+            class="shrink-0"
+          >
             <a class="link" href={r.decklist_url} target="_blank" rel="noopener">deck</a>
           </div>
         </li>

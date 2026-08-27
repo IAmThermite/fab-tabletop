@@ -23,7 +23,6 @@ defmodule Tabletop.Games.Game do
 
     field :hero, :string
     field :user2_hero, :string
-    field :decklist, :string
     field :status, Ecto.Enum, values: [:waiting, :active, :finished], default: :waiting
     field :user1_left_at, :utc_datetime_usec
     field :user2_left_at, :utc_datetime_usec
@@ -54,7 +53,7 @@ defmodule Tabletop.Games.Game do
   @doc false
   def changeset(game, attrs, user_scope) do
     game
-    |> cast(attrs, [:title, :format, :language, :hero, :decklist, :private, :competitive])
+    |> cast(attrs, [:title, :format, :language, :hero, :private, :competitive])
     |> validate_required([:title, :format, :language, :hero])
     |> validate_inclusion(:format, Map.keys(@valid_formats))
     |> validate_inclusion(:language, Tabletop.Languages.keys())

@@ -19,10 +19,13 @@ defmodule Tabletop.Tournaments.TournamentRegistration do
     timestamps(type: :utc_datetime)
   end
 
-  def changeset(reg, attrs) do
+  def changeset(reg, attrs, require_decklist?) do
+    required = [:tournament_id, :user_id]
+    required = if require_decklist?, do: [:decklist_url | required], else: required
+
     reg
     |> cast(attrs, [:tournament_id, :user_id, :hero, :decklist_url])
-    |> validate_required([:tournament_id, :user_id, :decklist_url])
+    |> validate_required(required)
     |> validate_format(:decklist_url, @fabrary_regex,
       message: "must be a Fabrary deck URL (https://fabrary.net/decks/...)"
     )

@@ -418,8 +418,8 @@ defmodule Tabletop.Tournaments do
 
   # ─────────── Player actions ───────────
 
-  def change_registration(%TournamentRegistration{} = reg, attrs \\ %{}) do
-    TournamentRegistration.changeset(reg, attrs)
+  def change_registration(%TournamentRegistration{} = reg, attrs, %Tournament{} = t) do
+    TournamentRegistration.changeset(reg, attrs, t.requires_decklist)
   end
 
   def register(%Scope{user: user}, tournament_id, attrs) do
@@ -439,7 +439,7 @@ defmodule Tabletop.Tournaments do
           |> Map.put("user_id", user.id)
 
         %TournamentRegistration{}
-        |> TournamentRegistration.changeset(attrs)
+        |> TournamentRegistration.changeset(attrs, t.requires_decklist)
         |> Repo.insert()
         |> case do
           {:ok, reg} ->

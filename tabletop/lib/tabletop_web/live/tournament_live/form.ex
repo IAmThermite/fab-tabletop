@@ -241,6 +241,21 @@ defmodule TabletopWeb.TournamentLive.Form do
           </p>
         </section>
 
+        <section class="rounded-box border border-base-300 p-4 space-y-4">
+          <h2 class="font-display text-base font-bold">Registration</h2>
+          <.input
+            field={@form[:requires_decklist]}
+            type="checkbox"
+            class="toggle"
+            label="Require a Fabrary decklist to sign up"
+          />
+          <p class="text-sm text-base-content/60">
+            Off by default: players may sign up without one. Turn it on for
+            events where you want to check lists. Either way a submitted link is
+            visible to you throughout, and to everyone once the event finishes.
+          </p>
+        </section>
+
         <footer class="flex gap-2">
           <.button phx-disable-with="Saving..." variant="primary">Save</.button>
           <.button navigate={~p"/tournaments"}>Cancel</.button>

@@ -19,6 +19,7 @@ defmodule TabletopWeb.GameLive.Index do
       current_scope={@current_scope}
       system_announcement={@system_announcement}
       max_width="max-w-7xl"
+      page_title="Webcam Flesh and Blood"
     >
       <.notification_banners items={@notification_items} />
       <div id="game-index" phx-hook=".GameIndex">
@@ -254,11 +255,11 @@ defmodule TabletopWeb.GameLive.Index do
                           </span>
                         </div>
                         <div
-                          :if={game.competitive || present?(game.hero) || present?(game.decklist)}
+                          :if={game.competitive || present?(game.hero)}
                           class="flex items-center gap-2 mt-1 min-w-0"
                         >
-                          <%!-- Competitive: a single badge, and no hero/decklist —
-                               a Fabrary link would give the hero away. --%>
+                          <%!-- Competitive: a single badge and no hero — naming it
+                               would give away what the opponent is bringing. --%>
                           <span
                             :if={game.competitive}
                             class="badge badge-sm badge-neutral gap-1 shrink-0"
@@ -275,15 +276,6 @@ defmodule TabletopWeb.GameLive.Index do
                           >
                             <span class="truncate">{Heroes.name(game.hero) || game.hero}</span>
                           </span>
-                          <.link
-                            :if={!game.competitive && present?(game.decklist)}
-                            href={game.decklist}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            class="text-xs text-blue-600 underline shrink-0 whitespace-nowrap"
-                          >
-                            Decklist ↗
-                          </.link>
                         </div>
                       </div>
                     </div>
@@ -368,12 +360,6 @@ defmodule TabletopWeb.GameLive.Index do
                   </div>
                 </div>
                 <.input
-                  field={@form[:decklist]}
-                  type="text"
-                  label="Decklist"
-                  placeholder="https://fabrary.com/..."
-                />
-                <.input
                   field={@form[:private]}
                   type="checkbox"
                   class="toggle"
@@ -429,7 +415,7 @@ defmodule TabletopWeb.GameLive.Index do
 
                 <p :if={@activity.open_total == 0} class="mt-3 text-zinc-600 dark:text-zinc-400">
                   Create or join a game of Flesh and Blood to get started.
-                  Set up your hero, share your decklist, and battle your opponent with live video chat.
+                  Set up your hero and battle your opponent with live video chat.
                 </p>
               </div>
 
@@ -743,7 +729,6 @@ defmodule TabletopWeb.GameLive.Index do
           language: last.language,
           title: last.title,
           hero: last.hero,
-          decklist: last.decklist,
           private: last.private,
           competitive: last.competitive
         }

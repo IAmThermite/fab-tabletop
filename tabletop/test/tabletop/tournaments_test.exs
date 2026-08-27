@@ -95,6 +95,58 @@ defmodule Tabletop.TournamentsTest do
     assert %{decklist_url: _} = errors_on(changeset)
   end
 
+  describe "decklist requirement" do
+    test "is off by default, so a bare registration is accepted", %{admin_scope: admin} do
+      t = tournament_fixture(scope: admin)
+      refute t.requires_decklist
+      {:ok, _} = Tournaments.open_registration(admin, t)
+      s = Scope.for_user(user_fixture())
+
+      assert {:ok, reg} = Tournaments.register(s, t.id, %{"hero" => "arakni-huntsman"})
+      assert is_nil(reg.decklist_url)
+      assert reg.hero == "arakni-huntsman"
+    end
+
+    test "a tournament that requires one rejects a registration without it", %{
+      admin_scope: admin
+    } do
+      t = tournament_fixture(scope: admin, params: %{"requires_decklist" => "true"})
+      assert t.requires_decklist
+      {:ok, _} = Tournaments.open_registration(admin, t)
+      s = Scope.for_user(user_fixture())
+
+      assert {:error, changeset} = Tournaments.register(s, t.id, %{})
+      assert %{decklist_url: _} = errors_on(changeset)
+    end
+
+    test "an optional decklist must still be a Fabrary URL when supplied", %{admin_scope: admin} do
+      t = tournament_fixture(scope: admin)
+      {:ok, _} = Tournaments.open_registration(admin, t)
+      s = Scope.for_user(user_fixture())
+
+      assert {:error, changeset} =
+               Tournaments.register(s, t.id, %{"decklist_url" => "https://evil.example.com/x"})
+
+      assert %{decklist_url: _} = errors_on(changeset)
+
+      assert {:ok, reg} =
+               Tournaments.register(s, t.id, %{"decklist_url" => valid_fabrary_url()})
+
+      assert reg.decklist_url == valid_fabrary_url()
+    end
+
+    test "a blank decklist submission is treated as absent, not malformed", %{
+      admin_scope: admin
+    } do
+      t = tournament_fixture(scope: admin)
+      {:ok, _} = Tournaments.open_registration(admin, t)
+      s = Scope.for_user(user_fixture())
+
+      assert {:ok, reg} = Tournaments.register(s, t.id, %{"decklist_url" => ""})
+      assert is_nil(reg.decklist_url)
+    end
+  end
+
   test "players can register, report, and admin confirms", %{admin_scope: admin} do
     t = tournament_fixture(scope: admin)
     {:ok, t} = Tournaments.open_registration(admin, t)

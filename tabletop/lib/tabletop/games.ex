@@ -662,14 +662,14 @@ defmodule Tabletop.Games do
   (any status), or `nil` if they have never created one. Powers the lobby's
   "quick match" button, which re-seeds that form from a previous game's settings.
 
-  Only games the user created are considered, since the hero/decklist on a joined
-  game belong to the other player.
+  Only games the user created are considered, since the hero on a joined game
+  belongs to the other player.
 
   Tournament matches are excluded even though they are stored as ordinary `Game`
   rows with player 1 as `user_id`: `Tournaments.create_match_game!/5` builds them
-  with `Game.match_changeset/2`, which carries no hero, decklist or language of
-  its own. Seeding from one hands the player a blank hero and decklist under a
-  machine-generated title, and the form then fails its own `validate_required`.
+  with `Game.match_changeset/2`, which carries no hero or language of its own.
+  Seeding from one hands the player a blank hero under a machine-generated title,
+  and the form then fails its own `validate_required`.
   `hero` is the discriminator — `changeset/3` requires it, `match_changeset/2`
   never sets it — which keeps this query out of the Tournaments schemas.
   """

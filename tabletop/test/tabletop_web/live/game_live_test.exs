@@ -129,45 +129,41 @@ defmodule TabletopWeb.GameLiveTest do
       refute html =~ "Recent winners"
     end
 
-    test "shows hero and decklist on a joinable game row", %{conn: conn} do
+    test "shows the hero on a joinable game row", %{conn: conn} do
       other_scope = user_scope_fixture()
 
       game_fixture(other_scope, %{
         title: "Hero Game",
         format: :living_legend,
-        hero: "briar-warden-of-thorns",
-        decklist: "https://fabrary.net/decks/abc123"
+        hero: "briar-warden-of-thorns"
       })
 
       {:ok, _live, html} = live(conn, ~p"/")
 
       assert html =~ "Briar, Warden of Thorns"
-      assert html =~ "https://fabrary.net/decks/abc123"
     end
 
-    test "hides the hero and decklist on a competitive game row", %{conn: conn} do
+    test "hides the hero on a competitive game row", %{conn: conn} do
       other_scope = user_scope_fixture()
 
       game_fixture(other_scope, %{
         title: "Competitive Game",
         format: :living_legend,
         hero: "briar-warden-of-thorns",
-        decklist: "https://fabrary.net/decks/secret",
         competitive: true
       })
 
-      {:ok, live, html} = live(conn, ~p"/")
+      {:ok, live, _html} = live(conn, ~p"/")
 
-      # The game is still listed, but on its row the hero name and decklist are
-      # hidden and a "Competitive" marker is shown instead. The hero name is only
-      # refuted within the joinable-games list — competitive games now feed the
-      # separate "Popular heroes" panel, where the name legitimately appears.
+      # The game is still listed, but on its row the hero name is hidden and a
+      # "Competitive" marker is shown instead. The hero name is only refuted
+      # within the joinable-games list — competitive games now feed the separate
+      # "Popular heroes" panel, where the name legitimately appears.
       joinable = live |> element("#joinable-games") |> render()
 
       assert joinable =~ "Competitive Game"
       assert joinable =~ "Competitive"
       refute joinable =~ "Briar, Warden of Thorns"
-      refute html =~ "https://fabrary.net/decks/secret"
     end
 
     test "shows a single empty state when no games are open", %{conn: conn} do
@@ -244,7 +240,6 @@ defmodule TabletopWeb.GameLiveTest do
           format: :blitz,
           language: :deu,
           hero: "aurora",
-          decklist: "https://fabrary.net/decks/rematch",
           private: true,
           competitive: true
         })
@@ -272,7 +267,6 @@ defmodule TabletopWeb.GameLiveTest do
       assert created.format == :blitz
       assert created.language == :deu
       assert created.hero == "aurora"
-      assert created.decklist == "https://fabrary.net/decks/rematch"
       assert created.private
       assert created.competitive
     end
@@ -285,14 +279,13 @@ defmodule TabletopWeb.GameLiveTest do
         game_fixture(scope, %{
           title: "My Deck Night",
           format: :blitz,
-          hero: "aurora",
-          decklist: "https://fabrary.net/decks/mine"
+          hero: "aurora"
         })
 
       Tabletop.Games.terminate_game(scope, own)
 
       # A tournament match is an ordinary Game row with this user as `user_id`,
-      # but it carries no hero or decklist — seeding from it blanked the form.
+      # but it carries no hero — seeding from it blanked the form.
       opponent = user_scope_fixture()
 
       {:ok, match_game} =
@@ -331,7 +324,6 @@ defmodule TabletopWeb.GameLiveTest do
 
       assert created.title == "My Deck Night"
       assert created.hero == "aurora"
-      assert created.decklist == "https://fabrary.net/decks/mine"
     end
 
     test "quick match button is hidden when the only game is a tournament match", %{
@@ -449,8 +441,7 @@ defmodule TabletopWeb.GameLiveTest do
         game_fixture(scope, %{
           title: "My Rematch Deck",
           format: :classic_constructed,
-          hero: hero.slug,
-          decklist: "https://fabrary.com/decks/abc"
+          hero: hero.slug
         })
 
       {:ok, _} = Tabletop.Games.terminate_game(scope, game)
@@ -464,7 +455,6 @@ defmodule TabletopWeb.GameLiveTest do
         |> render_click()
 
       assert filled =~ "My Rematch Deck"
-      assert filled =~ "https://fabrary.com/decks/abc"
       # The hero preview only renders for the selected hero, so its icon path
       # confirms the hero field was seeded too.
       assert filled =~ Tabletop.Heroes.icon_path(hero.slug)

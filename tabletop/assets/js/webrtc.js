@@ -29,10 +29,10 @@ const CAPTURE_HEIGHT = 1080
 const STATS_LOG_INTERVAL_MS = 5000
 
 export default class WebRTCManager {
-  constructor({ token, gameId, iceServers, localVideoEl, remoteVideoEl, canvasEl, onStatusChange, micEnabled = true, cameraEnabled = true }) {
+  constructor({ token, gameId, iceServers, localVideoEl, remoteVideoEl, tileLayerEl, onStatusChange, micEnabled = true, cameraEnabled = true }) {
     this.token = token
     this.gameId = gameId
-    this.iceServers = iceServers || DEFAULT_ICE_SERVERS
+    this.iceServers = iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS
     this.localVideoEl = localVideoEl
     this.remoteVideoEl = remoteVideoEl
     // Overlay holding the opponent's tiles. Tile coordinates are percentages of

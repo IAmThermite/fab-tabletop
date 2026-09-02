@@ -7,6 +7,50 @@
 
 ## Initial Setup
 
+### One machine per app
+
+**All three apps in this deployment run exactly one machine, and `fly deploy`
+does not default to that.** Given an app with services and no machines yet, it
+creates *two*. There is no fly.toml key that forbids it — `min_machines_running`
+is the floor the autostop reaper respects, not a cap — so `--ha=false` on the
+first deploy of an app is the whole enforcement mechanism. It is a harmless no-op
+once a machine exists, so keep it on the command line rather than remembering
+when it matters.
+
+None of the three apps is *wrong* in the ordinary "wasted money" way with two
+machines; each breaks differently, and none of them loudly:
+
+| App | What a second machine does |
+| --- | --- |
+| `fabtabletop` | Splits every game. The BEAM nodes are **not clustered** — `DNS_CLUSTER_QUERY` is unset, so `DNSCluster` starts as `:ignore`. `Tabletop.Games.GameSessionRegistry` is a node-local `Registry`, so two players routed to different machines each get their own `GameSession` GenServer for the same `game_id`, with their own life totals and combat chain. `Phoenix.PubSub` and the `:pg` group behind the camera relay don't cross either. Both players see a working page and neither sees the other's actions. |
+| `fabtabletop-db` | Two Postgres machines, each with its own volume — Fly does not replicate one. The second boots an *empty* database, and which one you reach depends on 6PN DNS ordering. |
+| `fabtabletop-turn` | Breaks TURN allocations — an allocation is a socket on one machine and the dedicated IPv4 is Anycast. Details in [3.4](#34-deploy-coturn) and "Reference — scaling out". |
+
+If an app already has two, drop back to one with
+`fly scale count 1 --app <name>`. For `fabtabletop-db` check *which* machine has
+the real volume before removing either.
+
+**Setting `DNS_CLUSTER_QUERY` is not the fix for the `fabtabletop` row**, though
+it is the obvious first guess. Clustering the BEAM nodes would repair the
+*transport* — `Phoenix.PubSub`'s PG2 adapter and the `:pg` scope behind
+`TabletopWeb.ChannelSeat` both become cluster-wide — but `GameSession` registers
+through a node-local `Registry` under a node-local `DynamicSupervisor`, and
+clustering does not change that. Two sessions per game would still exist; they
+would now both broadcast onto `game_session:<game_id>`, so every LiveView
+receives both and the state flaps between two divergent snapshots instead of
+splitting cleanly. That is a *worse* failure to debug. `LeaveTimerRegistry` and
+`GameConnectionRegistry` are node-local for the same reason, so the leave timer
+would also fire on users connected via the other machine.
+
+Supporting a second web machine means, in order: a cluster-wide registry for
+`GameSession` (`:global` via-tuple or Horde — there is no clustering dependency
+in `mix.exs` today) and the same for the other two registries, *then*
+`DNS_CLUSTER_QUERY`. The cheaper route is `fly-replay` sticky routing on
+`game_id` so both players of a game always land on one machine. Neither is worth
+doing pre-emptively: the media is peer-to-peer, so the server only brokers
+signalling and small in-memory state, and scaling the VM up goes a long way
+first.
+
 ### 1. Create the Postgres database app
 
 ```bash
@@ -19,8 +63,8 @@ fly volumes create pg_data --size 1 --region iad --app fabtabletop-db
 # Set the Postgres password
 fly secrets set POSTGRES_PASSWORD=<your-secure-password> --app fabtabletop-db
 
-# Deploy Postgres
-fly deploy --config infrastructure/fly/postgres.toml
+# Deploy Postgres — --ha=false, see "One machine per app" above
+fly deploy --config infrastructure/fly/postgres.toml --ha=false
 ```
 
 ### 2. Create the web app
@@ -42,7 +86,7 @@ fly secrets set \
 To deploy:
 
 ```bash
-fly deploy --config infrastructure/fly/fly.toml
+fly deploy --config infrastructure/fly/fly.toml --ha=false
 ```
 
 ### 3. Create the TURN server app
@@ -60,7 +104,7 @@ Work through these in order and stop at each **gate** — every one of them
 isolates a different layer, so a failure tells you where the problem is.
 
 **Keep one shell open for the whole run.** `$TURN_SECRET` is generated in step
-3.2 and reused verbatim in 3.4; if the two apps end up with different values,
+3.3 and reused verbatim in 3.5; if the two apps end up with different values,
 every allocation fails with `401` and there is no other symptom.
 
 #### 3.1 Create the app and claim a dedicated IPv4
@@ -78,11 +122,57 @@ fly apps create fabtabletop-turn
 # opponent has to reach this exact machine. ~$2/mo.
 fly ips allocate-v4 --app fabtabletop-turn
 
-# Read the address back; you need it three more times below.
+# Read the address back; you need it several more times below.
 fly ips list --app fabtabletop-turn
 ```
 
-#### 3.2 Set secrets *before* the first deploy
+**Do not allocate an IPv6.** Fly cannot proxy UDP over IPv6 at all, so a v6
+address on this app is not a second way in — it is only a way for a client to
+pick an address that silently cannot carry media. Plain `fly ips allocate-v4`
+and nothing else.
+
+#### 3.2 DNS — point a hostname at the address
+
+Strictly optional for plain TURN (you can put the raw IPv4 in `TURN_URLS`), but
+do it now anyway: it is **required** for the `turns:` arm in 3.6, because a TLS
+certificate cannot be issued for an IP literal, and it means a future IP change
+is a DNS edit rather than a redeploy of the web app.
+
+`fabtabletop.net` is on Cloudflare, so create the record there:
+
+| Field | Value |
+| --- | --- |
+| Type | `A` |
+| Name | `turn` |
+| IPv4 address | the dedicated v4 from 3.1 |
+| Proxy status | **DNS only (grey cloud)** |
+| TTL | Auto |
+
+Two things about that table are load-bearing, and both fail silently:
+
+- **Proxy status must be DNS only.** The apex `fabtabletop.net` is proxied
+  (orange cloud) and should stay that way, but Cloudflare's proxy does not
+  forward UDP, and it terminates the TCP ports it does forward. An orange-clouded
+  `turn` record hides the dedicated IPv4 behind Cloudflare's anycast edge, and
+  every allocation fails — including the TCP and 443 arms. Grey cloud publishes
+  the real address, which is the entire point of paying for a dedicated one.
+- **Do not add an AAAA record.** Fly cannot route UDP over IPv6. If the hostname
+  resolves to both families, a dual-stack browser will happily try the v6
+  address, gather nothing, and you get an intermittent failure that correlates
+  with the client's network rather than with anything on the server.
+
+Confirm before moving on — the answer must be the dedicated IPv4, and the AAAA
+lookup must be empty:
+
+```bash
+dig +short A    turn.fabtabletop.net    # => <turn-ipv4>
+dig +short AAAA turn.fabtabletop.net    # => (nothing)
+```
+
+If the A lookup returns a `104.21.*` or `172.67.*` address, the record is still
+proxied.
+
+#### 3.3 Set secrets *before* the first deploy
 
 `EXTERNAL_IP` is mandatory: on Fly the dedicated v4 lives on the edge proxy and
 is invisible inside the container, so coturn cannot discover it and
@@ -98,45 +188,100 @@ fly secrets set \
   --app fabtabletop-turn
 ```
 
-#### 3.3 Deploy coturn
+That is the whole list. The *internal* address coturn relays from is resolved at
+boot from `fly-global-services` — see the reference at the end of this section
+for what the entrypoint computes and why.
 
-Run from the **repo root**: the build context is the working directory, and
-`infrastructure/coturn/Dockerfile` COPYs root-relative paths.
+#### 3.4 Deploy coturn
+
+Run from the **repo root**. `build.dockerfile` in a fly.toml is resolved relative
+to the config file, so `dockerfile = 'Dockerfile'` finds
+`infrastructure/coturn/Dockerfile`; the build *context* is the working directory,
+which is why that Dockerfile's `COPY infrastructure/coturn/...` paths are
+repo-root-relative. (The web app's config relies on the same rule from the other
+direction: `dockerfile = '../Dockerfile'` in `infrastructure/fly/fly.toml`
+resolves to `infrastructure/Dockerfile`.)
 
 ```bash
-fly deploy --config infrastructure/coturn/fly.toml
+fly deploy --config infrastructure/coturn/fly.toml --ha=false
 ```
 
-If the build fails with "Dockerfile not found", flyctl is resolving
-`build.dockerfile` against the working directory rather than against the config
-file — change that line in `infrastructure/coturn/fly.toml` to
-`dockerfile = 'infrastructure/coturn/Dockerfile'`.
+**`--ha=false` is not optional here.** When `fly deploy` finds an app with
+services and zero machines it creates *two*, for high availability. That is the
+wrong shape for this app, for the reason in "Reference — scaling out" below: a
+TURN allocation lives on one specific machine, and the dedicated IPv4 is Anycast,
+so a client's packets get sprayed across both machines and allocations break.
+There is no fly.toml key for machine count — `min_machines_running` is the
+autostop floor, not a cap — so this flag is the only thing standing between you
+and a two-machine deploy. Pass it on every `fly deploy` for this app; it is a
+no-op once one machine exists, and load-bearing on the day the app gets rebuilt
+from scratch.
+
+If you already have two, drop back to one (either machine — they are
+interchangeable, coturn holds no state):
+
+```bash
+fly scale count 1 --app fabtabletop-turn
+```
 
 ##### Gate A — did coturn come up?
 
 ```bash
-fly status --app fabtabletop-turn    # expect 1 machine, started
+fly status --app fabtabletop-turn    # expect exactly 1 machine, STATE=started
 fly logs --app fabtabletop-turn
 ```
 
-Look for the coturn 4.12 banner, and confirm there is **no** `FATAL:` line and
-**no** `Bad configuration format` line (the latter means an option name this
-coturn version doesn't recognise — it is ignored silently, so it never fails the
-boot).
+Check the machine *count* here, not just the state — two started machines look
+healthy in every other check and fail only under real relay traffic, and
+intermittently, since whether a given call breaks depends on which machine the
+Anycast IP happened to land its packets on.
 
-One warning here is expected and correct until you do step 3.5:
-`TURN_TLS_CERT/TURN_TLS_KEY unset — turns: (TLS) disabled`.
+A machine in `STATE=stopped` is TURN being **down**, not idle: this app sets
+`auto_start_machines = false`, so nothing restarts it — not incoming traffic,
+not a health check. Fly only starts a stopped machine on demand for services it
+can hold a connection open for while booting, and TURN's traffic is UDP.
+Whatever stopped it (a manual `fly machine stop`, a host migration, an OOM), it
+stays stopped until you run `fly machine start <id> --app fabtabletop-turn`.
+The failure is silent from the app's side — `Tabletop.Turn` still mints
+credentials and every client still gets its `iceServers` list, so calls just
+quietly fall back to STUN-only and fail on exactly the cellular and corporate
+networks TURN exists for. Nothing alerts on this; re-check it after any manual
+machine operation.
 
-#### 3.4 Point the web app at it
+Four lines to look for, and one to make sure is absent:
+
+```
+coturn: relaying on 172.19.x.x, advertised as <turn-ipv4>
+INFO Relay address to use: 172.19.x.x          <- exactly one, and it is IPv4
+INFO Whitelisting external-ip private part: 172.19.x.x
+INFO Coturn Version Coturn-4.17.2 'Gorst'
+```
+
+- **No `FATAL:` line.** The entrypoint refuses to boot on a missing
+  `TURN_SECRET`, a missing `EXTERNAL_IP`, or an unresolvable
+  `fly-global-services`, and says which.
+- **No `Bad configuration format` line.** That means an option name this coturn
+  version no longer recognises. coturn logs it and then boots anyway, so it
+  never fails the deploy — it just quietly drops the setting. This is why the
+  image is pinned; re-read this log whenever you bump it.
+- **Exactly one `Relay address to use`, and it is the IPv4.** If you see a second
+  one — an `fdaa::` or `::1` — the relay pinning is not being applied and
+  allocations will be handed out on an address Fly cannot route.
+
+`INFO: TURN_TLS_CERT/TURN_TLS_KEY unset — coturn is not terminating TLS` is
+expected and correct; Fly terminates TLS at the edge (3.6).
+
+#### 3.5 Point the web app at it
 
 ```bash
 fly secrets set \
   TURN_SECRET="$TURN_SECRET" \
-  TURN_URLS="turn:<turn-ipv4>:3478" \
+  TURN_URLS="turn:turn.fabtabletop.net:3478" \
   --app fabtabletop
 ```
 
 Setting secrets restarts the machines, and `runtime.exs` re-reads both on boot.
+Use the raw IPv4 instead of the hostname if you skipped 3.2.
 
 ##### Gate B — does it actually relay?
 
@@ -145,17 +290,18 @@ browser permissions — so a failure here is definitely coturn or the network pa
 to it.
 
 Mint a credential without booting the app. This reproduces exactly what
-`Tabletop.Turn` computes (verified byte-for-byte against it):
+`Tabletop.Turn` computes, including the expiry quantisation:
 
 ```bash
 SECRET="<the TURN_SECRET>"
-USERNAME="$(( $(date +%s) + 3600 )):test"
+WINDOW=3600; TTL=28800
+USERNAME="$(( ( $(date +%s) / WINDOW + 1 ) * WINDOW + TTL )):test"
 CREDENTIAL=$(printf '%s' "$USERNAME" | openssl dgst -sha1 -hmac "$SECRET" -binary | base64)
 echo "username:   $USERNAME"
 echo "credential: $CREDENTIAL"
 ```
 
-Put `turn:<turn-ipv4>:3478` plus that pair into the
+Put `turn:turn.fabtabletop.net:3478` plus that pair into the
 [Trickle ICE tester](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/)
 and look for a row of type **`relay`**. If you only see `host`/`srflx`, TURN
 isn't reachable.
@@ -166,10 +312,14 @@ passes whether or not TURN works — you would be validating nothing. Cellular
 symmetric NAT is the case TURN exists for, and Fly's UDP proxying is the least
 battle-tested part of this whole setup.
 
-When it fails, `fly logs --app fabtabletop-turn` distinguishes the causes: a
-wall of `401` means the two `TURN_SECRET` values differ; `allocation quota
-reached` means the port range is too small; **nothing at all** means the Allocate
-request never arrived, so the problem is the network path rather than the auth.
+When it fails, `fly logs --app fabtabletop-turn` distinguishes the causes:
+
+| Log | Cause |
+| --- | --- |
+| a wall of `401` | the two `TURN_SECRET` values differ |
+| `allocation quota reached` | the relay port range is too small |
+| `ALLOCATE processed, success` but still no `relay` row | the allocation worked and the relay address is unreachable — check Gate A's relay line, and check the DNS record is grey-clouded |
+| nothing at all | the Allocate request never arrived: network path, not auth |
 
 ##### Gate C — a real game
 
@@ -178,7 +328,7 @@ find the nominated candidate pair, and confirm `relay` appears when you would
 expect it. This is also how you measure what fraction of real games need the
 relay at all — the number that tells you whether to widen the port range.
 
-#### 3.5 TLS (`turns:` on 443) — optional, needs a domain
+#### 3.6 TLS (`turns:` on 443) — optional
 
 Skip this if you just want to get playing; plain TURN already covers the
 cellular case. Add it when you want the corporate/guest-wifi case too.
@@ -190,28 +340,56 @@ are exactly the networks where a relay is the only thing that works.
 **coturn does not handle the certificate.** `infrastructure/coturn/fly.toml`
 gives port 443 the Fly `tls` handler, so Fly's edge terminates TLS and forwards
 the decrypted stream to the same plain TURN listener on 3478 that serves port
-3478. Fly issues and **auto-renews** the cert, so there is no rotation to do:
+3478. Fly issues and **auto-renews** the cert, so there is no rotation to do.
+
+The DNS record from 3.2 is the prerequisite — Fly validates the certificate
+against it, and a proxied (orange-cloud) record fails validation because the
+challenge resolves to Cloudflare rather than to Fly.
+
+> **Why not a Cloudflare Origin CA certificate?** Because the `turn` record is
+> grey-cloud, the browser connects straight to Fly and validates the certificate
+> itself. Origin CA certs are signed by a root that exists only inside
+> Cloudflare's proxy and is in no public trust store — Cloudflare's own docs warn
+> that "site visitors may see untrusted certificate errors if you [...] disable
+> proxying on subdomains that use Cloudflare origin CA certificates", which is
+> exactly our configuration. Orange-clouding the record to fix that is not an
+> option either: Cloudflare does not forward UDP, so it would take plain TURN
+> down to buy TLS. Cloudflare's role here is DNS, not certificates.
 
 ```bash
-# 1. Point a hostname at the dedicated IPv4 (A record):
-#      turn.yourdomain.com -> <turn-ipv4>
+# 1. Have Fly issue and manage the cert for the hostname from 3.2.
+fly certs add turn.fabtabletop.net --app fabtabletop-turn
+fly certs show turn.fabtabletop.net --app fabtabletop-turn   # wait for "Ready"
 
-# 2. Have Fly issue and manage the cert for it.
-fly certs add turn.yourdomain.com --app fabtabletop-turn
-fly certs show turn.yourdomain.com --app fabtabletop-turn   # wait for "Ready"
+# 2. Set the realm to match the hostname.
+fly secrets set TURN_REALM="turn.fabtabletop.net" --app fabtabletop-turn
 
-# 3. Set the realm to match the hostname.
-fly secrets set TURN_REALM="turn.yourdomain.com" --app fabtabletop-turn
-
-# 4. Advertise both arms to clients. The turns: URL must use the hostname the
+# 3. Advertise both arms to clients. The turns: URL must use the hostname the
 #    cert was issued for — an IP will fail certificate validation.
 fly secrets set \
-  TURN_URLS="turn:<turn-ipv4>:3478,turns:turn.yourdomain.com:443?transport=tcp" \
+  TURN_URLS="turn:turn.fabtabletop.net:3478,turns:turn.fabtabletop.net:443?transport=tcp" \
   --app fabtabletop
 ```
 
-Until a cert is issued, coturn boots with `--no-tls --no-dtls` and logs a
-warning; plain TURN still works and only the strict-firewall case is lost.
+**Expect step 1 to need a DNS-01 challenge.** Fly validates with TLS-ALPN-01 or
+DNS-01, and TLS-ALPN-01 wants an ordinary HTTPS-ish service to answer on 443 —
+this app publishes no port 80 and its 443 is a raw TCP service forwarding to a
+TURN listener. If `fly certs show` sits at *Awaiting configuration* rather than
+moving to *Ready*, it is printing a validation target; add it at Cloudflare:
+
+| Field | Value |
+| --- | --- |
+| Type | `CNAME` |
+| Name | `_acme-challenge.turn` |
+| Target | the `flydns.net` hostname from `fly certs show` |
+| Proxy status | DNS only (Cloudflare forces this on underscore records) |
+
+This is the one place Cloudflare genuinely helps: it hosts the challenge record,
+Let's Encrypt reads it, and Fly renews against the same record automatically
+from then on. Nothing to redo in 90 days.
+
+Until a cert is issued, coturn boots without a TLS listener of its own and logs
+an INFO line; plain TURN still works and only the strict-firewall case is lost.
 
 Re-run **Gate B** against the `turns:` URL afterwards. If a `relay` candidate
 appears on `turn:` but never on `turns:`, that points at the Fly `tls` handler
@@ -225,15 +403,58 @@ base64 PEM secrets — `entrypoint.sh` already supports this and will enable its
 own TLS listener on 443:
 
 ```bash
-certbot certonly --manual --preferred-challenges dns -d turn.yourdomain.com
+certbot certonly --manual --preferred-challenges dns -d turn.fabtabletop.net
 fly secrets set \
-  TURN_TLS_CERT="$(base64 -w0 < /etc/letsencrypt/live/turn.yourdomain.com/fullchain.pem)" \
-  TURN_TLS_KEY="$(base64 -w0 < /etc/letsencrypt/live/turn.yourdomain.com/privkey.pem)" \
+  TURN_TLS_CERT="$(base64 -w0 < /etc/letsencrypt/live/turn.fabtabletop.net/fullchain.pem)" \
+  TURN_TLS_KEY="$(base64 -w0 < /etc/letsencrypt/live/turn.fabtabletop.net/privkey.pem)" \
   --app fabtabletop-turn
 ```
 
-That path costs you a manual re-run every 90 days, which is exactly what the
-Fly-managed cert avoids. Only take it if the handler genuinely doesn't work.
+Both changes are needed together: with the secrets set but the fly.toml
+untouched, coturn binds TLS on internal 443 while Fly is still forwarding
+plaintext to 3478, so the listener you just configured is routed to by nothing.
+The entrypoint prints a reminder when it takes this path.
+
+`--manual` there means re-running it every 90 days. If you end up living on
+this path, swap certbot for an ACME client driving the Cloudflare API instead —
+`acme.sh --dns dns_cf`, `lego`, or `certbot-dns-cloudflare` with a scoped
+**Zone:DNS:Edit** token — which renews unattended against the same DNS-01
+challenge. The certificate is still Let's Encrypt; Cloudflare only answers the
+challenge. You would still have to push the renewed PEM into `fly secrets` and
+restart, which is the real reason to prefer the Fly-managed cert above. Only
+take this path if the `tls` handler genuinely does not work.
+
+#### Reference — what the entrypoint computes at boot
+
+Three coturn arguments are derived rather than configured, and all three exist
+because Fly's UDP path has constraints an ordinary host does not.
+
+`INTERNAL_IP` — resolved from `fly-global-services`, overridable by setting the
+env var (which is how the image is tested locally, outside Fly).
+
+- **`--relay-ip=$INTERNAL_IP`.** Fly forwards UDP by rewriting only the
+  destination IP — never the port — to whatever `fly-global-services` resolves
+  to. Left to itself coturn picks relay addresses by enumerating interfaces and
+  takes the IPv6 ones too, and Fly cannot route UDP over IPv6, so those
+  allocations succeed and then carry no media. Pinning is what keeps every
+  allocation on the one routable path.
+- **`--external-ip=$EXTERNAL_IP/$INTERNAL_IP`.** The `public/private` mapping
+  form, not a bare address: coturn sits behind Fly's NAT and has to know both
+  the address it advertises and the local one behind it. The mapping form also
+  whitelists the private address, which matters because `turnserver.conf` denies
+  `172.16.0.0/12` as a peer range and `fly-global-services` lives inside it.
+- **`listening-ip` is deliberately never set.** fly-proxy dials the TCP arm on a
+  different interface than `fly-global-services`, so pinning the *listeners*
+  there would take TURN-over-TCP — and with it the 443 TLS arm — dark. coturn
+  binds each discovered address individually rather than wildcarding, so the UDP
+  listener already replies from a correct source address without help. Only the
+  relay side needs pinning.
+
+The coturn image is pinned in `infrastructure/coturn/Dockerfile` (currently
+`4.17.2-debian`). Pin it, don't track `latest`: coturn logs
+`Bad configuration format` for an option name it does not recognise and then
+boots anyway, so an image bump can disable a setting in `turnserver.conf`
+without failing the deploy. Bump deliberately and re-read Gate A's log.
 
 #### Reference — scaling out
 
@@ -243,6 +464,13 @@ the life of the call; several machines behind one Fly Anycast IP would spray a
 client's packets across them and break allocations. `min_machines_running = 1`
 with `auto_stop_machines = 'off'` is deliberate — scale this app *up*, never
 *out*.
+
+Nothing in `fly.toml` enforces that. Machine count is not a config field —
+`min_machines_running` is the floor the autostop reaper will not go below, not a
+ceiling, and there is no `max_machines_running` — so the count is only ever set
+imperatively, by `fly deploy --ha=false` (3.4) and `fly scale count`. Which
+means the one-machine invariant is a habit, not a guarantee: `fly status` is
+what checks it, and Gate A is where to look.
 
 Capacity order of operations:
 
@@ -269,9 +497,48 @@ The relay UDP range (`49160-49259`) is declared in both
 `infrastructure/coturn/fly.toml` (a single `start_port`/`end_port` range). Keep
 them in sync — Fly only routes ports it knows about.
 
+Fly does not rewrite UDP ports, so for the relay range the external and internal
+port numbers are necessarily the same; the `internal_port` on that service block
+is a formality the schema requires. (TCP ports *are* rewritten, which is how the
+443 service forwards to 3478.)
+
 Budget one port per allocation: a relayed player costs one, and the
 phone-as-camera flow is a second peer connection, so a fully-relayed game with
 both players on phones costs 4. 100 ports is comfortable headroom for a beta.
+
+#### Reference — testing the image without deploying
+
+The whole container can be exercised locally, which is how the coturn version
+above was validated. `INTERNAL_IP` stands in for `fly-global-services`:
+
+```bash
+docker build -f infrastructure/coturn/Dockerfile -t coturn-check .
+docker run --rm -e TURN_SECRET=testsecret -e EXTERNAL_IP=203.0.113.9 \
+  -e INTERNAL_IP=172.17.0.2 coturn-check
+```
+
+Read the boot log against Gate A's checklist. For an end-to-end credential test
+— proving `Tabletop.Turn` and coturn agree on the HMAC — run coturn with the dev
+config and allocate against it with coturn's own client:
+
+```bash
+docker compose up -d coturn
+cd tabletop && mix run --no-start -e \
+  'IO.inspect(Tabletop.Turn.ice_servers("relaytest"))'   # copy username + credential
+
+docker run --rm --network host --entrypoint turnutils_uclient \
+  coturn/coturn:4.17.2-debian -u '<username>' -w '<credential>' \
+  -p 3478 -n 2 -m 1 -e 127.0.0.1 127.0.0.1
+```
+
+`ALLOCATE processed, success` in the coturn log means the credential scheme
+works end to end. A `401` means the dev secret in `config/dev.exs` and
+`infrastructure/coturn/coturn.dev.conf` have drifted apart.
+
+Both commands rely on `network_mode: host`, which on macOS is off unless Docker
+Desktop has host networking enabled — see the note in `docker-compose.yml`. To
+sidestep that entirely, put the server and the client on a user-defined bridge
+network instead and address the server by container name.
 
 ## Custom Domain
 
@@ -322,7 +589,7 @@ It takes two steps, because the module allocates shared memory at server start:
 ```bash
 # 1. Preload the module. Already declared in postgres.toml; this applies it and
 #    restarts Postgres (brief downtime for the web app).
-fly deploy --config infrastructure/fly/postgres.toml
+fly deploy --config infrastructure/fly/postgres.toml --ha=false
 
 # 2. Create the extension in the app database (one-off, persists in the volume)
 fly ssh console --app fabtabletop-db \
@@ -362,7 +629,7 @@ The remote builder's context cache is stale — the path exists locally and in
 record pointing at a mount that no longer exists. Deploy once with `--no-cache`:
 
 ```bash
-fly deploy --config infrastructure/fly/fly.toml --no-cache
+fly deploy --config infrastructure/fly/fly.toml --no-cache --ha=false
 ```
 
 Subsequent deploys can drop the flag. If it recurs persistently, destroy the
@@ -614,9 +881,10 @@ gap as "deployed", not as zero.
 - **ECTO_IPV6**: Set in fly.toml — required because `.internal` DNS resolves to IPv6
 - **SECRET_KEY_BASE**: Set via `fly secrets set`
 - **TURN_SECRET**: Shared HMAC secret for TURN auth — must be identical on the web app and the `fabtabletop-turn` app. If unset, clients fall back to STUN-only.
-- **TURN_URLS**: Comma-separated `turn:`/`turns:` URLs on the web app (e.g. `turn:<turn-ipv4>:3478,turns:turn.yourdomain.com:443?transport=tcp`).
+- **TURN_URLS**: Comma-separated `turn:`/`turns:` URLs on the web app (e.g. `turn:turn.fabtabletop.net:3478,turns:turn.fabtabletop.net:443?transport=tcp`). Unset ⇒ STUN-only.
 - **EXTERNAL_IP** (`fabtabletop-turn`): **Required.** The dedicated IPv4 coturn advertises as the relay address. Not auto-detectable on Fly; the entrypoint exits if it's missing.
 - **TURN_REALM** (`fabtabletop-turn`): Optional; defaults to `fabtabletop.fly.dev`. Set it to the TLS hostname once you have one.
-- **TURN_TLS_CERT** / **TURN_TLS_KEY** (`fabtabletop-turn`): Optional base64 PEM pair. Present ⇒ `turns:` on 443; absent ⇒ TLS disabled with a warning.
+- **INTERNAL_IP** (`fabtabletop-turn`): Optional override for the address coturn relays from. Resolved from `fly-global-services` at boot; set it only when running the image outside Fly, where that name does not resolve and the entrypoint otherwise exits.
+- **TURN_TLS_CERT** / **TURN_TLS_KEY** (`fabtabletop-turn`): Optional base64 PEM pair, for the fallback where coturn terminates TLS itself instead of Fly. Absent is the normal case (§ 3.6); it is not an error.
 - **MAILERSEND_API_KEY** / **MAILER_FROM_EMAIL**: Required for registration-confirmation emails — the app raises on boot if `MAILER_FROM_EMAIL` is unset.
 - **METRICS_PORT**: Optional, defaults to `9091` — must match `[metrics]` in fly.toml

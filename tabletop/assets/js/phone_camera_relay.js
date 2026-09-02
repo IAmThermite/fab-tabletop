@@ -17,7 +17,7 @@ export default class PhoneCameraRelay {
   constructor({ relayToken, relayUserId, iceServers, onStatusChange }) {
     this.relayToken = relayToken
     this.relayUserId = relayUserId
-    this.iceServers = iceServers || DEFAULT_ICE_SERVERS
+    this.iceServers = iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS
     this.onStatusChange = onStatusChange || (() => {})
 
     this.socket = null

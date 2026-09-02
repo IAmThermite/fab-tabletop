@@ -151,10 +151,27 @@ allocation. Everything else follows from it:
 - **One allocation per peer connection, per player.** Both players relaying costs two. The
   phone-as-camera feature opens a *second* peer connection between desktop and phone, so a
   fully-relayed game with both players on phones costs four.
+- **That socket exists on exactly one machine, which is why the app runs exactly one.** The
+  allocation is a kernel socket on one host; a client that keeps sending to the advertised
+  address has to keep landing on *that* host for the call's duration. Fly's dedicated IPv4 is
+  Anycast, so a second machine means half the packets arrive at a machine holding no such
+  allocation and are dropped. It fails intermittently and looks like a flaky network rather
+  than a misconfiguration, which is what makes it worth guarding: `fly deploy` creates two
+  machines by default, and no fly.toml key can forbid it. See
+  [3.4 in the Fly README](../fly/README.md) for `--ha=false` and the count check.
 - **coturn must know its own public address.** The relay address it hands back in step 7 is
   what the opponent will send video to. On Fly the dedicated IPv4 lives on the edge proxy
   and is invisible inside the container, so coturn cannot discover it — `EXTERNAL_IP` is how
   we tell it, and it's why [`entrypoint.sh`](entrypoint.sh) refuses to boot without one.
+- **And it must relay from the one address Fly can route.** Fly forwards UDP by rewriting
+  only the destination IP, to whatever `fly-global-services` resolves to. Left alone coturn
+  picks relay addresses by walking its interfaces and takes the IPv6 ones too — and Fly
+  cannot proxy UDP over IPv6 at all, so those allocations succeed and then carry nothing.
+  `entrypoint.sh` resolves that name at boot and pins `relay-ip` to it, and passes
+  `external-ip` in its `public/private` mapping form so coturn knows which local address
+  the advertised one corresponds to. The *listeners* are deliberately left unpinned:
+  fly-proxy dials the TCP arm on a different interface, so restricting them there would
+  take TURN-over-TCP dark.
 - **Relayed traffic is billed twice.** Every frame arrives and then departs, so a relayed
   player consumes their bitrate in both directions on our bandwidth bill. `max-bps` is the
   ceiling that stops one call running away with it.
@@ -172,6 +189,8 @@ allocation. Everything else follows from it:
 | `use-auth-secret` | Turns on the REST scheme — step 6. Without it coturn expects real user accounts. |
 | `TURN_SECRET` | The shared HMAC key. Must be byte-identical on the web app and the TURN app or every allocation 401s. |
 | `EXTERNAL_IP` | The address coturn advertises in step 7. Wrong value ⇒ allocations succeed and media silently goes nowhere. |
+| `external-ip` | Passed as `$EXTERNAL_IP/$INTERNAL_IP` — the `public/private` mapping form, because coturn sits behind Fly NAT. Also whitelists the private address against `denied-peer-ip`. |
+| `relay-ip` | Pinned to the `fly-global-services` address. Unset, coturn also relays from IPv6, which Fly cannot proxy — allocations succeed and carry nothing. |
 | `realm` | Sent in the 401 challenge before step 5. Cosmetic for us, but must match what the client is configured for. |
 | `listening-port` | Where the Allocate request lands — `3478`, TCP and UDP. Fly also maps `443` here for TLS. |
 | `min-port` / `max-port` | The pool the relay socket is drawn from. Hard cap on concurrent allocations. |
@@ -203,5 +222,5 @@ There's one thing to look for: a candidate whose type is `relay`. Everything els
 
 ---
 
-Reference for coturn 4.12 on Fly.io. Config in this directory;
+Reference for coturn 4.17.2 on Fly.io (pinned in [`Dockerfile`](Dockerfile)). Config in this directory;
 credential minting in [`tabletop/lib/tabletop/turn.ex`](../../tabletop/lib/tabletop/turn.ex).

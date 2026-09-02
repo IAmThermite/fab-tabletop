@@ -29,6 +29,15 @@ primary_region = 'iad'
 
 # coturn is stateless and cheap; keep one machine always up so the relay IP is
 # stable and reachable (auto-stop would break in-flight calls).
+#
+# EXACTLY ONE MACHINE, and this file cannot say so. A TURN allocation lives on
+# one specific machine for the life of the call, and the dedicated IPv4 is
+# Anycast, so a second machine sprays a client's packets across both and breaks
+# allocations. There is no machine-count key in fly.toml — `min_machines_running`
+# below is the autostop floor, not a cap — and `fly deploy` creates TWO machines
+# by default when an app with services has none. So deploy this app with
+# `--ha=false`, and if a `fly status` ever shows two, `fly scale count 1`.
+# See "Deploy coturn" and "Reference — scaling out" in infrastructure/fly/README.md.
 [[vm]]
   size = 'shared-cpu-1x'
   memory = '256mb'
@@ -39,6 +48,12 @@ primary_region = 'iad'
 # auto_stop/auto_start/min_machines_running are per-service, so every block
 # below repeats them. Miss one and Fly can stop the machine out from under a
 # live call.
+#
+# `auto_start_machines = false` because Fly's on-demand start needs a connection
+# it can hold open while the machine boots, and TURN's traffic is UDP. The
+# consequence: a stopped machine stays stopped until someone runs
+# `fly machine start`, and the web app degrades to STUN-only without erroring —
+# `Tabletop.Turn` still mints credentials against a server that is not there.
 [[services]]
   protocol = 'tcp'
   internal_port = 3478

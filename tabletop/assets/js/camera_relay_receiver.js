@@ -15,7 +15,7 @@ export default class CameraRelayReceiver {
   constructor({ token, relayUserId, iceServers, onStream, onDisconnect, onStatusChange }) {
     this.token = token
     this.relayUserId = relayUserId
-    this.iceServers = iceServers || DEFAULT_ICE_SERVERS
+    this.iceServers = iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS
     this.onStream = onStream || (() => {})
     this.onDisconnect = onDisconnect || (() => {})
     this.onStatusChange = onStatusChange || (() => {})

@@ -8,11 +8,11 @@ import {
   tuneVideoSender,
 } from "./webrtc_tuning"
 
-const ICE_SERVERS = [
+// Fallback used only if the server doesn't supply iceServers (STUN-only).
+// In production the server passes a TURN entry with time-limited credentials.
+const DEFAULT_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
-  // Add TURN server config for production:
-  // { urls: "turn:your-coturn-server:3478", username: "user", credential: "pass" },
 ]
 
 // Capture resolution. Deliberately not 4K: webcams generally only serve 2160p
@@ -29,9 +29,10 @@ const CAPTURE_HEIGHT = 1080
 const STATS_LOG_INTERVAL_MS = 5000
 
 export default class WebRTCManager {
-  constructor({ token, gameId, localVideoEl, remoteVideoEl, tileLayerEl, onStatusChange, micEnabled = true, cameraEnabled = true }) {
+  constructor({ token, gameId, iceServers, localVideoEl, remoteVideoEl, tileLayerEl, onStatusChange, micEnabled = true, cameraEnabled = true }) {
     this.token = token
     this.gameId = gameId
+    this.iceServers = iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS
     this.localVideoEl = localVideoEl
     this.remoteVideoEl = remoteVideoEl
     // Overlay holding the opponent's tiles. Tile coordinates are percentages of
@@ -307,7 +308,7 @@ export default class WebRTCManager {
       this.peerConnection.close()
     }
 
-    this.peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS })
+    this.peerConnection = new RTCPeerConnection({ iceServers: this.iceServers })
 
     // Add local tracks to the connection (use transformed stream if available)
     const streamToSend = this._streamForPeer || this.localStream

@@ -395,7 +395,7 @@ that column, so it collects nothing while reporting no error.
 Deploying applies them, which restarts Postgres (brief downtime for the web app):
 
 ```bash
-fly deploy --config infrastructure/fly/postgres.toml
+fly deploy --config infrastructure/fly/postgres.toml --ha=false
 ```
 
 ### Setup — step 2: the monitoring role
@@ -449,7 +449,7 @@ fly secrets set --app fabtabletop-alloy \
   GCLOUD_HOSTED_LOGS_URL="https://logs-<region>.grafana.net/loki/api/v1/push" \
   GCLOUD_HOSTED_LOGS_ID="<loki-instance-id>"
 
-fly deploy --config infrastructure/monitoring/alloy.toml
+fly deploy --config infrastructure/monitoring/alloy.toml --ha=false
 fly scale count 1 --app fabtabletop-alloy
 ```
 

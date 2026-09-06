@@ -23,6 +23,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
         phx-hook=".PreJoinCamera"
         data-game-id={@game.id}
         data-user-token={@user_token}
+        data-ice-servers={Jason.encode!(@ice_servers)}
         data-relay-user-id={@relay_user_id}
         data-skip-allowed={to_string(@mode == :creator)}
         class="flex flex-col h-full"
@@ -430,10 +431,12 @@ defmodule TabletopWeb.GameLive.PreJoin do
           // camera_relay:* topic — see CameraRelayChannel.
           const token = el.dataset.userToken
           const relayUserId = el.dataset.relayUserId
+          const iceServers = JSON.parse(el.dataset.iceServers)
 
           this.cameraRelay = new CameraRelayReceiver({
             token,
             relayUserId,
+            iceServers,
             onStream: (remoteStream) => {
               phoneStream = remoteStream
               phoneStatusEl.innerHTML = '<span class="badge badge-sm badge-success">Phone connected</span>'
@@ -563,6 +566,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
     |> assign(:mode, :creator)
     |> assign(:user_token, user_token)
     |> assign(:relay_user_id, scope.user.id)
+    |> assign(:ice_servers, Tabletop.Turn.ice_servers(scope.user.id))
     |> assign(:qr_svg, CameraRelayToken.qr_svg(socket, scope.user.id))
     |> assign(:hero_options, [])
     |> assign(:selected_hero, nil)
@@ -590,6 +594,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:mode, :joiner)
         |> assign(:user_token, user_token)
         |> assign(:relay_user_id, scope.user.id)
+        |> assign(:ice_servers, Tabletop.Turn.ice_servers(scope.user.id))
         |> assign(:qr_svg, CameraRelayToken.qr_svg(socket, scope.user.id))
         |> assign(:hero_options, Heroes.options_for(game.format))
         |> assign(:selected_hero, nil)
@@ -611,6 +616,10 @@ defmodule TabletopWeb.GameLive.PreJoin do
         |> assign(:mode, :joiner)
         |> assign(:user_token, "")
         |> assign(:relay_user_id, "")
+        # Still rendered once before the push_navigate lands, so the template's
+        # ice-server attribute needs a value. No credential is minted for a
+        # page the user is being bounced off.
+        |> assign(:ice_servers, [])
         |> assign(:qr_svg, "")
         |> assign(:hero_options, [])
         |> assign(:selected_hero, nil)

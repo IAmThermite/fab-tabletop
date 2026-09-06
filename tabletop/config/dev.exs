@@ -77,6 +77,14 @@ config :tabletop, TabletopWeb.Endpoint,
     ]
   ]
 
+# WebRTC TURN against the coturn container in docker-compose.yml, so the same
+# Tabletop.Turn credential path that runs in production is exercised locally.
+# The secret must match `static-auth-secret` in
+# infrastructure/coturn/coturn.dev.conf.
+config :tabletop, Tabletop.Turn,
+  secret: "dev_turn_secret",
+  urls: ["turn:localhost:3478"]
+
 # Enable dev routes for dashboard and mailbox
 config :tabletop, dev_routes: true
 

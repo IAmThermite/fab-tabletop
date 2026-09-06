@@ -22,6 +22,7 @@ defmodule TabletopWeb.CameraSetupLive do
         data-redirect={@redirect_to}
         data-game-id={@game_id}
         data-user-token={@user_token}
+        data-ice-servers={Jason.encode!(@ice_servers)}
         data-relay-user-id={@relay_user_id}
         class="flex flex-col h-full"
       >
@@ -431,6 +432,7 @@ defmodule TabletopWeb.CameraSetupLive do
           // --- Phone Camera Relay ---
           const token = el.dataset.userToken
           const relayUserId = el.dataset.relayUserId
+          const iceServers = JSON.parse(el.dataset.iceServers)
           const phoneStatusEl = document.getElementById("phone-camera-status")
           const usePhoneBtn = document.getElementById("use-phone-camera-btn")
           const useWebcamBtn = document.getElementById("use-webcam-btn")
@@ -456,6 +458,7 @@ defmodule TabletopWeb.CameraSetupLive do
           this.cameraRelay = new CameraRelayReceiver({
             token,
             relayUserId,
+            iceServers,
             onStream: (remoteStream) => {
               phoneStream = remoteStream
               phoneStatusEl.innerHTML = '<span class="badge badge-sm badge-success">Phone connected</span>'
@@ -530,6 +533,7 @@ defmodule TabletopWeb.CameraSetupLive do
      |> assign(:game_id, params["game_id"])
      |> assign(:user_token, user_token)
      |> assign(:relay_user_id, user_id)
+     |> assign(:ice_servers, Tabletop.Turn.ice_servers(user_id))
      |> assign(:qr_svg, CameraRelayToken.qr_svg(socket, user_id))
      |> assign(:game_state, new_preview_state())
      |> assign(:abilities_open, false)

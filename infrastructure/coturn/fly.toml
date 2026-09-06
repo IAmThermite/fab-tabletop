@@ -1,0 +1,104 @@
+# fly.toml for the coturn TURN/STUN server (app: fabtabletop-turn).
+#
+# This is a SEPARATE Fly app from the web app and the database. It needs a
+# DEDICATED IPv4 — TURN servers must own their public IP and hand it out as the
+# relay address, so a shared Anycast v4 will not work:
+#
+#   fly ips allocate-v4 --app fabtabletop-turn   (~$2/mo)
+#
+# Fly routes only the ports declared below, so the coturn relay range
+# (min-port..max-port in turnserver.conf) must be covered here. Keep the two in
+# sync: turnserver.conf uses 49160-49259.
+#
+# Secrets (set with `fly secrets set ... --app fabtabletop-turn`):
+#   TURN_SECRET    — shared HMAC secret, must match the web app's TURN_SECRET.
+#   EXTERNAL_IP    — REQUIRED. The dedicated IPv4 from `fly ips list`. On Fly
+#                    that address lives on the edge proxy and is invisible to
+#                    the container, so it cannot be auto-detected; the
+#                    entrypoint refuses to boot without it.
+#   TURN_REALM     — optional; defaults to fabtabletop.fly.dev.
+#   TURN_TLS_CERT  — optional; base64 PEM chain. Only needed for the fallback
+#   TURN_TLS_KEY     path where coturn terminates TLS itself; the default setup
+#                    lets Fly's `tls` handler do it (see the 443 port below).
+
+app = 'fabtabletop-turn'
+primary_region = 'iad'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+# coturn is stateless and cheap; keep one machine always up so the relay IP is
+# stable and reachable (auto-stop would break in-flight calls).
+#
+# EXACTLY ONE MACHINE, and this file cannot say so. A TURN allocation lives on
+# one specific machine for the life of the call, and the dedicated IPv4 is
+# Anycast, so a second machine sprays a client's packets across both and breaks
+# allocations. There is no machine-count key in fly.toml — `min_machines_running`
+# below is the autostop floor, not a cap — and `fly deploy` creates TWO machines
+# by default when an app with services has none. So deploy this app with
+# `--ha=false`, and if a `fly status` ever shows two, `fly scale count 1`.
+# See "Deploy coturn" and "Reference — scaling out" in infrastructure/fly/README.md.
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'
+  cpus = 1
+
+# --- STUN/TURN signalling: 3478 TCP + UDP ---
+#
+# auto_stop/auto_start/min_machines_running are per-service, so every block
+# below repeats them. Miss one and Fly can stop the machine out from under a
+# live call.
+#
+# `auto_start_machines = false` because Fly's on-demand start needs a connection
+# it can hold open while the machine boots, and TURN's traffic is UDP. The
+# consequence: a stopped machine stays stopped until someone runs
+# `fly machine start`, and the web app degrades to STUN-only without erroring —
+# `Tabletop.Turn` still mints credentials against a server that is not there.
+[[services]]
+  protocol = 'tcp'
+  internal_port = 3478
+  auto_stop_machines = 'off'
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 3478
+
+  # --- turns: on 443, with TLS terminated by Fly ---
+  #
+  # 443 rather than the conventional 5349: the restrictive corporate and guest
+  # networks that make TURN necessary in the first place routinely drop 3478
+  # and 5349 but permit 443.
+  #
+  # The `tls` handler makes Fly's edge terminate TLS using a cert from
+  # `fly certs add turn.<domain> --app fabtabletop-turn` and forward the
+  # decrypted stream to internal_port 3478 — the same plain TURN listener that
+  # serves 3478. So coturn never handles a certificate, and Fly renews it
+  # automatically. Nothing to rotate.
+  [[services.ports]]
+    port = 443
+    handlers = ['tls']
+
+[[services]]
+  protocol = 'udp'
+  internal_port = 3478
+  auto_stop_machines = 'off'
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 3478
+
+# --- UDP relay range (must match min-port/max-port in turnserver.conf) ---
+#
+# One [[services.ports]] range rather than 100 individual blocks.
+[[services]]
+  protocol = 'udp'
+  internal_port = 49160
+  auto_stop_machines = 'off'
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.ports]]
+    start_port = 49160
+    end_port = 49259

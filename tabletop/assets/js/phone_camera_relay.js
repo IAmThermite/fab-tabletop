@@ -5,7 +5,14 @@
 // one-way WebRTC connection to send video to the desktop.
 
 import { Socket } from "phoenix"
-import { hintVideoDetail, preferVideoCodecs, tuneVideoSender } from "./webrtc_tuning"
+import {
+  PREFERRED_PHONE_VIDEO_CODECS,
+  STATS_LOG_INTERVAL_MS,
+  hintVideoDetail,
+  preferVideoCodecs,
+  readVideoStats,
+  tuneVideoSender,
+} from "./webrtc_tuning"
 
 // Fallback used only if the server doesn't supply iceServers (STUN-only).
 const DEFAULT_ICE_SERVERS = [
@@ -14,11 +21,14 @@ const DEFAULT_ICE_SERVERS = [
 ]
 
 export default class PhoneCameraRelay {
-  constructor({ relayToken, relayUserId, iceServers, onStatusChange }) {
+  constructor({ relayToken, relayUserId, iceServers, onStatusChange, onStats }) {
     this.relayToken = relayToken
     this.relayUserId = relayUserId
     this.iceServers = iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS
     this.onStatusChange = onStatusChange || (() => {})
+    // Diagnostics sink. Unlike the desktop, this leg cannot assume a console is
+    // within reach, so the numbers are handed to the page to render.
+    this.onStats = onStats || (() => {})
 
     this.socket = null
     this.channel = null
@@ -29,6 +39,7 @@ export default class PhoneCameraRelay {
     // TabletopWeb.ChannelSeat) — the QR scanned twice, or the page reopened.
     // Terminal: this page does not signal again.
     this._superseded = false
+    this._statsTimer = null
   }
 
   async start(stream) {
@@ -111,6 +122,8 @@ export default class PhoneCameraRelay {
   }
 
   disconnect() {
+    this.stopStatsLogging()
+
     if (this.peerConnection) {
       this.peerConnection.close()
       this.peerConnection = null
@@ -130,6 +143,39 @@ export default class PhoneCameraRelay {
       this.socket.disconnect()
       this.socket = null
     }
+  }
+
+  // -- Diagnostics --
+  //
+  // This is the leg most worth watching and the hardest to watch: it encodes
+  // first, on the weakest CPU in the chain, and a phone has no console within
+  // reach. So the stats go to `onStats` as well as the log, and the page puts
+  // them on the glass.
+
+  // One-shot read of the outbound video stats.
+  videoStats() {
+    return readVideoStats(this.peerConnection)
+  }
+
+  startStatsLogging(intervalMs = STATS_LOG_INTERVAL_MS) {
+    if (this._statsTimer) return
+
+    this._statsTimer = setInterval(async () => {
+      const stats = await this.videoStats()
+      if (!stats) return
+      console.log(
+        `[PhoneRelay] out ${stats.width}x${stats.height} @${stats.fps ?? "?"}fps ` +
+          `${stats.codec || "?"} ${stats.targetKbps ?? "?"}kbps ` +
+          `limited=${stats.limitation ?? "?"}`,
+      )
+      this.onStats(stats)
+    }, intervalMs)
+  }
+
+  stopStatsLogging() {
+    if (!this._statsTimer) return
+    clearInterval(this._statsTimer)
+    this._statsTimer = null
   }
 
   // -- Private --
@@ -183,7 +229,7 @@ export default class PhoneCameraRelay {
     try {
       console.log("[PhoneRelay] Creating offer")
       this._createPeerConnection()
-      preferVideoCodecs(this.peerConnection)
+      preferVideoCodecs(this.peerConnection, PREFERRED_PHONE_VIDEO_CODECS)
 
       const offer = await this.peerConnection.createOffer()
       await this.peerConnection.setLocalDescription(offer)
@@ -205,7 +251,7 @@ export default class PhoneCameraRelay {
       await this.peerConnection.setRemoteDescription(
         new RTCSessionDescription(sdp)
       )
-      preferVideoCodecs(this.peerConnection)
+      preferVideoCodecs(this.peerConnection, PREFERRED_PHONE_VIDEO_CODECS)
 
       const answer = await this.peerConnection.createAnswer()
       await this.peerConnection.setLocalDescription(answer)

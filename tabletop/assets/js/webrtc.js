@@ -1,6 +1,7 @@
 import { Socket } from "phoenix"
 import { startVideoFrameLoop } from "./video_frame_loop"
 import {
+  STATS_LOG_INTERVAL_MS,
   TARGET_FRAMERATE,
   hintVideoDetail,
   preferVideoCodecs,
@@ -25,8 +26,8 @@ const CAPTURE_WIDTH = 1920
 const CAPTURE_HEIGHT = 1080
 
 // Set `tabletop:debug-webrtc` to "true" in localStorage to log outbound video
-// health (resolution, framerate, codec, bitrate, limitation reason).
-const STATS_LOG_INTERVAL_MS = 5000
+// health (resolution, framerate, codec, bitrate, limitation reason). The phone
+// relay honours the same flag — see phone_camera_live.ex.
 
 export default class WebRTCManager {
   constructor({ token, gameId, iceServers, localVideoEl, remoteVideoEl, tileLayerEl, onStatusChange, micEnabled = true, cameraEnabled = true }) {
@@ -272,11 +273,11 @@ export default class WebRTCManager {
     if (this._statsTimer) return
 
     this._statsTimer = setInterval(async () => {
-      const s = await this.videoStats()
-      if (!s) return
+      const stats = await this.videoStats()
+      if (!stats) return
       console.log(
-        `[WebRTC] out ${s.width}x${s.height} @${s.fps ?? "?"}fps ` +
-        `${s.codec || "?"} ${s.targetKbps ?? "?"}kbps limited=${s.limitation}`,
+        `[WebRTC] out ${stats.width}x${stats.height} @${stats.fps ?? "?"}fps ` +
+        `${stats.codec || "?"} ${stats.targetKbps ?? "?"}kbps limited=${stats.limitation}`,
       )
     }, intervalMs)
   }

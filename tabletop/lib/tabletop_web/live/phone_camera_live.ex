@@ -20,7 +20,11 @@ defmodule TabletopWeb.PhoneCameraLive do
             Phone Camera
           </div>
 
-          <div id="phone-status" phx-update="ignore" class="badge badge-sm badge-outline">
+          <div
+            id="phone-status"
+            phx-update="ignore"
+            class="badge badge-sm badge-outline cursor-pointer"
+          >
             Connecting...
           </div>
 
@@ -37,6 +41,16 @@ defmodule TabletopWeb.PhoneCameraLive do
             class="w-full h-full object-cover"
           >
           </video>
+
+          <%!-- Outbound video diagnostics, opt-in. A phone has no console within
+               reach, so the numbers go on the glass. JS owns the content, hence
+               phx-update="ignore". --%>
+          <div
+            id="phone-debug"
+            phx-update="ignore"
+            class="absolute top-2 left-2 right-2 hidden rounded bg-black/70 px-2 py-1 font-mono text-[11px] leading-tight text-white"
+          >
+          </div>
 
           <%!-- No camera overlay --%>
           <div
@@ -61,20 +75,6 @@ defmodule TabletopWeb.PhoneCameraLive do
           >
             <.icon name="hero-arrow-path" class="size-5" />
           </button>
-
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-semibold">Zoom</span>
-            <input
-              id="phone-zoom-slider"
-              type="range"
-              min="1"
-              max="3"
-              step="0.1"
-              value="1"
-              class="range range-xs range-primary w-32"
-            />
-            <span id="phone-zoom-value" class="text-xs w-8">1.0x</span>
-          </div>
         </div>
       </div>
 
@@ -104,8 +104,7 @@ defmodule TabletopWeb.PhoneCameraLive do
           const noCameraEl = document.getElementById("phone-no-camera")
           const statusEl = document.getElementById("phone-status")
           const flipBtn = document.getElementById("phone-flip-camera")
-          const zoomSlider = document.getElementById("phone-zoom-slider")
-          const zoomValueEl = document.getElementById("phone-zoom-value")
+          const debugEl = document.getElementById("phone-debug")
 
           let currentFacingMode = "environment"
           let stream = null
@@ -137,9 +136,47 @@ defmodule TabletopWeb.PhoneCameraLive do
                 error: "badge-error",
                 superseded: "badge-warning",
               }
-              statusEl.className = `badge badge-sm ${badgeClass[status] || "badge-outline"}`
+              statusEl.className = `badge badge-sm cursor-pointer ${badgeClass[status] || "badge-outline"}`
+            },
+            onStats: (stats) => {
+              debugEl.textContent =
+                `${stats.width ?? "?"}x${stats.height ?? "?"} ` +
+                `@${stats.fps ?? "?"}fps ${stats.codec || "?"} ` +
+                `${stats.targetKbps ?? "?"}kbps limited=${stats.limitation ?? "?"}`
             },
           })
+
+          // Outbound video diagnostics. `limited=` is the field that decides
+          // where to look: "cpu" means the encoder is starved — the phone's
+          // usual failure — "bandwidth" blames the link, and "none" at a low
+          // resolution means MAX_VIDEO_BITRATE is the ceiling.
+          //
+          // Three ways in, because the two the desktop uses are impractical
+          // here: ?debug=1 needs a long tokenised URL retyped on a phone
+          // keyboard, and the localStorage flag needs devtools attached. So
+          // tapping the status badge toggles it too, which is the one that
+          // works with nothing but the phone in your hand.
+          const setDebugVisible = (visible) => {
+            debugEl.classList.toggle("hidden", !visible)
+            if (visible) {
+              this.relay.startStatsLogging()
+            } else {
+              this.relay.stopStatsLogging()
+              debugEl.textContent = ""
+            }
+          }
+
+          statusEl.title = "Tap for video diagnostics"
+          statusEl.addEventListener("click", () => {
+            setDebugVisible(debugEl.classList.contains("hidden"))
+          })
+
+          if (
+            new URLSearchParams(window.location.search).get("debug") === "1" ||
+            localStorage.getItem("tabletop:debug-webrtc") === "true"
+          ) {
+            setDebugVisible(true)
+          }
 
           const getCamera = async (facingMode) => {
             try {
@@ -253,15 +290,6 @@ defmodule TabletopWeb.PhoneCameraLive do
               canvasStream = buildOutboundStream(stream)
               this.relay.replaceStream(canvasStream)
             }
-          })
-
-          // Zoom slider
-          zoomSlider.addEventListener("input", () => {
-            const zoom = parseFloat(zoomSlider.value)
-            zoomValueEl.textContent = zoom.toFixed(1) + "x"
-
-            // Apply zoom via CSS transform on the video element
-            videoEl.style.transform = `scale(${zoom})`
           })
 
           // Handle phone sleep/background — re-acquire camera on visibility change

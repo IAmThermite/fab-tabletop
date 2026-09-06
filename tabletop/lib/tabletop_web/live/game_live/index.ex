@@ -19,7 +19,6 @@ defmodule TabletopWeb.GameLive.Index do
       current_scope={@current_scope}
       system_announcement={@system_announcement}
       max_width="max-w-7xl"
-      page_title="Webcam Flesh and Blood"
     >
       <.notification_banners items={@notification_items} />
       <div id="game-index" phx-hook=".GameIndex">
@@ -664,7 +663,7 @@ defmodule TabletopWeb.GameLive.Index do
 
     socket =
       socket
-      |> assign(:page_title, "Games")
+      |> assign(:page_title, "Webcam Flesh and Blood")
       |> assign(:intro_screenshots, intro_screenshots())
       |> assign(:show_join_private, false)
       |> assign(:language_filter, MapSet.new())

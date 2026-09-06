@@ -15,13 +15,40 @@ export const MAX_VIDEO_BITRATE = 8_000_000
 
 export const TARGET_FRAMERATE = 30
 
+// How often the opt-in diagnostics poll `readVideoStats`. Shared by both legs
+// so a phone's numbers and the desktop's can be read against each other.
+export const STATS_LOG_INTERVAL_MS = 5000
+
 // Codec ranking, best first. VP9 holds far more spatial detail than VP8 or
 // H.264 baseline at the same bitrate on a static, detail-dense scene. AV1 is
 // better still per bit, but its real-time encoder is software-only on most
 // machines and would compete with the scanner's OpenCV work — so it sits behind
 // VP9 as the fallback for peers that lack it. Flip the order here to try AV1
 // first, and watch `qualityLimitationReason` for "cpu" if you do.
+//
+// This is the ranking for a *desktop* sender, and it assumes encoding is cheap.
+// The phone relay leg cannot assume that — see PREFERRED_PHONE_VIDEO_CODECS.
 export const PREFERRED_VIDEO_CODECS = ["video/VP9", "video/AV1"]
+
+// Codec ranking for the phone-as-camera leg, where the trade above inverts.
+//
+// Hardware VP9 *encode* is absent on Apple silicon and rare on Android SoCs, so
+// preferring VP9 there hands 1080p30 to a software encoder running on battery.
+// It cannot keep up, and it fails in the two ways that hurt most: frames bank
+// up behind the encoder — latency the player reads as lag — and the phone heats
+// until it throttles, so the picture degrades the longer the game runs.
+//
+// H.264 and VP8 are the two codecs with near-universal hardware encoders on
+// mobile, so they lead here; H.264 first because its coverage is the more
+// complete (VideoToolbox on every iPhone, MediaCodec on essentially every
+// Android SoC). A hardware encoder cruising at MAX_VIDEO_BITRATE on near-static
+// content beats a software one dropping frames to survive, even though the
+// codec is the weaker of the two on paper.
+//
+// AV1 is absent rather than merely last: it is the worst case of exactly this
+// problem. It can still negotiate if a peer offers nothing else, since
+// `preferVideoCodecs` only reorders and never filters.
+export const PREFERRED_PHONE_VIDEO_CODECS = ["video/H264", "video/VP8"]
 
 /**
  * Marks a track (or every video track of a stream) as detail-critical.
@@ -72,9 +99,13 @@ export function preferVideoCodecs(pc, preferred = PREFERRED_VIDEO_CODECS) {
     const codecs = RTCRtpSender.getCapabilities("video")?.codecs
     if (!codecs?.length) return
 
+    // Matched case-insensitively: a mimeType differing only in case would rank
+    // as unlisted and leave the order untouched, with no error to notice — the
+    // same silent outcome as never calling this at all.
+    const wanted = preferred.map((mime) => mime.toLowerCase())
     const rank = (codec) => {
-      const i = preferred.indexOf(codec.mimeType)
-      return i === -1 ? preferred.length : i
+      const i = wanted.indexOf(codec.mimeType?.toLowerCase())
+      return i === -1 ? wanted.length : i
     }
 
     const ordered = codecs

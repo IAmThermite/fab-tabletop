@@ -165,6 +165,15 @@ defmodule Tabletop.Fab.Effects do
       icon: "hero-wrench",
       description_html: "When this hits, destroy an item you control."
     },
+    runechant: %{
+      name: "Runechant",
+      icon: "hero-sparkles",
+      description_html:
+        "When this hits, create X Runechants. <i>(When you play an attack action card or activate a weapon attack, destroy a Runechant and deal 1 arcane damage to target opposing hero.)</i>",
+      card_img_src:
+        "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/SVI034.webp",
+      counterable: true
+    },
     create_token: %{
       name: "Create Token",
       icon: "hero-cube-transparent",
@@ -227,7 +236,8 @@ defmodule Tabletop.Fab.Effects do
         "When you play an attack action card or activate a weapon attack, destroy this and deal 1 arcane damage to target opposing hero.",
       card_img_src:
         "https://legendstory-production-s3-public.s3.amazonaws.com/media/cards/large/SVI034.webp",
-      for_opponent: false
+      for_opponent: false,
+      dedicated_on_hit: true
     },
     embodiment_of_earth: %{
       name: "Embodiment of Earth",
@@ -382,11 +392,21 @@ defmodule Tabletop.Fab.Effects do
 
   @doc """
   Tokens offered by the on-hit "Create Token" list — the ones a player creates
-  for *themselves*, which land on their own board as draggable tiles. Excludes
-  the `for_opponent` debuffs (Mark, Frostbite, …): those only ever arrive from
-  the other side of the table, so they are proxy tokens rather than tiles.
+  for *themselves*, which land on their own board as draggable tiles. Two
+  exclusions:
+
+    * the `for_opponent` debuffs (Mark, Frostbite, …), which only ever arrive
+      from the other side of the table, so they are proxy tokens rather than
+      tiles; and
+    * `dedicated_on_hit` tokens (Runechant), which have their own counted entry
+      in the On Hits list — listing them here too would give the same token two
+      tiles with different keys and no shared count.
   """
-  def tokens_for_player, do: Enum.filter(@tokens_map, fn {_k, t} -> !t.for_opponent end)
+  def tokens_for_player do
+    Enum.filter(@tokens_map, fn {_k, t} ->
+      !t.for_opponent and !Map.get(t, :dedicated_on_hit, false)
+    end)
+  end
 
   @doc """
   Every token, ordered for the proxy-token picker: opponent-inflicted debuffs

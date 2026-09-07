@@ -254,6 +254,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
 
     <script :type={ColocatedHook} name=".PreJoinCamera">
       import CameraRelayReceiver from "@/js/camera_relay_receiver.js"
+      import { startVideoFrameLoop } from "@/js/video_frame_loop.js"
 
       export default {
         mounted() {
@@ -304,62 +305,66 @@ defmodule TabletopWeb.GameLive.PreJoin do
 
           let stream = null
           let phoneStream = null
-          let animFrameId = null
+          let stopCanvasRender = null
           let usingPhone = false
 
           // Read stored camera settings (read-only, no sliders)
           const zoom = parseFloat(localStorage.getItem("tabletop:camera-zoom") || "1")
           const rotation = parseFloat(localStorage.getItem("tabletop:camera-rotation") || "0") * Math.PI / 180
 
+          // Keyed to the camera's frame clock, not the display's — see the
+          // camera-setup preview for why, and video_frame_loop.js for how.
           const startCanvasRender = () => {
-            if (animFrameId) return
+            if (stopCanvasRender) return
             const ctx = canvasEl.getContext("2d")
 
             const render = () => {
-              if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
-                const cw = canvasEl.clientWidth
-                const ch = canvasEl.clientHeight
-                canvasEl.width = cw
-                canvasEl.height = ch
+              const cw = canvasEl.clientWidth
+              const ch = canvasEl.clientHeight
+              const vw = videoEl.videoWidth
+              const vh = videoEl.videoHeight
 
-                const vw = videoEl.videoWidth
-                const vh = videoEl.videoHeight
+              // Never clear without redrawing — see the camera-setup preview
+              // for why a zero measurement happens and why the size is only
+              // reassigned on a real resize.
+              if (!cw || !ch || !vw || !vh) return
+              if (canvasEl.width !== cw) canvasEl.width = cw
+              if (canvasEl.height !== ch) canvasEl.height = ch
 
-                // Source crop for zoom (center crop)
-                const sw = vw / zoom
-                const sh = vh / zoom
-                const sx = (vw - sw) / 2
-                const sy = (vh - sh) / 2
+              // Source crop for zoom (center crop)
+              const sw = vw / zoom
+              const sh = vh / zoom
+              const sx = (vw - sw) / 2
+              const sy = (vh - sh) / 2
 
-                // Base cover scale (no rotation)
-                const baseScale = Math.max(cw / sw, ch / sh)
-                let dw = sw * baseScale
-                let dh = sh * baseScale
+              // Base cover scale (no rotation)
+              const baseScale = Math.max(cw / sw, ch / sh)
+              let dw = sw * baseScale
+              let dh = sh * baseScale
 
-                // Rotation bounding box compensation
-                const sinR = Math.abs(Math.sin(rotation))
-                const cosR = Math.abs(Math.cos(rotation))
-                const rotScale = Math.max(
-                  (cw * cosR + ch * sinR) / dw,
-                  (cw * sinR + ch * cosR) / dh
-                )
-                dw *= rotScale
-                dh *= rotScale
+              // Rotation bounding box compensation
+              const sinR = Math.abs(Math.sin(rotation))
+              const cosR = Math.abs(Math.cos(rotation))
+              const rotScale = Math.max(
+                (cw * cosR + ch * sinR) / dw,
+                (cw * sinR + ch * cosR) / dh
+              )
+              dw *= rotScale
+              dh *= rotScale
 
-                const dx = (cw - dw) / 2
-                const dy = (ch - dh) / 2
+              const dx = (cw - dw) / 2
+              const dy = (ch - dh) / 2
 
-                ctx.clearRect(0, 0, cw, ch)
-                ctx.save()
-                ctx.translate(cw / 2, ch / 2)
-                ctx.rotate(rotation)
-                ctx.translate(-cw / 2, -ch / 2)
-                ctx.drawImage(videoEl, sx, sy, sw, sh, dx, dy, dw, dh)
-                ctx.restore()
-              }
-              animFrameId = requestAnimationFrame(render)
+              ctx.clearRect(0, 0, cw, ch)
+              ctx.save()
+              ctx.translate(cw / 2, ch / 2)
+              ctx.rotate(rotation)
+              ctx.translate(-cw / 2, -ch / 2)
+              ctx.drawImage(videoEl, sx, sy, sw, sh, dx, dy, dw, dh)
+              ctx.restore()
             }
-            animFrameId = requestAnimationFrame(render)
+
+            stopCanvasRender = startVideoFrameLoop(videoEl, render)
           }
 
           const updateSourceButtons = () => {
@@ -495,7 +500,7 @@ defmodule TabletopWeb.GameLive.PreJoin do
           })
 
           this.cleanup = () => {
-            if (animFrameId) cancelAnimationFrame(animFrameId)
+            if (stopCanvasRender) stopCanvasRender()
             if (stream) stream.getTracks().forEach(t => t.stop())
             if (this.cameraRelay) this.cameraRelay.disconnect()
           }

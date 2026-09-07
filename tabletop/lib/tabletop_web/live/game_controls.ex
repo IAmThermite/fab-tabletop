@@ -72,6 +72,15 @@ defmodule TabletopWeb.GameControls do
         apply_game_action(socket, {:remove_custom_counter, id})
       end
 
+      # --- Custom on-hits (free text, no counter) ---
+      def handle_event("add_custom_on_hit", %{"name" => name}, socket) do
+        apply_game_action(socket, {:add_custom_on_hit, name})
+      end
+
+      def handle_event("remove_custom_on_hit", %{"id" => id}, socket) do
+        apply_game_action(socket, {:remove_custom_on_hit, id})
+      end
+
       # --- Effects ---
       def handle_event("toggle_effect", %{"type" => type, "category" => category}, socket) do
         apply_game_action(socket, {:toggle_effect, category, type})

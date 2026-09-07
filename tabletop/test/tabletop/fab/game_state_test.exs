@@ -25,6 +25,7 @@ defmodule Tabletop.Fab.GameStateTest do
       player = GameState.default_player()
       assert player.amp == %{active: false, value: 0}
       assert player.custom_counters == %{}
+      assert player.custom_on_hits == %{}
     end
 
     test "returns default state with zero damage" do
@@ -141,6 +142,61 @@ defmodule Tabletop.Fab.GameStateTest do
 
       assert {:ok, new_player, {:goagain_toggled, false}} = GameState.toggle_goagain(player)
       assert new_player.goagain == false
+    end
+  end
+
+  describe "add_custom_on_hit/2" do
+    test "adds a named on-hit tile with no counter" do
+      assert {:ok, player, {:custom_on_hit_added, id, "Opponent discards 2"}} =
+               GameState.add_custom_on_hit(GameState.default_player(), "  Opponent discards 2  ")
+
+      assert player.custom_on_hits[id] == %{name: "Opponent discards 2"}
+      assert Map.has_key?(player.tile_positions, id)
+      assert String.starts_with?(id, "custom_on_hit:")
+    end
+
+    test "rejects a blank name" do
+      # Without a counter there would be nothing on the tile to read.
+      assert {:error, :invalid_name} =
+               GameState.add_custom_on_hit(GameState.default_player(), "   ")
+    end
+
+    test "truncates a long name" do
+      long = String.duplicate("x", 100)
+
+      {:ok, player, {:custom_on_hit_added, id, name}} =
+        GameState.add_custom_on_hit(GameState.default_player(), long)
+
+      assert String.length(name) == 32
+      assert player.custom_on_hits[id].name == name
+    end
+
+    test "multiple on-hits coexist" do
+      {:ok, p, {:custom_on_hit_added, id1, _}} =
+        GameState.add_custom_on_hit(GameState.default_player(), "A")
+
+      {:ok, p, {:custom_on_hit_added, id2, _}} = GameState.add_custom_on_hit(p, "B")
+
+      assert id1 != id2
+      assert map_size(p.custom_on_hits) == 2
+    end
+  end
+
+  describe "remove_custom_on_hit/2" do
+    test "removes the on-hit and its tile" do
+      {:ok, player, {:custom_on_hit_added, id, _}} =
+        GameState.add_custom_on_hit(GameState.default_player(), "X")
+
+      assert {:ok, player, {:custom_on_hit_removed, ^id}} =
+               GameState.remove_custom_on_hit(player, id)
+
+      assert player.custom_on_hits == %{}
+      refute Map.has_key?(player.tile_positions, id)
+    end
+
+    test "errors on an unknown id" do
+      assert {:error, :unknown_on_hit} =
+               GameState.remove_custom_on_hit(GameState.default_player(), "custom_on_hit:404")
     end
   end
 

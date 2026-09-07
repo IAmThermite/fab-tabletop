@@ -47,9 +47,23 @@ defmodule Tabletop.Fab.EffectsTest do
     test "excludes opponent-inflicted debuffs" do
       names = Enum.map(Effects.tokens_for_player(), fn {_key, token} -> token.name end)
 
-      assert "Runechant" in names
+      assert "Gold" in names
       refute "Mark" in names
       refute "Frostbite" in names
+    end
+
+    test "excludes tokens that have their own counted on-hit" do
+      # Runechant is created from the counted "Runechant" on-hit, so offering it
+      # here as well would give the same token two tiles with separate keys.
+      names = Enum.map(Effects.tokens_for_player(), fn {_key, token} -> token.name end)
+      on_hit_names = Enum.map(Effects.on_hit_effects(), fn {_key, e} -> e.name end)
+
+      refute "Runechant" in names
+      assert "Runechant" in on_hit_names
+      assert Effects.counterable?("on_hit", "Runechant")
+
+      # …but it stays a proxy token, so either side can still put one on a board.
+      assert Effects.valid_token?("Runechant")
     end
   end
 

@@ -542,6 +542,70 @@ defmodule TabletopWeb.GameLiveTest do
     end
   end
 
+  describe "Show (on-hit effects)" do
+    alias Tabletop.Games
+    alias Tabletop.Games.GameSession
+
+    setup %{scope: scope} do
+      game = game_fixture(scope)
+      opponent = user_scope_fixture()
+      {:ok, game} = Games.join_game(opponent, game, @create_attrs.hero)
+
+      %{game: game, opponent: opponent}
+    end
+
+    test "Runechant is a counted on-hit, not a Create Token entry",
+         %{conn: conn, game: game} do
+      {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
+
+      show_live |> element("button[phx-value-name='on_hits']") |> render_click()
+
+      # Bumping the count turns the effect on as well, so one click is enough.
+      show_live
+      |> element(
+        "button[phx-click='change_effect_count'][phx-value-type='Runechant'][phx-value-delta='1']"
+      )
+      |> render_click()
+
+      assert %{user1: %{effects: effects, effect_counts: counts}} = GameSession.get_state(game.id)
+      assert effects["on_hit:Runechant"]
+      assert counts["on_hit:Runechant"] == 2
+
+      # The Create Token popup no longer offers it — one token, one tile.
+      show_live |> element("button[phx-value-name='create_token']") |> render_click()
+
+      refute has_element?(
+               show_live,
+               "input[phx-click='toggle_effect'][phx-value-category='token'][phx-value-type='Runechant']"
+             )
+    end
+
+    test "a custom on-hit carries free text and no counter", %{conn: conn, game: game} do
+      {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
+
+      show_live
+      |> form("form[phx-submit='add_custom_on_hit']", %{"name" => "Opponent reveals hand"})
+      |> render_submit()
+
+      assert %{user1: %{custom_on_hits: on_hits}} = GameSession.get_state(game.id)
+      assert [{id, %{name: "Opponent reveals hand"}}] = Map.to_list(on_hits)
+
+      html = render(show_live)
+      assert html =~ "Opponent reveals hand"
+      # No counter on the tile — just the text.
+      refute html =~ ~s(phx-click="change_custom_counter" phx-value-id="#{id}")
+
+      # The × lives on the tile in the expanded preview, same as a custom counter.
+      show_live |> element("#local-preview-container") |> render_click()
+
+      show_live
+      |> element("#preview-modal button[phx-click='remove_custom_on_hit'][phx-value-id='#{id}']")
+      |> render_click()
+
+      assert %{user1: %{custom_on_hits: %{}}} = GameSession.get_state(game.id)
+    end
+  end
+
   describe "Show (proxy tokens)" do
     alias Tabletop.Games
     alias Tabletop.Games.GameSession

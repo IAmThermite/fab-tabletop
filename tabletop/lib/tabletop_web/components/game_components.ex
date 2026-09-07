@@ -356,6 +356,28 @@ defmodule TabletopWeb.GameComponents do
         </ul>
       </div>
 
+      <%!-- Custom on-hits: free text, no counter. Tinted to match the On Hits
+            dropdown so it reads as part of that group. --%>
+      <div class="bg-orange-400/30 rounded p-2">
+        <form phx-submit="add_custom_on_hit" class="flex items-center gap-1">
+          <input
+            type="text"
+            name="name"
+            placeholder="On hit…"
+            maxlength={32}
+            required
+            class="input input-bordered input-xs flex-1 min-w-0 text-xs"
+          />
+          <button
+            type="submit"
+            class="btn btn-xs btn-square bg-orange-400 hover:bg-orange-500 text-orange-950 border-orange-500"
+            aria-label="Add custom on hit"
+          >
+            <.icon name="hero-plus" class="size-3" />
+          </button>
+        </form>
+      </div>
+
       <%!-- Custom Counters (tinted block, styled like Go Again) --%>
       <div class="bg-yellow-300/30 rounded p-2">
         <form phx-submit="add_custom_counter" class="flex items-center gap-1">
@@ -836,6 +858,16 @@ defmodule TabletopWeb.GameComponents do
                 {tile.value}
               </span>
           <% end %>
+          <button
+            :if={tile.type == :custom_on_hit and @context in [:expanded, :setup]}
+            type="button"
+            class="opacity-50 hover:opacity-100 shrink-0 ml-0.5"
+            phx-click="remove_custom_on_hit"
+            phx-value-id={tile.id}
+            aria-label="Remove on hit"
+          >
+            <.icon name="hero-x-mark" class="size-3" />
+          </button>
           <.tile_hover_preview :if={@context != :local} tile={tile} />
         </div>
       <% end %>
@@ -1096,6 +1128,23 @@ defmodule TabletopWeb.GameComponents do
         ]
       end)
 
+    tiles =
+      Enum.reduce(Map.get(player_state, :custom_on_hits, %{}), tiles, fn {id, on_hit}, acc ->
+        pos = Map.get(player_state.tile_positions, id, %{x: 50.0, y: 50.0})
+
+        [
+          %{
+            id: id,
+            owner: owner,
+            label: on_hit.name,
+            x: pos.x,
+            y: pos.y,
+            type: :custom_on_hit
+          }
+          | acc
+        ]
+      end)
+
     abilities_by_name =
       Map.new(Tabletop.Fab.Effects.abilities(), fn {_k, e} -> {e.name, e} end)
 
@@ -1176,6 +1225,9 @@ defmodule TabletopWeb.GameComponents do
   defp tile_color_class(%{owner: "my", type: :custom_counter}),
     do: "from-yellow-300 to-yellow-400/70 text-yellow-950"
 
+  defp tile_color_class(%{owner: "my", type: :custom_on_hit}),
+    do: "from-orange-400 to-orange-500/70 text-orange-950"
+
   defp tile_color_class(%{owner: "my", type: :ability}),
     do: "from-purple-300 to-purple-400/70 text-purple-950"
 
@@ -1203,6 +1255,9 @@ defmodule TabletopWeb.GameComponents do
   defp tile_color_class(%{owner: "opponent", type: :custom_counter}),
     do: "from-yellow-300/60 to-yellow-400/40 text-yellow-950 border border-yellow-400"
 
+  defp tile_color_class(%{owner: "opponent", type: :custom_on_hit}),
+    do: "from-orange-400/60 to-orange-500/40 text-orange-950 border border-orange-500"
+
   defp tile_color_class(%{owner: "opponent", type: :ability}),
     do: "from-purple-300/60 to-purple-400/40 text-purple-950 border border-purple-400"
 
@@ -1221,10 +1276,12 @@ defmodule TabletopWeb.GameComponents do
   defp tile_icon(%{type: :arcane}), do: "hero-sparkles"
   defp tile_icon(%{type: :amp}), do: "hero-arrow-trending-up"
   defp tile_icon(%{type: :custom_counter}), do: "hero-hashtag"
+  defp tile_icon(%{type: :custom_on_hit}), do: "hero-pencil-square"
   defp tile_icon(_), do: "hero-star"
 
   defp tile_group_name(%{type: :ability}), do: "ability"
   defp tile_group_name(%{type: :on_hit}), do: "on_hit"
+  defp tile_group_name(%{type: :custom_on_hit}), do: "on_hit"
   defp tile_group_name(%{type: :token}), do: "on_hit"
   defp tile_group_name(_), do: nil
 

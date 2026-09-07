@@ -364,11 +364,15 @@
         const renderLocalPreview = () => {
           const cw = localCanvasEl.clientWidth
           const ch = localCanvasEl.clientHeight
-          localCanvasEl.width = cw
-          localCanvasEl.height = ch
-
           const vw = localVideoEl.videoWidth
           const vh = localVideoEl.videoHeight
+
+          // Never clear without redrawing — see the camera-setup preview for
+          // why a frame can measure 0, and why reassigning width/height (which
+          // clears the bitmap) is guarded on a real resize.
+          if (!cw || !ch || !vw || !vh) return
+          if (localCanvasEl.width !== cw) localCanvasEl.width = cw
+          if (localCanvasEl.height !== ch) localCanvasEl.height = ch
 
           const sw = vw / savedZoom
           const sh = vh / savedZoom
@@ -673,11 +677,13 @@
 
             const cw = canvas.clientWidth
             const ch = canvas.clientHeight
-            canvas.width = cw
-            canvas.height = ch
-
             const vw = localVideoEl.videoWidth
             const vh = localVideoEl.videoHeight
+
+            // Never clear without redrawing — see renderLocalPreview above.
+            if (!cw || !ch || !vw || !vh) return
+            if (canvas.width !== cw) canvas.width = cw
+            if (canvas.height !== ch) canvas.height = ch
 
             const sw = vw / savedZoom
             const sh = vh / savedZoom

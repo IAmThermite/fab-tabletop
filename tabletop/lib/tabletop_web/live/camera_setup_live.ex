@@ -192,6 +192,7 @@ defmodule TabletopWeb.CameraSetupLive do
       import { setupCardLookup, preloadScanner } from "@/js/card_scanner/liveview_hook.js"
       import { isDebugEnabled, setDebugEnabled } from "@/js/card_scanner/debug.js"
       import CameraRelayReceiver from "@/js/camera_relay_receiver.js"
+      import { startVideoFrameLoop } from "@/js/video_frame_loop.js"
 
       export default {
         mounted() {
@@ -222,7 +223,7 @@ defmodule TabletopWeb.CameraSetupLive do
           const flipToggle = document.getElementById("flip-opponent-toggle")
 
           let stream = null
-          let animFrameId = null
+          let stopCanvasRender = null
           let audioContext = null
           let analyser = null
           let cameraEnabled = true
@@ -260,58 +261,79 @@ defmodule TabletopWeb.CameraSetupLive do
             btn.classList.toggle("btn-error", !enabled)
           }
 
+          // Keyed to the camera's frame clock, not the display's. A bare rAF
+          // loop redraws each frame of a 30fps stream four times over on a
+          // 120Hz screen, and that wasted work competes with the encoder — the
+          // same reason every other preview in the app goes through
+          // video_frame_loop.js. The zoom/rotation sliders consequently repaint
+          // at the camera's frame rate, which is as often as there is anything
+          // new to show.
           const startCanvasRender = () => {
-            if (animFrameId) return
+            if (stopCanvasRender) return
             const ctx = canvasEl.getContext("2d")
 
             const render = () => {
-              if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
-                const cw = canvasEl.clientWidth
-                const ch = canvasEl.clientHeight
-                canvasEl.width = cw
-                canvasEl.height = ch
+              const cw = canvasEl.clientWidth
+              const ch = canvasEl.clientHeight
+              const vw = videoEl.videoWidth
+              const vh = videoEl.videoHeight
 
-                const vw = videoEl.videoWidth
-                const vh = videoEl.videoHeight
-                const zoom = parseFloat(zoomSlider.value)
-                const rotation = parseFloat(rotationSlider.value) * Math.PI / 180
+              // Draw a whole frame or leave the previous one alone — never
+              // clear without redrawing. Two ways that used to happen, both
+              // visible as the preview flashing:
+              //
+              //   * A zero measurement. This box is sized by container queries
+              //     (`100cqw`/`100cqh` on #game-area), which re-resolve when
+              //     anything is inserted elsewhere on the page — opening a
+              //     sidebar dropdown is enough. A frame that measured 0 sized
+              //     the canvas to 0 and drew nothing. (A zero-width source rect
+              //     also makes `drawImage` throw IndexSizeError, which would
+              //     leave the canvas cleared for the same reason.)
+              //   * Reassigning `width`/`height` at all: that clears the bitmap
+              //     even when the value is unchanged, so it now happens only on
+              //     a real resize.
+              if (!cw || !ch || !vw || !vh) return
+              if (canvasEl.width !== cw) canvasEl.width = cw
+              if (canvasEl.height !== ch) canvasEl.height = ch
 
-                // Source crop for zoom (center crop)
-                const sw = vw / zoom
-                const sh = vh / zoom
-                const sx = (vw - sw) / 2
-                const sy = (vh - sh) / 2
+              const zoom = parseFloat(zoomSlider.value)
+              const rotation = parseFloat(rotationSlider.value) * Math.PI / 180
 
-                // Base cover scale (no rotation)
-                const baseScale = Math.max(cw / sw, ch / sh)
-                let dw = sw * baseScale
-                let dh = sh * baseScale
+              // Source crop for zoom (center crop)
+              const sw = vw / zoom
+              const sh = vh / zoom
+              const sx = (vw - sw) / 2
+              const sy = (vh - sh) / 2
 
-                // When rotated, the image must be larger to still cover the canvas.
-                // The rotated bounding box of a dw×dh rect needs to cover cw×ch.
-                const sinR = Math.abs(Math.sin(rotation))
-                const cosR = Math.abs(Math.cos(rotation))
-                const rotScale = Math.max(
-                  (cw * cosR + ch * sinR) / dw,
-                  (cw * sinR + ch * cosR) / dh
-                )
-                dw *= rotScale
-                dh *= rotScale
+              // Base cover scale (no rotation)
+              const baseScale = Math.max(cw / sw, ch / sh)
+              let dw = sw * baseScale
+              let dh = sh * baseScale
 
-                const dx = (cw - dw) / 2
-                const dy = (ch - dh) / 2
+              // When rotated, the image must be larger to still cover the canvas.
+              // The rotated bounding box of a dw×dh rect needs to cover cw×ch.
+              const sinR = Math.abs(Math.sin(rotation))
+              const cosR = Math.abs(Math.cos(rotation))
+              const rotScale = Math.max(
+                (cw * cosR + ch * sinR) / dw,
+                (cw * sinR + ch * cosR) / dh
+              )
+              dw *= rotScale
+              dh *= rotScale
 
-                ctx.clearRect(0, 0, cw, ch)
-                ctx.save()
-                ctx.translate(cw / 2, ch / 2)
-                ctx.rotate(rotation)
-                ctx.translate(-cw / 2, -ch / 2)
-                ctx.drawImage(videoEl, sx, sy, sw, sh, dx, dy, dw, dh)
-                ctx.restore()
-              }
-              animFrameId = requestAnimationFrame(render)
+              const dx = (cw - dw) / 2
+              const dy = (ch - dh) / 2
+
+              ctx.clearRect(0, 0, cw, ch)
+              ctx.save()
+              ctx.translate(cw / 2, ch / 2)
+              ctx.rotate(rotation)
+              ctx.translate(-cw / 2, -ch / 2)
+              ctx.drawImage(videoEl, sx, sy, sw, sh, dx, dy, dw, dh)
+              ctx.restore()
             }
-            animFrameId = requestAnimationFrame(render)
+
+            stopCanvasRender = startVideoFrameLoop(videoEl, render)
           }
 
           const startAudioMeter = (mediaStream) => {
@@ -497,7 +519,7 @@ defmodule TabletopWeb.CameraSetupLive do
           })
 
           this.cleanup = () => {
-            if (animFrameId) cancelAnimationFrame(animFrameId)
+            if (stopCanvasRender) stopCanvasRender()
             if (audioContext) audioContext.close()
             if (stream) stream.getTracks().forEach(t => t.stop())
             if (this.cameraRelay) this.cameraRelay.disconnect()

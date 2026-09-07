@@ -21,6 +21,7 @@ defmodule Tabletop.Fab.GameState do
     effects: %{},
     effect_counts: %{},
     custom_counters: %{},
+    custom_on_hits: %{},
     proxy_tokens: %{},
     tile_positions: %{},
     tile_order: [],
@@ -54,6 +55,8 @@ defmodule Tabletop.Fab.GameState do
     do: change_custom_counter(player, id, delta)
 
   def transform(player, {:remove_custom_counter, id}), do: remove_custom_counter(player, id)
+  def transform(player, {:add_custom_on_hit, name}), do: add_custom_on_hit(player, name)
+  def transform(player, {:remove_custom_on_hit, id}), do: remove_custom_on_hit(player, id)
 
   def transform(player, {:toggle_effect, category, name}),
     do: toggle_effect(player, category, name)
@@ -210,6 +213,56 @@ defmodule Tabletop.Fab.GameState do
       {:error, :unknown_counter}
     end
   end
+
+  @custom_on_hit_name_max 32
+
+  @doc """
+  Adds a player-defined on-hit tile carrying free text — the escape hatch for a
+  trigger the catalogue doesn't cover. Unlike a custom counter it has no count,
+  so a blank name would render an empty tile with nothing to read: those are
+  rejected. Ids are generated as `"custom_on_hit:<n>"`, which keeps them clear
+  of both effect keys and `"custom:<n>"` counter ids.
+  """
+  def add_custom_on_hit(player, name) when is_binary(name) do
+    name =
+      name
+      |> String.trim()
+      |> String.slice(0, @custom_on_hit_name_max)
+
+    if name == "" do
+      {:error, :invalid_name}
+    else
+      id = "custom_on_hit:#{System.unique_integer([:positive])}"
+      on_hits = Map.get(player, :custom_on_hits, %{})
+      new_on_hits = Map.put(on_hits, id, %{name: name})
+
+      new_player =
+        %{player | custom_on_hits: new_on_hits}
+        |> ensure_tile_position(id)
+
+      {:ok, new_player, {:custom_on_hit_added, id, name}}
+    end
+  end
+
+  def add_custom_on_hit(_, _), do: {:error, :invalid_name}
+
+  def remove_custom_on_hit(player, id) when is_binary(id) do
+    on_hits = Map.get(player, :custom_on_hits, %{})
+
+    if Map.has_key?(on_hits, id) do
+      new_on_hits = Map.delete(on_hits, id)
+
+      new_player =
+        %{player | custom_on_hits: new_on_hits}
+        |> remove_tile(id)
+
+      {:ok, new_player, {:custom_on_hit_removed, id}}
+    else
+      {:error, :unknown_on_hit}
+    end
+  end
+
+  def remove_custom_on_hit(_, _), do: {:error, :unknown_on_hit}
 
   @valid_effect_categories ["ability", "on_hit", "token"]
 
@@ -422,6 +475,7 @@ defmodule Tabletop.Fab.GameState do
     cond do
       String.starts_with?(tile_id, "ability:") -> :ability
       String.starts_with?(tile_id, "on_hit:") -> :on_hit
+      String.starts_with?(tile_id, "custom_on_hit:") -> :on_hit
       String.starts_with?(tile_id, "token:") -> :on_hit
       true -> nil
     end

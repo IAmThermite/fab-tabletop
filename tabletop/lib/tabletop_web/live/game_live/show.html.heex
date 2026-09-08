@@ -22,7 +22,8 @@
         phx-click="toggle_preview"
         class="relative w-32 aspect-video rounded bg-black cursor-pointer overflow-hidden"
       >
-        <canvas id="local-canvas" class="w-full h-full"></canvas>
+        <%!-- Client-owned bitmap — see the camera-setup preview. --%>
+        <canvas id="local-canvas" phx-update="ignore" class="w-full h-full"></canvas>
         <.game_tiles game_state={@game_state} context={:local} />
       </div>
 
@@ -280,7 +281,8 @@
       <div class="absolute inset-0 bg-black/60"></div>
       <div class="relative z-10 w-full max-w-[min(90vw,142vh)] aspect-video rounded-lg overflow-hidden">
         <div class="relative w-full h-full bg-black">
-          <canvas id="local-canvas-expanded" class="w-full h-full"></canvas>
+          <%!-- Client-owned bitmap — see the camera-setup preview. --%>
+          <canvas id="local-canvas-expanded" phx-update="ignore" class="w-full h-full"></canvas>
           <.game_tiles game_state={@game_state} context={:expanded} />
           <button
             type="button"

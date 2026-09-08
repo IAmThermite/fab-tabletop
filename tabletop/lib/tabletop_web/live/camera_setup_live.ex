@@ -122,7 +122,14 @@ defmodule TabletopWeb.CameraSetupLive do
                  camera frame), so they live inside the preview box rather than
                  the letterboxed area around it. --%>
             <div class="relative aspect-video" style="width: min(100cqw, 100cqh * 16 / 9);">
-              <canvas id="test-canvas" class="w-full h-full block"></canvas>
+              <%!-- The preview bitmap is client-owned, so the canvas needs
+                    `phx-update="ignore"`. Sizing it in JS (`canvas.width = …`) reflects
+                    onto the `width`/`height` *content attributes*, which the server
+                    markup doesn't carry — so every patch that walks this subtree (any
+                    dropdown, any effect select) strips them, resetting the canvas to
+                    300x150 and clearing what was drawn. The render loop repaints on the
+                    next camera frame, and that gap is the flash. --%>
+              <canvas id="test-canvas" phx-update="ignore" class="w-full h-full block"></canvas>
               <.game_tiles game_state={@game_state} context={:setup} />
             </div>
 

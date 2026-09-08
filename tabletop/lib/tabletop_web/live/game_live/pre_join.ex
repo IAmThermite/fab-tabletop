@@ -150,7 +150,8 @@ defmodule TabletopWeb.GameLive.PreJoin do
             style="container-type: size;"
           >
             <div class="aspect-video" style="width: min(100cqw, 100cqh * 16 / 9);">
-              <canvas id="pre-join-canvas" class="w-full h-full block"></canvas>
+              <%!-- Client-owned bitmap — see the camera-setup preview. --%>
+              <canvas id="pre-join-canvas" phx-update="ignore" class="w-full h-full block"></canvas>
             </div>
 
             <%!-- No camera overlay --%>

@@ -5,8 +5,7 @@
       <p class="text-lg">
         FaB Tabletop is a free platform for playing Flesh and Blood TCG online
         with live video, life tracking, and combat chain management. This guide
-        walks you through camera setup, the lobby, and the in-game screen with
-        examples from real FaB play.
+        walks you through camera setup, the lobby, and the in-game screen.
       </p>
       <nav class="text-base">
         <span class="font-semibold">Jump to:</span>
@@ -16,6 +15,16 @@
         <a href="#contact" class="link link-primary mx-2">Contact</a>
       </nav>
     </header>
+
+    <section id="preface" class="space-y-6">
+      <h2 class="text-3xl font-bold border-b border-base-300 pb-2">0. Preface</h2>
+      <p class="text-lg">
+        Before jumping in, familiarize yourself with the
+        <.link href={~p"/code-of-conduct"} class="link link-primary">Code of Conduct</.link> so you know what to expect from your opponents and what
+        they can expect from you. FaB Tabletop is a community-driven project, and we
+        want to keep it a welcoming and safe place for everyone to play.
+      </p>
+    </section>
 
     <%!-- =================================================================
           SECTION 1 — CAMERA SETUP
@@ -33,25 +42,23 @@
         them hard to read. Center your playmat in the preview and zoom in so
         your hero card and pitch zone are clearly visible. Set the rotation so
         that the cards are orientated on your screen as you would read them on
-        a physical playmat.
+        a physical playmat in front of you.
       </p>
 
       <%!-- 1.1 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">1.1 Framing your play area (zoom & rotation)</h3>
         <p>
-          The camera setup screen previews exactly what your opponent will see.
+          The camera setup screen previews what your opponent will see.
           Use <strong>Rotate</strong>
-          if your camera is mounted sideways or upside-down — most overhead
-          rigs end up somewhere near 180° — then use <strong>Zoom</strong>
-          to fill the frame with your playmat and crop out the desk around it.
+          if your camera is mounted sideways or upside-down, then use
+          <strong>Zoom</strong> to fill the frame with your playmat and
+          crop out the desk around it.
         </p>
         <p>
           Aim to have your whole playmat in frame with a little room to spare:
-          your pitch zone, arsenal and hero card should all be readable without
-          your opponent squinting. Both sliders save to your browser when you
-          click <strong>Save & Continue</strong>, so every future game starts
-          with the same framing.
+          your equipment, deck, arsenal and hero card should all be visible.
+          You only need to do this once — your settings are saved in your browser.
         </p>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2">
           <img
@@ -82,10 +89,7 @@
           once the badge reads "Phone connected".
         </p>
         <p>
-          Your phone stays on the relay page for the rest of the match, with
-          its own zoom slider and a button to flip between the front and rear
-          cameras. Streaming video is hard work for a phone, so keep it plugged
-          in — and mount it somewhere it won't get knocked while you play.
+          Note that this does drain your phone's battery, so keep it plugged in and make sure it doesn't overheat. If you have a phone stand or tripod, use it to keep the camera steady.
         </p>
         <div class="grid md:grid-cols-2 gap-4">
           <figure class="rounded-box border border-base-300 bg-base-200 p-2">
@@ -112,36 +116,6 @@
           </figure>
         </div>
       </div>
-
-      <%!-- 1.3 --%>
-      <div class="space-y-3">
-        <h3 class="text-xl font-semibold">1.3 Where your tiles land</h3>
-        <p>
-          Every tracker you turn on — Physical damage, Arcane damage, Amp, Go
-          Again, on-hit effects, custom counters — appears as a tile drawn over
-          your video feed, and your opponent sees it in the same spot you do.
-          Tiles are draggable, so you can drop each one somewhere that matches
-          how you arrange your physical playmat. Putting the Physical tile near
-          the slot where you place attack cards, for example, makes on-hit
-          damage easy to read at a glance.
-        </p>
-        <p>
-          Tiles stack neatly when several are active at once, which is what a
-          typical attack looks like: the damage on the chain, the on-hit
-          effects riding along with it, and whether the attack has Go Again.
-        </p>
-        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
-          <img
-            src={~p"/images/about/1-3-stacking-effects.webp"}
-            alt="Physical, Bloodrot Pox, Lose Health and Go Again tiles stacked over the playmat"
-            class="w-full rounded"
-            loading="lazy"
-          />
-          <figcaption class="text-sm text-base-content/70 pt-2">
-            A Kiss of Death with a Spike with Bloodrot reaction: 3 physical, Bloodrot Pox, lose 1 health, and Go Again (Slippy ability).
-          </figcaption>
-        </figure>
-      </div>
     </section>
 
     <%!-- =================================================================
@@ -150,12 +124,12 @@
     <section id="lobby" class="space-y-6">
       <h2 class="text-3xl font-bold border-b border-base-300 pb-2">2. The lobby</h2>
       <p class="text-lg">
-        The lobby is where you'll start every session. From here you can
-        browse open games, create your own, join a private game by code, or
-        rejoin a game already in progress. The <strong>Live activity</strong>
-        column on the right shows how busy the site is right now — games
-        waiting for an opponent, what people are playing this week, upcoming
-        tournaments, and recent winners with their decklists.
+        From here you can browse open games, create your own, join a private
+        game by code, or rejoin a game already in progress.
+        The <strong>Live activity</strong> column on the right shows how busy
+        the site is right now — games waiting for an opponent, what people are
+        playing this week, upcoming tournaments, and recent winners with their
+        decklists.
       </p>
 
       <figure class="rounded-box border border-base-300 bg-base-200 p-2">
@@ -173,11 +147,9 @@
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">2.1 Browsing public games</h3>
         <p>
-          Public games are grouped by format — Classic Constructed, Blitz, and
-          so on — with a count next to each. Expand a format to see who's
-          waiting: you get the game title, the host's name, their language, and
-          their hero. Hit <strong>Join</strong>
-          and you'll go straight to camera setup, then into the game.
+          Public games are grouped by format — Classic Constructed, SAGE, and
+          so on. Expand a format to see who's
+          waiting. Hit <strong>Join</strong> to jump into the game.
         </p>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
           <img
@@ -252,12 +224,7 @@
           format. <strong>Rejoin Game</strong>
           drops you back in — handy after a refresh, a dropped connection, or
           closing the tab by accident. <strong>Leave Game</strong>
-          bows out for good and frees your opponent up to find someone else.
-        </p>
-        <p>
-          You have a five minute grace period after disconnecting before you're
-          marked as having left, so a browser crash mid-match isn't the end of
-          the game.
+          bows out for good and you and your opponent are no longer in the game.
         </p>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2">
           <img
@@ -327,43 +294,40 @@
 
       <%!-- 3.2 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.2 Life total</h3>
+        <h3 class="text-xl font-semibold">3.2 Tiles</h3>
         <p>
-          Your life total sits at the bottom of the sidebar with +/- buttons,
-          and your opponent's is mirrored in the corner of their board. Most
-          Classic Constructed heroes start at 40 — when an opponent's <em>Snatch</em>
-          hits you for 4, tap minus four times to drop from 40 to 36. Life is
-          the one thing <strong>Reset Board</strong>
-          never touches, so it carries across the whole match.
+          Every tracker you turn on — Damage, Go Again, on-hit effects, etc.
+          — appears as a tile drawn over your video feed, and your opponent
+          sees it in the same spot you do. Tiles are draggable, so you can
+          drop each one underneath the card, which makes on-hits and damage
+          easy to read at a glance.
         </p>
-        <%!-- TODO: capture a life-counter clip — using +/- to go 40 → 36 → 35
-              in response to damage, with the opponent's mirrored total
-              updating at the same time. --%>
+        <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
+          <img
+            src={~p"/images/about/3-2-stacking-effects.webp"}
+            alt="Physical, Bloodrot Pox, Lose Health and Go Again tiles stacked over the playmat"
+            class="w-full rounded"
+            loading="lazy"
+          />
+          <figcaption class="text-sm text-base-content/70 pt-2">
+            A Kiss of Death with a Spike with Bloodrot reaction: 3 physical, Bloodrot Pox, lose 1 health, and Go Again (Slippy ability).
+          </figcaption>
+        </figure>
       </div>
 
       <%!-- 3.3 --%>
       <div class="space-y-3">
         <h3 class="text-xl font-semibold">3.3 Combat chain management</h3>
         <p>
-          The top of the sidebar is your combat chain. Toggle <strong>Physical</strong>
-          or <strong>Arcane</strong>
-          when an attack is incoming and set the amount with +/-; your opponent
+          The left sidebar is your combat chain. Toggle <strong>Physical</strong>
+          for an attacking card and set the amount with +/-; your opponent
           sees the number update live, so they know exactly what's on the chain
-          before it resolves. A 5-power attack met with 2 block and no armour
-          means you set Physical to 3. Dual-damage chains just use both tiles at
-          once.
-        </p>
-        <p>
-          <strong>Amp</strong>
-          carries its own counter for the X in <em>Amp X</em>, and <strong>Go Again</strong>
-          is a straight toggle — flip it when your attack grants it, so your
-          opponent knows another action is coming rather than waiting on you.
+          before it resolves.
         </p>
         <p>
           When the chain closes, <strong>Reset Board</strong>
-          clears everything you had lit up — damage, Amp, Go Again, abilities,
-          on-hit effects and custom counters — in one click. Your life total and
-          proxy tokens survive, since those carry between chains.
+          clears everything you had added to the chain link — damage, Go Again,
+          abilities, on-hit effects and custom counters.
         </p>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2">
           <img
@@ -373,29 +337,40 @@
             loading="lazy"
           />
           <figcaption class="text-sm text-base-content/70 pt-2">
-            A chain link start to finish: set the damage, resolve the hit, reset the board.
+            A chain link start to finish: set the damage and any on hit effects.
           </figcaption>
         </figure>
       </div>
 
       <%!-- 3.4 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.4 On-hit effects</h3>
+        <h3 class="text-xl font-semibold">3.4 Life total</h3>
+        <p>
+          Your life total sits at the bottom of the sidebar with +/- buttons,
+          and your opponent's is mirrored in the corner of their board. Most
+          Classic Constructed heroes start at 40 — when an opponent's <em>Snatch</em>
+          hits you for 4, tap minus four times to drop from 40 to 36.
+        </p>
+        <%!-- TODO: capture a life-counter clip — using +/- to go 40 → 36 → 35
+              in response to damage, with the opponent's mirrored total
+              updating at the same time. --%>
+      </div>
+
+      <%!-- 3.5 --%>
+      <div class="space-y-3">
+        <h3 class="text-xl font-semibold">3.5 On-hit effects</h3>
         <p>
           The <strong>On Hits</strong>
-          dropdown tracks everything that triggers off a successful hit —
-          Bloodrot Pox, Frostbite, Frailty, Inertia, Mark, card draw, discard,
-          banishing from arsenal or graveyard, and plenty more. Effects with a
-          variable amount (Lose Health, Deal Damage, Deal Arcane Damage, Gain
-          Health, Runechant) have their own +/- so you can set the X; the rest
-          are simple toggles.
+          dropdown tracks anything that would trigger on a successful hit —
+          Bloodrot Pox, Mark, card draw, discard, banishing, and plenty more.
+          Effects with a variable amount (Lose Health, Deal Damage, Gain
+          Health) have their own +/- so you can set the amount.
         </p>
         <p>
           Each one you tick becomes a tile on your opponent's view, and hovering
-          it shows the reminder text — useful when they haven't met that card
-          before. <strong>Create Token…</strong>
+          it shows the reminder text. <strong>Create Token…</strong>
           at the bottom opens a second panel for the tokens you make for
-          yourself: Embers, Seismic Surge, Spectral Shield, and the rest.
+          yourself: Ponder, Might, Runechants etc.
         </p>
         <p>
           For a trigger the list doesn't cover, type it into the <strong>On hit…</strong>
@@ -405,7 +380,7 @@
         </p>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-lg">
           <img
-            src={~p"/images/about/3-4-on-hits.webp"}
+            src={~p"/images/about/3-5-on-hits.webp"}
             alt="On Hits dropdown with effects ticked and counters set"
             class="w-full rounded"
             loading="lazy"
@@ -416,9 +391,9 @@
         </figure>
       </div>
 
-      <%!-- 3.5 --%>
+      <%!-- 3.6 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.5 Tokens & counters</h3>
+        <h3 class="text-xl font-semibold">3.6 Tokens & counters</h3>
         <p>
           <strong>Create Proxy Token</strong>
           tracks a token someone would otherwise have to remember. Pick who it
@@ -448,7 +423,7 @@
         <div class="grid md:grid-cols-2 gap-4 items-start">
           <figure class="rounded-box border border-base-300 bg-base-200 p-2">
             <img
-              src={~p"/images/about/3-5-create-proxy-token.webp"}
+              src={~p"/images/about/3-6-create-proxy-token.webp"}
               alt="Create Proxy Token dropdown with a Me/Opponent target selector above the token list"
               class="w-full rounded"
               loading="lazy"
@@ -459,7 +434,7 @@
           </figure>
           <figure class="rounded-box border border-base-300 bg-base-200 p-2">
             <img
-              src={~p"/images/about/3-5-proxy-token.webp"}
+              src={~p"/images/about/3-6-proxy-token.webp"}
               alt="Proxy token panel showing a Marked token card"
               class="w-full rounded"
               loading="lazy"
@@ -471,33 +446,34 @@
         </div>
       </div>
 
-      <%!-- 3.6 --%>
+      <%!-- 3.7 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.6 Click a card to recognise it</h3>
+        <h3 class="text-xl font-semibold">3.7 Click a card to recognise it</h3>
         <p>
           Can't read a card on your opponent's mat? Click it. FaB Tabletop
-          grabs that frame, finds the card in it, and matches it against the
-          full card database — the high-resolution card image pops out on top
-          of the board a moment later, no typing required.
+          looks it up and matches it against the full card database — the
+          high-resolution card image pops out for you to read.
         </p>
         <p>
-          Recognition runs entirely in your browser, so it doesn't cost your
-          opponent anything and works while they're mid-turn. Pop-outs are
-          draggable and you can open as many as you like, which makes it easy to
-          line up a couple of cards and compare them. If the match isn't quite
-          right, the dropdown under the image offers the other candidates, and
-          the coloured dots switch between pitch variants. Cards lying sideways
-          on the mat work fine, and so do cards facing away from you.
+          Pop-outs are draggable and you can open as many as you like, which
+          makes it easy to line up a couple of cards and compare their interactions.
+          If the match isn't quite right, the dropdown under the image offers the
+          other candidates, and the coloured dots switch between pitch variants.
         </p>
         <p>
           A scan needs a reasonably clear look at the card — heavy glare, a
           hand covering the art, or a card at a steep angle can all defeat it.
           If nothing opens, nudge the card into better light and try again, or
-          fall back to the search box below.
+          fall back to the search box below. A die over the card art also affects
+          recognition, so ask your opponent to place it over the text box instead.
+        </p>
+        <p>
+          You can also click the title box and enter in the name of the card for
+          the cases where the scanner doesn't quite get it right.
         </p>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2">
           <img
-            src={~p"/images/about/3-6-card-recognition-search.gif"}
+            src={~p"/images/about/3-7-card-recognition-search.gif"}
             alt="Clicking cards on the opponent's playmat to pop out the matching card images"
             class="w-full rounded"
             loading="lazy"
@@ -508,25 +484,23 @@
         </figure>
       </div>
 
-      <%!-- 3.7 --%>
+      <%!-- 3.8 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.7 Card search</h3>
+        <h3 class="text-xl font-semibold">3.8 Card search</h3>
         <p>
           The <strong>Search card…</strong>
           box looks up any FaB card by name. It's forgiving of typos and
-          half-remembered names, so "scar for" is enough to find <em>Scar for a Scar</em>. The result pops out the same way a scanned
-          card does — draggable, closable, and readable by both of you.
+          half-remembered names, so "scar for" is enough to find <em>Scar for a Scar</em>. The result pops out the same way a scanned card does.
         </p>
         <p>
           Every pop-out doubles as a search box: edit the name in its header to
           swap it for a different card without opening another one. The
-          coloured dots underneath jump between pitch variants, so you can show
-          your opponent the red, yellow, and blue versions of a card in a
-          couple of clicks.
+          coloured dots underneath jump between pitch variants, so you can view
+          the red, yellow, and blue versions of a card.
         </p>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-2xl">
           <img
-            src={~p"/images/about/3-7-card-search.gif"}
+            src={~p"/images/about/3-8-card-search.gif"}
             alt="Typing a card name into the search box and popping out the result"
             class="w-full rounded"
             loading="lazy"
@@ -537,9 +511,9 @@
         </figure>
       </div>
 
-      <%!-- 3.8 --%>
+      <%!-- 3.9 --%>
       <div class="space-y-3">
-        <h3 class="text-xl font-semibold">3.8 In-game settings</h3>
+        <h3 class="text-xl font-semibold">3.9 In-game settings</h3>
         <p>
           The settings dialog covers everything you might need to change
           mid-match:
@@ -555,8 +529,7 @@
             misbehaving and you want to report why.
           </li>
           <li>
-            <strong>Effect volume</strong>
-            and <strong>Opponent volume</strong>
+            <strong>Effect volume</strong> and <strong>Opponent volume</strong>
             — independent sliders for the app's sound effects and your
             opponent's microphone.
           </li>
@@ -566,16 +539,16 @@
           <li>
             <strong>Camera Source</strong>
             — switch between your webcam and your phone, with the QR code and
-            connection badge right below.
+            right below.
           </li>
           <li>
             <strong>Reconfigure Camera</strong>
-            — jump back to camera setup to re-do your zoom and rotation.
+            — jump back to camera setup to re-configure your zoom and rotation.
           </li>
         </ul>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-md">
           <img
-            src={~p"/images/about/3-8-settings-dialog.webp"}
+            src={~p"/images/about/3-9-settings-dialog.webp"}
             alt="In-game settings dialog"
             class="w-full rounded"
             loading="lazy"
@@ -588,7 +561,7 @@
     </section>
 
     <%!-- =================================================================
-          SECTION 4 — CONTACT (preserved from original About page)
+          SECTION 4 — CONTACT
          ================================================================= --%>
     <section id="contact" class="space-y-4">
       <h2 class="text-3xl font-bold border-b border-base-300 pb-2">Contact</h2>

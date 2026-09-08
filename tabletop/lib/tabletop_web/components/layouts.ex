@@ -21,6 +21,8 @@ defmodule TabletopWeb.Layouts do
   policy pages.
   """
   def github_url, do: @github_url
+  
+  def patreon_url, do: @patreon_url
 
   @doc """
   The Sentry DSN to hand to the browser SDK, or `nil` when it is not configured.

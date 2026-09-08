@@ -321,6 +321,28 @@ defmodule TabletopWeb.GameComponents do
               <% end %>
             </li>
           <% end %>
+          <%!-- Free-text on-hit: the escape hatch for a trigger the catalogue
+                above doesn't cover, so it closes out the same list. Submitting
+                leaves `on_hits_open` alone, so the dropdown stays put. --%>
+          <li class="col-span-2 mt-1 pt-2 border-t border-base-300">
+            <form phx-submit="add_custom_on_hit" class="flex items-center gap-1">
+              <input
+                type="text"
+                name="name"
+                placeholder="Custom on hit…"
+                maxlength={32}
+                required
+                class="input input-bordered input-xs flex-1 min-w-0 text-xs"
+              />
+              <button
+                type="submit"
+                class="btn btn-xs btn-square bg-orange-400 hover:bg-orange-500 text-orange-950 border-orange-500"
+                aria-label="Add custom on hit"
+              >
+                <.icon name="hero-plus" class="size-3" />
+              </button>
+            </form>
+          </li>
         </ul>
 
         <%!-- Create Token popup (to the right of the on-hits dropdown) --%>
@@ -354,28 +376,6 @@ defmodule TabletopWeb.GameComponents do
             </li>
           <% end %>
         </ul>
-      </div>
-
-      <%!-- Custom on-hits: free text, no counter. Tinted to match the On Hits
-            dropdown so it reads as part of that group. --%>
-      <div class="bg-orange-400/30 rounded p-2">
-        <form phx-submit="add_custom_on_hit" class="flex items-center gap-1">
-          <input
-            type="text"
-            name="name"
-            placeholder="On hit…"
-            maxlength={32}
-            required
-            class="input input-bordered input-xs flex-1 min-w-0 text-xs"
-          />
-          <button
-            type="submit"
-            class="btn btn-xs btn-square bg-orange-400 hover:bg-orange-500 text-orange-950 border-orange-500"
-            aria-label="Add custom on hit"
-          >
-            <.icon name="hero-plus" class="size-3" />
-          </button>
-        </form>
       </div>
 
       <%!-- Custom Counters (tinted block, styled like Go Again) --%>

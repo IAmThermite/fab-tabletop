@@ -583,6 +583,8 @@ defmodule TabletopWeb.GameLiveTest do
     test "a custom on-hit carries free text and no counter", %{conn: conn, game: game} do
       {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
 
+      show_live |> element("button[phx-value-name='on_hits']") |> render_click()
+
       show_live
       |> form("form[phx-submit='add_custom_on_hit']", %{"name" => "Opponent reveals hand"})
       |> render_submit()

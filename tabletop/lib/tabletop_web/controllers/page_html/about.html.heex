@@ -12,6 +12,7 @@
         <a href="#camera-setup" class="link link-primary mx-2">Camera setup</a>
         <a href="#lobby" class="link link-primary mx-2">Lobby</a>
         <a href="#in-game" class="link link-primary mx-2">In-game</a>
+        <a href="#faq" class="link link-primary mx-2">FAQ</a>
         <a href="#contact" class="link link-primary mx-2">Contact</a>
       </nav>
     </header>
@@ -20,7 +21,8 @@
       <h2 class="text-3xl font-bold border-b border-base-300 pb-2">0. Preface</h2>
       <p class="text-lg">
         Before jumping in, familiarize yourself with the
-        <.link href={~p"/code-of-conduct"} class="link link-primary">Code of Conduct</.link> so you know what to expect from your opponents and what
+        <.link href={~p"/code-of-conduct"} class="link link-primary">Code of Conduct</.link>
+        so you know what to expect from your opponents and what
         they can expect from you. FaB Tabletop is a community-driven project, and we
         want to keep it a welcoming and safe place for everyone to play.
       </p>
@@ -51,8 +53,8 @@
         <p>
           The camera setup screen previews what your opponent will see.
           Use <strong>Rotate</strong>
-          if your camera is mounted sideways or upside-down, then use
-          <strong>Zoom</strong> to fill the frame with your playmat and
+          if your camera is mounted sideways or upside-down, then use <strong>Zoom</strong>
+          to fill the frame with your playmat and
           crop out the desk around it.
         </p>
         <p>
@@ -370,13 +372,13 @@
           Each one you tick becomes a tile on your opponent's view, and hovering
           it shows the reminder text. <strong>Create Token…</strong>
           at the bottom opens a second panel for the tokens you make for
-          yourself: Ponder, Might, Runechants etc.
+          yourself: Ponder, Might, Spectral Shield etc.
         </p>
         <p>
-          For a trigger the list doesn't cover, type it into the <strong>On hit…</strong>
-          box and hit +. That drops a tile with your own wording onto the board —
-          same as the effects above, just without a counter — and the × on the
-          tile clears it again.
+          For a trigger the list doesn't cover, use the <strong>Custom on hit…</strong>
+          box at the bottom of the same dropdown: type it, hit +, and a tile with
+          your own wording drops onto the board — same as the effects above, just
+          without a counter. The × on the tile clears it again.
         </p>
         <figure class="rounded-box border border-base-300 bg-base-200 p-2 max-w-lg">
           <img
@@ -529,7 +531,8 @@
             misbehaving and you want to report why.
           </li>
           <li>
-            <strong>Effect volume</strong> and <strong>Opponent volume</strong>
+            <strong>Effect volume</strong>
+            and <strong>Opponent volume</strong>
             — independent sliders for the app's sound effects and your
             opponent's microphone.
           </li>
@@ -561,14 +564,219 @@
     </section>
 
     <%!-- =================================================================
-          SECTION 4 — CONTACT
+          SECTION 4 — FAQ
+         ================================================================= --%>
+    <section id="faq" class="space-y-4">
+      <h2 class="text-3xl font-bold border-b border-base-300 pb-2">4. FAQ</h2>
+
+      <div class="space-y-3">
+        <.faq_item question="Do I need to pay for this?">
+          <p>
+            No. FaB Tabletop is free, and there is no paid tier, no trial and
+            nothing held back behind a subscription — every feature on this page
+            is available to everyone.
+          </p>
+          <p>
+            It isn't free to run though, servers cost money. If
+            you play here regularly and want to chip in, you can support us on <a
+              href={Layouts.patreon_url()}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="link link-primary"
+            >Patreon</a>.
+          </p>
+        </.faq_item>
+
+        <.faq_item question="Is this an official Flesh and Blood service?">
+          <p>
+            No. FaB Tabletop is a community project, built by players for
+            players. It is not affiliated with, endorsed by, or sponsored by
+            Legend Story Studios, and Flesh and Blood is their trademark. Card
+            names, text and images belong to LSS and are used here so you can
+            read your own cards during a game.
+          </p>
+          <p>
+            That also means we are not a rules authority: for anything about
+            how a card actually works, the official rules and rulings are the
+            final word, or join the
+            <a
+              href="https://judge.fabtcg.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="link link-primary"
+            >
+              JudgeHub
+            </a>
+            Discord for rules help.
+          </p>
+        </.faq_item>
+
+        <.faq_item question="Do I need to download anything?">
+          <p>
+            No. Everything runs in your browser — no client, no plugin, no
+            install. Open the site, allow camera access, and you're playing.
+            Any current version of Chrome, Edge, Firefox or Safari works.
+          </p>
+          <p>
+            The game screen is built for a laptop or desktop, since you need
+            room for your opponent's board and the tracker sidebar side by side.
+            Your phone can still join in as a camera — see <a
+              href="#camera-setup"
+              class="link link-primary"
+            >camera setup</a>.
+          </p>
+        </.faq_item>
+
+        <.faq_item question="What if I don't have a webcam?">
+          <p>
+            Not a problem, your phone works as one. Open the in-game settings
+            dialog, scan the QR code under <strong>Phone Camera</strong>
+            with your phone, accept the camera permission, then switch
+            <strong>Camera Source</strong>
+            to <strong>Phone</strong>. Nothing to install there either — the
+            phone just opens a web page.
+          </p>
+          <p>
+            A phone is often the better camera anyway: it's easier to mount
+            above the mat than a laptop lid. Keep it plugged in, because
+            streaming video will drain the battery over a long game. Full
+            walkthrough in <a href="#camera-setup" class="link link-primary">1.2 Using your phone as a camera</a>.
+          </p>
+        </.faq_item>
+
+        <.faq_item question="Do I need an account?">
+          <p>
+            To browse the lobby and see what's going on, no. To create or join
+            a game you need a free account with a confirmed email address —
+            check your inbox for the confirmation link after registering. That's
+            what lets your opponent know who they sat down across from, and
+            what keeps your tournament results attached to you.
+          </p>
+        </.faq_item>
+
+        <.faq_item question="Is my video recorded?">
+          <p>
+            No. Video and audio travel directly between you and your opponent
+            wherever the network allows it, and nothing is recorded, stored or
+            reviewed by us. See the
+            <.link navigate={~p"/privacy"} class="link link-primary">Privacy Policy</.link>
+            for exactly what we do and don't keep.
+          </p>
+          <p>
+            Do keep in mind that your opponent can see your play area live —
+            same as sitting across a table from them — so be mindful of what
+            else is in frame.
+          </p>
+        </.faq_item>
+
+        <.faq_item question="The card scanner isn't recognising a card. What now?">
+          <p>
+            Scanning needs a reasonably clear look at the card. Glare, a hand
+            or die over the art, a steep camera angle or a dim room will all
+            defeat it. Nudge the card into better light, ask your opponent to
+            move a die off the art onto the text box, and click it again.
+          </p>
+          <p>
+            If it still won't match, type the name into the <strong>Search card…</strong>
+            box instead — it's forgiving of typos, and the pop-out is the same
+            either way. More detail in <a href="#in-game" class="link link-primary">3.7 Click a card to recognise it</a>.
+          </p>
+        </.faq_item>
+
+        <.faq_item question="The video is blurry or laggy. How do I improve it?">
+          <p>
+            Light the table well but keep direct light off the cards — glare is
+            the most common cause of an unreadable board. Then zoom in during
+            camera setup so your playmat fills the frame rather than the desk
+            around it; the sharpness you have is better spent on the cards.
+          </p>
+          <p>
+            If it's stuttering rather than soft, a wired connection or a spot
+            closer to the router usually helps more than any setting. When
+            you're using a phone as a camera, keep it plugged in and somewhere
+            it won't overheat — a hot phone quietly reduces its own video
+            quality.
+          </p>
+        </.faq_item>
+
+        <.faq_item question="My opponent disconnected mid-game. Is the game lost?">
+          <p>
+            No — a dropped connection or an accidentally closed tab is
+            recoverable. There's a short grace period before anyone is treated
+            as having left, and returning to the lobby shows a <strong>Game in Progress</strong>
+            panel with <strong>Rejoin Game</strong>. Both of you can come back
+            and pick up where you were.
+          </p>
+        </.faq_item>
+
+        <.faq_item question="I have a suggestion or think I've found a bug">
+          <p>
+            Please tell us — both are genuinely welcome. The quickest route is
+            our <a
+              href={Layouts.discord_url()}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="link link-primary"
+            >Discord</a>, where you can describe what happened and we can ask follow-up
+            questions. Or feel free to open
+            an issue on <a
+              href={Layouts.github_url()}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="link link-primary"
+            >GitHub</a>.
+          </p>
+          <p>
+            What helps most: what you were doing, what you expected, and what
+            happened instead — plus your browser. If it's the card scanner
+            misbehaving, turn on <strong>Card scan debug overlay</strong>
+            in the in-game settings and include a screenshot of what it sees.
+          </p>
+        </.faq_item>
+
+        <.faq_item question="Someone is being abusive. What should I do?">
+          <p>
+            Leave the game — you never have to stay in one — and report it on <a
+              href={Layouts.discord_url()}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="link link-primary"
+            >Discord</a>.
+            Harassment and cheating aren't tolerated here. Our
+            <.link
+              navigate={~p"/code-of-conduct"}
+              class="link link-primary"
+            >
+              Code of Conduct
+            </.link>
+            sets out what's expected of everyone and what happens when someone
+            ignores it.
+          </p>
+        </.faq_item>
+      </div>
+    </section>
+
+    <%!-- =================================================================
+          SECTION 5 — CONTACT
          ================================================================= --%>
     <section id="contact" class="space-y-4">
-      <h2 class="text-3xl font-bold border-b border-base-300 pb-2">Contact</h2>
+      <h2 class="text-3xl font-bold border-b border-base-300 pb-2">5. Contact</h2>
       <p class="text-lg">
         Have questions or feedback? Reach out on
-        <a href="https://github.com/IAmThermite/fab-tabletop" class="link link-primary">GitHub</a>
-        or drop us a message on Discord.
+        <a
+          href={Layouts.github_url()}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="link link-primary"
+        >
+          GitHub
+        </a>
+        or drop us a message on <a
+          href={Layouts.discord_url()}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="link link-primary"
+        >Discord</a>.
       </p>
     </section>
   </div>

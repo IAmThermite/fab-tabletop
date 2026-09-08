@@ -21,7 +21,7 @@ defmodule TabletopWeb.Layouts do
   policy pages.
   """
   def github_url, do: @github_url
-  
+
   def patreon_url, do: @patreon_url
 
   @doc """

@@ -234,4 +234,239 @@ defmodule Tabletop.Cards.ImporterTest do
       assert Repo.aggregate(CardPrint, :count) == 15
     end
   end
+
+  describe "re-running against a grown source" do
+    test "adds new cards, adds new prints to existing cards, and refreshes hashes" do
+      first =
+        write_source([
+          %{
+            "unique_id" => "ext-grow",
+            "name" => "Grower",
+            "printings" => [
+              printing(%{"unique_id" => "g-1", "phash_art" => "10", "phash_full" => "11"})
+            ]
+          }
+        ])
+
+      assert {1, 0} = Importer.import_all(source: first)
+      assert [%{face_id: "g-1", id: print_id}] = prints_for("ext-grow")
+      card_id = Cards.find_by_external_card_id("ext-grow").id
+
+      # Upstream adds a printing to the existing card, corrects its hash, and
+      # ships a brand-new card.
+      second =
+        write_source([
+          %{
+            "unique_id" => "ext-grow",
+            "name" => "Grower",
+            "printings" => [
+              printing(%{"unique_id" => "g-1", "phash_art" => "10", "phash_full" => "99"}),
+              printing(%{"unique_id" => "g-2", "phash_art" => "20", "phash_full" => "21"})
+            ]
+          },
+          %{
+            "unique_id" => "ext-new",
+            "name" => "Newcomer",
+            "printings" => [
+              printing(%{"unique_id" => "n-1", "phash_art" => "30", "phash_full" => "31"})
+            ]
+          }
+        ])
+
+      assert {2, 0} = Importer.import_all(source: second)
+
+      # The existing card kept its row, gained the new print, and the print it
+      # already had kept its row while picking up the corrected hash.
+      assert Cards.find_by_external_card_id("ext-grow").id == card_id
+      prints = prints_for("ext-grow")
+      assert Enum.map(prints, & &1.face_id) |> Enum.sort() == ["g-1", "g-2"]
+
+      existing = Enum.find(prints, &(&1.face_id == "g-1"))
+      assert existing.id == print_id
+      assert existing.image_phash_full == 99
+
+      # And the new card arrived.
+      assert %Card{} = Cards.find_by_external_card_id("ext-new")
+      assert [%{face_id: "n-1"}] = prints_for("ext-new")
+    end
+  end
+
+  describe "replace_all" do
+    # Two printings that share an image collapse to one print. Correcting the
+    # second one's hash upstream makes it a distinct print again — and reverting
+    # that correction makes the first print stop being produced, which is how a
+    # print goes stale without upstream deleting anything.
+    defp two_print_card(full_hash_b) do
+      [
+        %{
+          "unique_id" => "ext-stale",
+          "name" => "Stale Maker",
+          "printings" => [
+            printing(%{"unique_id" => "s-a", "phash_art" => "1", "phash_full" => "10"}),
+            printing(%{
+              "unique_id" => "s-b",
+              "foiling" => "R",
+              "phash_art" => "2",
+              "phash_full" => full_hash_b
+            })
+          ]
+        }
+      ]
+    end
+
+    setup do
+      # First run: distinct hashes, so both printings survive as prints.
+      assert {1, 0} = Importer.import_all(source: write_source(two_print_card("20")))
+      assert length(prints_for("ext-stale")) == 2
+
+      # Second run: the two now share an image, so "s-b" collapses into "s-a"
+      # and is no longer produced by the source.
+      %{source: write_source(two_print_card("10"))}
+    end
+
+    test "clears the pHashes of prints the source no longer produces", %{source: source} do
+      assert {1, 0} = Importer.import_all(source: source, replace_all: true)
+
+      prints = Map.new(prints_for("ext-stale"), &{&1.face_id, &1})
+
+      # Still produced -> keeps its hashes.
+      assert prints["s-a"].image_phash == 1
+      assert prints["s-a"].image_phash_full == 10
+
+      # No longer produced -> hashes cleared, so the scanner cannot match it.
+      assert is_nil(prints["s-b"].image_phash)
+      assert is_nil(prints["s-b"].image_phash_full)
+    end
+
+    test "keeps the row rather than deleting it", %{source: source} do
+      assert {1, 0} = Importer.import_all(source: source, replace_all: true)
+
+      assert length(prints_for("ext-stale")) == 2
+      assert Repo.aggregate(CardPrint, :count) == 2
+    end
+
+    test "is off by default — a stale print keeps its hashes", %{source: source} do
+      assert {1, 0} = Importer.import_all(source: source)
+
+      prints = Map.new(prints_for("ext-stale"), &{&1.face_id, &1})
+      assert prints["s-b"].image_phash == 2
+      assert prints["s-b"].image_phash_full == 20
+    end
+
+    test "leaves prints belonging to cards outside the source alone" do
+      # A card this run never mentions is not "stale" — it is simply not part of
+      # this import, and blanking it would make a partial source destructive.
+      other =
+        write_source([
+          %{
+            "unique_id" => "ext-other",
+            "name" => "Other",
+            "printings" => [
+              printing(%{"unique_id" => "o-1", "phash_art" => "7", "phash_full" => "8"})
+            ]
+          }
+        ])
+
+      assert {1, 0} = Importer.import_all(source: other)
+      assert {1, 0} = Importer.import_all(source: other, replace_all: true)
+
+      assert [print] = prints_for("ext-other")
+      assert print.image_phash == 7
+      assert print.image_phash_full == 8
+    end
+  end
+
+  describe "hash-less source" do
+    # Every arm of `Cards.find_by_p_hash_similarity/1` is guarded on the stored
+    # hash being non-NULL, and the upsert re-runs the changeset over each print —
+    # so importing a source that lost its hashes writes NULL over good ones and
+    # the scanner stops matching anything, reporting success the whole way.
+    defp hashless_source(ctx) do
+      Map.put(
+        ctx,
+        :source,
+        write_source([
+          %{
+            "unique_id" => "ext-nohash",
+            "name" => "No Hashes",
+            "printings" => [
+              printing(%{"unique_id" => "nohash-1", "phash_art" => nil, "phash_full" => nil})
+            ]
+          }
+        ])
+      )
+    end
+
+    setup :hashless_source
+
+    test "raises rather than nulling out every hash in the table", %{source: source} do
+      assert_raise RuntimeError, ~r/none of 1 card prints carry a pHash/, fn ->
+        Importer.import_all(source: source)
+      end
+
+      # Nothing was written.
+      assert Repo.aggregate(CardPrint, :count) == 0
+    end
+
+    test "an existing print keeps its hashes when the import is refused", %{source: source} do
+      assert {1, 0} =
+               Importer.import_all(
+                 source:
+                   write_source([
+                     %{
+                       "unique_id" => "ext-nohash",
+                       "name" => "No Hashes",
+                       "printings" => [
+                         printing(%{
+                           "unique_id" => "nohash-1",
+                           "phash_art" => "555",
+                           "phash_full" => "666"
+                         })
+                       ]
+                     }
+                   ])
+               )
+
+      assert_raise RuntimeError, fn ->
+        Importer.import_all(source: source)
+      end
+
+      assert [print] = prints_for("ext-nohash")
+      assert print.image_phash == 555
+      assert print.image_phash_full == 666
+    end
+
+    test "imports anyway when explicitly allowed", %{source: source} do
+      assert {1, 0} =
+               Importer.import_all(source: source, allow_missing_phashes: true)
+
+      assert [print] = prints_for("ext-nohash")
+      assert is_nil(print.image_phash)
+      assert is_nil(print.image_phash_full)
+    end
+
+    test "hash-less printings are not collapsed into a single print" do
+      # `dedup_by_image/1` groups on `image_phash_full`. A nil hash means "image
+      # identity unknown", so grouping on it would fold every printing of a card
+      # into one — which is how a hash-less import also silently loses prints.
+      source =
+        write_source([
+          %{
+            "unique_id" => "ext-many",
+            "name" => "Many Printings",
+            "printings" => [
+              printing(%{"unique_id" => "m-1", "phash_art" => nil, "phash_full" => nil}),
+              printing(%{"unique_id" => "m-2", "phash_art" => nil, "phash_full" => nil}),
+              printing(%{"unique_id" => "m-3", "phash_art" => nil, "phash_full" => nil})
+            ]
+          }
+        ])
+
+      assert {1, 0} =
+               Importer.import_all(source: source, allow_missing_phashes: true)
+
+      assert length(prints_for("ext-many")) == 3
+      assert Enum.count(prints_for("ext-many"), & &1.is_canonical) == 1
+    end
+  end
 end

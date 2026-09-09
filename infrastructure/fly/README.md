@@ -577,6 +577,26 @@ To seed the Card database run:
 fly ssh console -c infrastructure/fly/fly.toml -C "/app/bin/tabletop eval 'Tabletop.Release.import_cards()'"
 ```
 
+Re-running is safe and incremental: it adds new cards, adds new prints to cards
+that already exist, and refreshes the pHashes on existing rows in place. It never
+deletes rows that vanish upstream, so a print the data set stopped shipping keeps
+whatever hash it last had. To clear those too — leaving no hash in the table that
+predates this run — pass `replace_all`:
+
+```bash
+fly ssh console -c infrastructure/fly/fly.toml -C "/app/bin/tabletop eval 'Tabletop.Release.import_cards(replace_all: true)'"
+```
+
+`import_cards/1` also takes `allow_missing_phashes: true` and `source: "..."`, and
+rejects anything else rather than ignoring it. Without that override the import
+refuses to run when the data set carries no pHashes at all — importing one writes
+NULL over every hash in the table and card scanning silently stops matching
+anything. After any import, confirm the hashes landed:
+
+```bash
+fly ssh console -c infrastructure/fly/fly.toml -C "/app/bin/tabletop rpc IO.inspect(Tabletop.Repo.aggregate(Tabletop.Cards.CardPrint,:count,:image_phash_full))"
+```
+
 ## Query statistics (pg_stat_statements)
 
 The LiveDashboard "Ecto Stats" page (`/dev/dashboard/ecto_stats`) gets two extra

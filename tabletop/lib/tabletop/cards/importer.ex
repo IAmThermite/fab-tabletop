@@ -9,10 +9,19 @@ defmodule Tabletop.Cards.Importer do
   does no image downloading or hashing: it reads `json/english/card.json`,
   transforms each card + its printings, and inserts directly into Postgres.
 
+  `card.json` is a generated artifact, and upstream has shipped a revision where
+  it was regenerated *without* the hash fields (they are computed into
+  `csvs/english/card-printing.csv` first, and the JSON only carries them if it is
+  rebuilt afterwards). Importing that revision emptied every hash column and card
+  scanning stopped matching anything, with no error anywhere — so
+  `verify_phashes!/3` refuses an import that carries no hashes at all.
+
   `import_all/1` upserts on `cards.external_card_id` and `card_prints.face_id`:
-  re-running adds new cards/prints and updates existing ones in place (so upstream
-  corrections — a fixed pHash, a renamed card, a changed image — propagate). It
-  does not delete rows that vanish upstream.
+  re-running adds new cards, adds new prints to cards that already exist, and
+  updates existing rows in place (so upstream corrections — a fixed pHash, a
+  renamed card, a changed image — propagate). It does not delete rows that vanish
+  upstream; `import_all(replace_all: true)` additionally clears the pHashes of
+  prints the source no longer produces.
 
   Mapping highlights:
     * `face_id` comes from a printing's `unique_id` (globally unique). The shorter
@@ -23,6 +32,8 @@ defmodule Tabletop.Cards.Importer do
     * Exactly one print per card is marked `is_canonical` (regular art, standard
       foiling, earliest in source order).
   """
+
+  import Ecto.Query, only: [from: 2]
 
   require Logger
 
@@ -40,6 +51,11 @@ defmodule Tabletop.Cards.Importer do
   Options:
     * `:source` — path to `card.json`. Defaults to the configured/vendored path
       (see `source_path/0`).
+    * `:allow_missing_phashes` — import even when the source carries no pHashes
+      at all. Off by default; see `verify_phashes!/3`.
+    * `:replace_all` — additionally clear the pHashes of prints the source no
+      longer produces, so no hash in the table predates this run. Off by
+      default; see `clear_stale_phashes/1`.
   """
   def import_all(opts \\ []) do
     path = Keyword.get(opts, :source) || source_path()
@@ -48,29 +64,124 @@ defmodule Tabletop.Cards.Importer do
     {:ok, content} = File.read(path)
     {:ok, cards} = Jason.decode(content)
 
+    # Built up front so the whole import can be checked for pHashes before the
+    # first row is written — see `verify_phashes!/3`.
+    built = Enum.map(cards, &build_card/1)
+
+    verify_phashes!(built, path, opts)
+
     {inserted, skipped} =
-      Enum.reduce(cards, {0, 0}, fn card_json, {ins, skip} ->
-        case build_card(card_json) do
-          nil ->
-            {ins, skip + 1}
+      Enum.reduce(built, {0, 0}, fn
+        nil, {ins, skip} ->
+          {ins, skip + 1}
 
-          card_attrs ->
-            case upsert_card_with_prints(card_attrs) do
-              {:ok, _} ->
-                {ins + 1, skip}
+        card_attrs, {ins, skip} ->
+          case upsert_card_with_prints(card_attrs) do
+            {:ok, _} ->
+              {ins + 1, skip}
 
-              {:error, reason} ->
-                Logger.error(
-                  "Failed to insert #{card_attrs.external_card_id}: #{inspect(reason)}"
-                )
+            {:error, reason} ->
+              Logger.error("Failed to insert #{card_attrs.external_card_id}: #{inspect(reason)}")
 
-                {ins, skip + 1}
-            end
-        end
+              {ins, skip + 1}
+          end
       end)
+
+    if Keyword.get(opts, :replace_all, false) do
+      # Not inlined into the Logger call: `Logger.info/1` is a macro that does not
+      # evaluate its argument when the level is filtered out, so the sweep would
+      # silently never run wherever the log level is above :info.
+      cleared = clear_stale_phashes(built)
+      Logger.info("replace_all: cleared pHashes on #{cleared} stale card prints")
+    end
 
     Logger.info("Imported #{inserted} cards (#{skipped} skipped)")
     {inserted, skipped}
+  end
+
+  # Clears the pHashes of every print the source no longer produces, so that after
+  # a `replace_all: true` run no hash in the table predates it. A print stops being
+  # produced when upstream drops the printing, or when corrected hashes make it
+  # dedup into a sibling — and in both cases the hash it still holds describes an
+  # image the data set no longer claims.
+  #
+  # Rows are kept rather than deleted: a NULL hash is already unmatchable by
+  # `Cards.find_by_p_hash_similarity/1`, and `import_all/1` does not delete rows
+  # that vanish upstream.
+  #
+  # Keyed on the face_ids the source *contains*, not the ones successfully
+  # written, so a card whose upsert failed keeps the hashes it had instead of
+  # being blanked for an unrelated reason.
+  defp clear_stale_phashes(built) do
+    face_ids =
+      built
+      |> Enum.reject(&is_nil/1)
+      |> Enum.flat_map(fn card -> Enum.map(card.card_prints, & &1.face_id) end)
+
+    {cleared, _} =
+      Repo.update_all(
+        from(cp in CardPrint,
+          where: not is_nil(cp.image_phash) or not is_nil(cp.image_phash_full),
+          # One array parameter. `face_id not in ^face_ids` would emit a bind per
+          # face_id, and the source carries thousands.
+          where: fragment("NOT (? = ANY(?))", cp.face_id, ^face_ids)
+        ),
+        set: [
+          image_phash: nil,
+          image_phash_full: nil,
+          updated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        ]
+      )
+
+    cleared
+  end
+
+  # Every match arm in `Cards.find_by_p_hash_similarity/1` is guarded on the
+  # stored hash being non-NULL, and `upsert_card_with_prints/1` re-runs the
+  # changeset over each print — so importing a hash-less `card.json` writes NULL
+  # over the hashes already in the table and the scanner stops matching anything,
+  # while the import logs success the whole way. Nothing downstream can tell that
+  # apart from a database that was simply never seeded, which is why the check
+  # belongs here, before the first write.
+  defp verify_phashes!(built, path, opts) do
+    prints =
+      built
+      |> Enum.reject(&is_nil/1)
+      |> Enum.flat_map(& &1.card_prints)
+
+    hashed = Enum.count(prints, &(&1.image_phash || &1.image_phash_full))
+
+    cond do
+      prints == [] or hashed > 0 ->
+        :ok
+
+      Keyword.get(opts, :allow_missing_phashes, false) ->
+        Logger.warning(
+          "Importing #{length(prints)} card prints with no pHashes — card scanning " <>
+            "will not match anything until a hashed source is imported."
+        )
+
+        :ok
+
+      true ->
+        raise """
+        Refusing to import: none of #{length(prints)} card prints carry a pHash.
+
+        Continuing would NULL out every image_phash/image_phash_full already in the
+        database, and the card scanner would stop matching anything.
+
+          source: #{path}
+
+        The upstream hash generator writes into csvs/english/card-printing.csv, and
+        card.json only carries phash_art/phash_full when it was regenerated after
+        that ran. Check the submodule is at a revision whose card.json has them:
+
+            git submodule update --init vendor/flesh-and-blood-cards
+
+        To import names only and accept a dead scanner, pass
+        `allow_missing_phashes: true`.
+        """
+    end
   end
 
   @doc """
@@ -152,9 +263,15 @@ defmodule Tabletop.Cards.Importer do
   # preferring the standard finish. Prints with genuinely different images (e.g. a
   # distinct cold-foil art) stay separate. Result is ordered by source index.
   defp dedup_by_image(prints) do
-    prints
+    # A nil hash means "image identity unknown", not "same image as the other
+    # hash-less prints" — grouping on it collapses every printing of a card into
+    # one. Only prints that actually carry a hash are compared.
+    {hashed, unhashed} = Enum.split_with(prints, &is_integer(&1.image_phash_full))
+
+    hashed
     |> Enum.group_by(& &1.image_phash_full)
     |> Enum.map(fn {_phash, group} -> Enum.min_by(group, &foil_key/1) end)
+    |> Enum.concat(unhashed)
     |> Enum.sort_by(& &1.source_index)
   end
 

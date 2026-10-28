@@ -24,7 +24,7 @@ config :tabletop,
   ecto_repos: [Tabletop.Repo],
   generators: [timestamp_type: :utc_datetime]
 
-# Emails allowed to access the tournament admin console.
+# User ids allowed to access the admin console (site-wide announcements).
 # Overridable in runtime.exs via the FABTABLETOP_ADMIN_IDS env var.
 config :tabletop, :admin_ids, []
 

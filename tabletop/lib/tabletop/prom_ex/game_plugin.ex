@@ -3,7 +3,7 @@ defmodule Tabletop.PromEx.GamePlugin do
   App-specific metrics — the signals the stock Phoenix/Ecto/BEAM dashboards
   cannot provide.
 
-  Five groups, each answering a question that is currently unanswerable in
+  Four groups, each answering a question that is currently unanswerable in
   production:
 
     * **Card scanner** — how often a scan resolves to a card, the Hamming
@@ -21,9 +21,6 @@ defmodule Tabletop.PromEx.GamePlugin do
     * **Camera relay** — join outcomes and signalling volume for the
       phone-as-webcam flow, which has the most moving parts and the least
       visibility.
-    * **Swiss pairing** — wall-clock of `Swiss.pair/3`, which does DFS
-      backtracking for rematch avoidance and is the code most likely to degrade
-      on a large field.
 
   Metric definitions live here; the `:telemetry.execute/3` calls that feed them
   live next to the code they measure. Event names are documented on
@@ -42,8 +39,7 @@ defmodule Tabletop.PromEx.GamePlugin do
       card_scan_metrics(metric_prefix),
       game_session_metrics(metric_prefix),
       leave_timer_metrics(metric_prefix),
-      camera_relay_metrics(metric_prefix),
-      tournament_metrics(metric_prefix)
+      camera_relay_metrics(metric_prefix)
     ]
   end
 
@@ -200,30 +196,6 @@ defmodule Tabletop.PromEx.GamePlugin do
           "WebRTC signalling messages relayed between a player's desktop and phone. " <>
             "Offers without matching answers indicate handshakes that never completed.",
         tags: [:signal]
-      )
-    ])
-  end
-
-  # --- Tournaments ---
-
-  defp tournament_metrics(metric_prefix) do
-    Event.build(:tabletop_tournament_event_metrics, [
-      distribution(
-        metric_prefix ++ [:swiss_pair, :duration, :milliseconds],
-        event_name: Events.swiss_pair(),
-        measurement: :duration,
-        description: "Wall-clock of a single Swiss pairing round, including DFS backtracking.",
-        reporter_options: [buckets: [1, 5, 10, 50, 100, 500, 1_000, 5_000]],
-        unit: {:native, :millisecond},
-        tags: [:result]
-      ),
-      distribution(
-        metric_prefix ++ [:swiss_pair, :field_size],
-        event_name: Events.swiss_pair(),
-        measurement: :player_count,
-        description: "Active players fed into the pairing engine, for correlating with duration.",
-        reporter_options: [buckets: [4, 8, 16, 32, 64, 128, 256]],
-        tags: [:result]
       )
     ])
   end

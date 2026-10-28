@@ -52,6 +52,18 @@ defmodule Tabletop.AccountsFixtures do
     Scope.for_user(user)
   end
 
+  @doc """
+  A scope for a freshly created user who is listed in `:admin_ids`.
+
+  Overwrites `:admin_ids` rather than appending, so only the latest admin
+  fixture is an admin.
+  """
+  def admin_scope_fixture do
+    user = user_fixture()
+    Application.put_env(:tabletop, :admin_ids, [user.id])
+    Scope.for_user(user)
+  end
+
   def set_password(user) do
     {:ok, {user, _expired_tokens}} =
       Accounts.update_user_password(user, %{password: valid_user_password()})

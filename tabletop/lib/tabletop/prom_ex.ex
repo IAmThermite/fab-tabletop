@@ -9,7 +9,7 @@ defmodule Tabletop.PromEx do
   `infrastructure/fly/fly.toml`.
 
   `Tabletop.PromEx.GamePlugin` carries the app-specific signals (card scanner
-  hit rate, game sessions, leave timers, camera relay, Swiss pairing); the rest
+  hit rate, game sessions, leave timers, camera relay); the rest
   are PromEx's stock plugins, each with a matching pre-built Grafana dashboard
   listed in `dashboards/0`.
 

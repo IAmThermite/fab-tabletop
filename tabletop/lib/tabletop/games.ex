@@ -183,21 +183,16 @@ defmodule Tabletop.Games do
   Top heroes piloted per format since `cutoff`, as `%{format => [{hero_slug, count}]}`,
   most popular first and capped at #{@hero_leaderboard_limit} per format.
 
-  Counts casual games and tournaments alike. For a game, both seats count: the
-  creator's `hero` and the opponent's `user2_hero` (so a hero is credited whether
-  chosen at create time or at join time; a mirror match credits it once per
-  pilot). Competitive games count too — hiding a hero from the lobby list doesn't
-  hide it from this aggregate. Tournament play is folded in via
-  `Tournaments.recent_hero_counts/1`, which counts one entry per player per
-  tournament so a tournament's many round games don't multiply a player's hero
-  (those match games carry no hero on the `Game` row, so they never double-count
-  here). Blank heroes are skipped.
+  Both seats count: the creator's `hero` and the opponent's `user2_hero` (so a
+  hero is credited whether chosen at create time or at join time; a mirror match
+  credits it once per pilot). Competitive games count too — hiding a hero from
+  the lobby list doesn't hide it from this aggregate. Blank heroes are skipped.
 
   This is the scan behind the lobby's activity panel, so callers should go
   through `Tabletop.Games.HeroLeaderboard` rather than calling it per request.
   """
   def popular_heroes_by_format(%DateTime{} = cutoff) do
-    (game_hero_counts(cutoff) ++ Tabletop.Tournaments.recent_hero_counts(cutoff))
+    game_hero_counts(cutoff)
     |> Enum.reduce(%{}, fn {format, hero, count}, acc ->
       Map.update(acc, {format, hero}, count, &(&1 + count))
     end)
@@ -665,13 +660,10 @@ defmodule Tabletop.Games do
   Only games the user created are considered, since the hero on a joined game
   belongs to the other player.
 
-  Tournament matches are excluded even though they are stored as ordinary `Game`
-  rows with player 1 as `user_id`: `Tournaments.create_match_game!/5` builds them
-  with `Game.match_changeset/2`, which carries no hero or language of its own.
-  Seeding from one hands the player a blank hero under a machine-generated title,
-  and the form then fails its own `validate_required`.
-  `hero` is the discriminator — `changeset/3` requires it, `match_changeset/2`
-  never sets it — which keeps this query out of the Tournaments schemas.
+  Hero-less rows are excluded. `changeset/3` requires a hero, but games created
+  by the since-removed tournament feature were stored without one (and with a
+  machine-generated title). Seeding from one hands the player a blank hero and
+  the form then fails its own `validate_required`.
   """
   def get_last_created_game(%Scope{user: user}) do
     from(g in Game,

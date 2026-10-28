@@ -3,13 +3,13 @@ defmodule TabletopWeb.AdminLive.AnnouncementsTest do
 
   import Phoenix.LiveViewTest
   import Tabletop.AnnouncementsFixtures
-  import Tabletop.TournamentsFixtures, only: [admin_scope_fixture: 0]
+  import Tabletop.AccountsFixtures, only: [admin_scope_fixture: 0]
 
   alias Tabletop.Announcements
 
   describe "access" do
     test "a signed-out visitor is redirected", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/tournaments"}}} = live(conn, ~p"/admin/announcements")
+      assert {:error, {:redirect, %{to: "/"}}} = live(conn, ~p"/admin/announcements")
     end
 
     test "a signed-in non-admin is redirected", %{conn: conn} do
@@ -18,7 +18,7 @@ defmodule TabletopWeb.AdminLive.AnnouncementsTest do
       admin_scope_fixture()
       player = Tabletop.AccountsFixtures.user_fixture()
 
-      assert {:error, {:redirect, %{to: "/tournaments"}}} =
+      assert {:error, {:redirect, %{to: "/"}}} =
                conn |> log_in_user(player) |> live(~p"/admin/announcements")
     end
 

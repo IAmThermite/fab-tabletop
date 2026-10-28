@@ -43,9 +43,6 @@ defmodule Tabletop.Telemetry do
   @doc "A WebRTC signalling message was relayed between desktop and phone."
   def camera_relay_signal, do: [:tabletop, :camera_relay, :signal]
 
-  @doc "A round of Swiss pairing completed."
-  def swiss_pair, do: [:tabletop, :tournaments, :swiss_pair]
-
   # --- Emit helpers ---
 
   @doc """
@@ -135,19 +132,5 @@ defmodule Tabletop.Telemetry do
   """
   def camera_relay_signal(signal) do
     :telemetry.execute(camera_relay_signal(), %{count: 1}, %{signal: signal})
-  end
-
-  @doc """
-  Records a completed round of Swiss pairing.
-
-  `player_count` is the active field size, which is the main driver of the DFS
-  backtracking cost in `Tabletop.Tournaments.Pairing.Swiss`.
-  """
-  def swiss_pair(duration, player_count, result) do
-    :telemetry.execute(
-      swiss_pair(),
-      %{duration: duration, player_count: player_count},
-      %{result: result}
-    )
   end
 end

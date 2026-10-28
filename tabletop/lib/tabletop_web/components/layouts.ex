@@ -153,9 +153,6 @@ defmodule TabletopWeb.Layouts do
         </div>
 
         <div class="flex items-center gap-4">
-          <.link navigate={~p"/tournaments"} class="btn btn-ghost">
-            Tournaments
-          </.link>
           <.link navigate={~p"/about"} class="btn btn-ghost">
             About
           </.link>

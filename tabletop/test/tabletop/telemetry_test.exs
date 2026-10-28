@@ -25,8 +25,7 @@ defmodule Tabletop.TelemetryTest do
     Events.leave_timer_scheduled(),
     Events.leave_timer_resolved(),
     Events.camera_relay_join(),
-    Events.camera_relay_signal(),
-    Events.swiss_pair()
+    Events.camera_relay_signal()
   ]
 
   # Every event the app emits, paired with a representative call that produces
@@ -40,8 +39,7 @@ defmodule Tabletop.TelemetryTest do
       {Events.leave_timer_scheduled(), fn -> Events.leave_timer_scheduled(:armed) end},
       {Events.leave_timer_resolved(), fn -> Events.leave_timer_resolved(:cancelled) end},
       {Events.camera_relay_join(), fn -> Events.camera_relay_join(:ok) end},
-      {Events.camera_relay_signal(), fn -> Events.camera_relay_signal(:offer) end},
-      {Events.swiss_pair(), fn -> Events.swiss_pair(1_000, 8, :ok) end}
+      {Events.camera_relay_signal(), fn -> Events.camera_relay_signal(:offer) end}
     ]
   end
 

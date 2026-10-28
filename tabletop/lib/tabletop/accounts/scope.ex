@@ -43,8 +43,8 @@ defmodule Tabletop.Accounts.Scope do
   @doc """
   Returns true if the scope's user id is listed in `:live_dashboard_user_ids`.
 
-  Kept deliberately separate from `admin?/1`: both are id lists, but tournament
-  admin and BEAM introspection are different privileges, so being one does not
+  Kept deliberately separate from `admin?/1`: both are id lists, but site admin
+  and BEAM introspection are different privileges, so being one does not
   make you the other.
 
   Unlike `admin?/1`, comparison is case-insensitive. `user.id` is always a

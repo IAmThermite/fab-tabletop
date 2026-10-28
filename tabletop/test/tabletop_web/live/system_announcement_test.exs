@@ -3,7 +3,7 @@ defmodule TabletopWeb.SystemAnnouncementTest do
 
   import Phoenix.LiveViewTest
   import Tabletop.AnnouncementsFixtures
-  import Tabletop.TournamentsFixtures, only: [admin_scope_fixture: 0]
+  import Tabletop.AccountsFixtures, only: [admin_scope_fixture: 0]
 
   alias Tabletop.Announcements
 
@@ -206,17 +206,17 @@ defmodule TabletopWeb.SystemAnnouncementTest do
       # halt on its own message and let everything else fall through.
       # `GameLive.Index` has no catch-all clause, which makes both halves of
       # that observable here: the announcement must not crash it, and its own
-      # tournament message must still arrive.
+      # game broadcast must still arrive.
       {:ok, view, _html} = live(conn, ~p"/")
 
       {:ok, _} = Announcements.create_announcement(admin, %{"message" => "Heads up"})
       assert render(view) =~ "Heads up"
 
-      t = Tabletop.TournamentsFixtures.tournament_fixture(scope: admin)
-      {:ok, t} = Tabletop.Tournaments.open_registration(admin, t)
+      other = Tabletop.AccountsFixtures.user_scope_fixture()
+      game = Tabletop.GamesFixtures.game_fixture(other, %{title: "Fresh table"})
 
       html = render(view)
-      assert html =~ t.name
+      assert html =~ game.title
       assert html =~ "Heads up"
     end
   end

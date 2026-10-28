@@ -62,19 +62,6 @@ defmodule Tabletop.Games.Game do
     |> put_active_game_constraints()
   end
 
-  @doc """
-  Builds a game row for a tournament match (both players known up front).
-  Declares the same one-active-game-per-user constraints as `changeset/3` so a
-  collision surfaces as a changeset error rather than a raw `Ecto.ConstraintError`.
-  """
-  def match_changeset(game, attrs) do
-    game
-    |> cast(attrs, [:title, :format, :status, :user_id, :user2_id])
-    |> validate_required([:title, :format, :user_id, :user2_id])
-    |> validate_inclusion(:format, Map.keys(@valid_formats))
-    |> put_active_game_constraints()
-  end
-
   # Both partial unique indexes from the `one_active_game_per_user` migration:
   # a user may be user1 of at most one live game, and user2 of at most one.
   defp put_active_game_constraints(changeset) do
@@ -92,10 +79,8 @@ defmodule Tabletop.Games.Game do
   # Hero is required on created/edited games (see `validate_required` above) and
   # must be a recognised hero legal in the selected format. This helper adds the
   # legality/recognition errors on top of the required check; a blank hero is left
-  # to `validate_required`. Tournament games use `match_changeset/2`, which does
-  # not set or require a hero (their heroes come from registrations). Legacy
-  # free-text heroes on already-saved games predate this and aren't re-validated
-  # unless the game is edited.
+  # to `validate_required`. Legacy free-text heroes on already-saved games
+  # predate this and aren't re-validated unless the game is edited.
   defp validate_hero_legal(changeset) do
     hero = get_field(changeset, :hero)
     format = get_field(changeset, :format)

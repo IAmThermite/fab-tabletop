@@ -2,7 +2,7 @@ defmodule Tabletop.AnnouncementsTest do
   use Tabletop.DataCase, async: false
 
   import Tabletop.AnnouncementsFixtures
-  import Tabletop.TournamentsFixtures, only: [admin_scope_fixture: 0]
+  import Tabletop.AccountsFixtures, only: [admin_scope_fixture: 0]
 
   alias Tabletop.Accounts.Scope
   alias Tabletop.Announcements

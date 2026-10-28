@@ -9,6 +9,8 @@ defmodule TabletopWeb.GameComponents do
   import TabletopWeb.CoreComponents, only: [icon: 1]
   import Phoenix.HTML, only: [raw: 1]
 
+  alias Tabletop.Heroes
+
   use Phoenix.VerifiedRoutes,
     endpoint: TabletopWeb.Endpoint,
     router: TabletopWeb.Router,
@@ -1845,4 +1847,37 @@ defmodule TabletopWeb.GameComponents do
     </script>
     """
   end
+
+  attr :hero, :string, default: nil, doc: "hero slug (or legacy free text)"
+  attr :class, :string, default: "size-8", doc: "size utility for the avatar"
+
+  @doc """
+  Round hero portrait. Renders the hero art when the slug is known, otherwise a
+  neutral placeholder — so legacy free-text hero values degrade gracefully.
+  """
+  def hero_portrait(assigns) do
+    ~H"""
+    <span class={[
+      "inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-base-200 ring-1 ring-base-300",
+      @class
+    ]}>
+      <img
+        :if={@hero && Heroes.known?(@hero)}
+        src={Heroes.icon_path(@hero)}
+        alt={Heroes.name(@hero)}
+        class="size-full object-cover"
+      />
+      <.icon
+        :if={!(@hero && Heroes.known?(@hero))}
+        name="hero-user"
+        class="size-4 text-base-content/40"
+      />
+    </span>
+    """
+  end
+
+  @doc "Display name for a hero (slug -> name; legacy free text passes through)."
+  def hero_name(nil), do: nil
+  def hero_name(""), do: nil
+  def hero_name(hero), do: Heroes.name(hero) || hero
 end

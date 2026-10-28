@@ -239,7 +239,7 @@ defmodule TabletopWeb.UserAuth do
       socket =
         socket
         |> Phoenix.LiveView.put_flash(:error, "Admins only.")
-        |> Phoenix.LiveView.redirect(to: ~p"/tournaments")
+        |> Phoenix.LiveView.redirect(to: ~p"/")
 
       {:halt, socket}
     end

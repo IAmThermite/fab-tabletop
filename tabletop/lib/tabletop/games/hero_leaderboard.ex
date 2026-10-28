@@ -4,8 +4,7 @@ defmodule Tabletop.Games.HeroLeaderboard do
 
   `Tabletop.Games.activity_stats/0` runs in *every* connected lobby LiveView on
   *every* game broadcast, and the leaderboard is by far its most expensive part:
-  it aggregates a rolling 7-day window of games plus tournament registrations,
-  where the rest of the snapshot only touches games that are open or in progress
+  it aggregates a rolling 7-day window of games, where the rest of the snapshot only touches games that are open or in progress
   right now. A 7-day ranking does not meaningfully change between two lobby
   events, so this server owns one copy, refreshes it on a slow timer, and turns
   every reader into an ETS lookup.

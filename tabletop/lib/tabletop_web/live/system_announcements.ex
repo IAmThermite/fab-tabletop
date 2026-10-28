@@ -7,12 +7,11 @@ defmodule TabletopWeb.SystemAnnouncements do
   phone-camera ones — a downtime notice is for everybody on the site, not just
   signed-in players.
 
-  Deliberately separate from `TabletopWeb.UserNotifications`: that hook
-  delivers per-user tournament events as transient `:info` flashes, which is
-  the wrong vehicle here. There is one flash slot per kind, so the two would
-  clobber each other, and the flash toast is hardwired to fade after five
-  seconds — too short for "the server is going down". Announcements get their
-  own assign and their own component instead.
+  Deliberately not a flash: there is one flash slot per kind, so an
+  announcement would clobber (or be clobbered by) the page's own flashes, and
+  the flash toast is hardwired to fade after five seconds — too short for "the
+  server is going down". Announcements get their own assign and their own
+  component instead.
 
   The layouts decide the presentation: `Layouts.app` renders a persistent
   banner, `Layouts.game` a dismissible toast (the game view is a fullscreen

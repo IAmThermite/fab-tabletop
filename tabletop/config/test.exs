@@ -3,10 +3,6 @@ import Config
 # Only in tests, remove the complexity from the password hashing algorithm
 config :bcrypt_elixir, :log_rounds, 1
 
-# Skip the tournament check-in waiting period in tests by default. Individual
-# tests override this to exercise the "too soon" guard.
-config :tabletop, :check_in_min_seconds, 0
-
 # Never refresh the popular-heroes cache in the background: the server holds its
 # own connection, which the Ecto sandbox does not own, and a cache one async test
 # populated would leak into the rest. Reads compute inline instead. Tests that

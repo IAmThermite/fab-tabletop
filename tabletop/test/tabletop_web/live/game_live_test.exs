@@ -109,26 +109,6 @@ defmodule TabletopWeb.GameLiveTest do
       assert html =~ "Live activity"
     end
 
-    test "shows recent tournament winners once a tournament has finished", %{conn: conn} do
-      admin = Tabletop.TournamentsFixtures.admin_scope_fixture()
-      {tournament, champion} = Tabletop.TournamentsFixtures.finished_tournament_fixture(admin)
-
-      {:ok, _live, html} = live(conn, ~p"/")
-
-      assert html =~ "Recent winners"
-      assert html =~ champion.name
-      assert html =~ tournament.name
-      # The champion's hero and a link to their deck.
-      assert html =~ "Arakni, Huntsman"
-      assert html =~ Tabletop.TournamentsFixtures.valid_fabrary_url()
-    end
-
-    test "hides the recent winners card when no tournament has finished", %{conn: conn} do
-      {:ok, _live, html} = live(conn, ~p"/")
-
-      refute html =~ "Recent winners"
-    end
-
     test "shows the hero on a joinable game row", %{conn: conn} do
       other_scope = user_scope_fixture()
 
@@ -271,7 +251,7 @@ defmodule TabletopWeb.GameLiveTest do
       assert created.competitive
     end
 
-    test "quick match skips tournament matches and reuses the last real game", %{
+    test "quick match skips hero-less legacy games and reuses the last real game", %{
       conn: conn,
       scope: scope
     } do
@@ -284,25 +264,23 @@ defmodule TabletopWeb.GameLiveTest do
 
       Tabletop.Games.terminate_game(scope, own)
 
-      # A tournament match is an ordinary Game row with this user as `user_id`,
-      # but it carries no hero — seeding from it blanked the form.
+      # Games left behind by the removed tournament feature are ordinary rows with
+      # this user as `user_id`, but carry no hero — seeding from one blanked the form.
       opponent = user_scope_fixture()
 
-      {:ok, match_game} =
-        %Tabletop.Games.Game{}
-        |> Tabletop.Games.Game.match_changeset(%{
+      match_game =
+        Tabletop.Repo.insert!(%Tabletop.Games.Game{
           title: "Summer Cup — Swiss 1 · Table 3",
           format: :classic_constructed,
           status: :active,
           user_id: scope.user.id,
           user2_id: opponent.user.id
         })
-        |> Tabletop.Repo.insert()
 
       Tabletop.Games.terminate_game(scope, match_game)
 
       # `inserted_at` is second-precision, so the fixtures above can tie. Push
-      # the tournament row clear of the real game to pin down the ordering.
+      # the hero-less row clear of the real game to pin down the ordering.
       Tabletop.Repo.update_all(
         from(g in Tabletop.Games.Game, where: g.id == ^match_game.id),
         set: [inserted_at: DateTime.add(DateTime.utc_now(), 60)]
@@ -326,22 +304,20 @@ defmodule TabletopWeb.GameLiveTest do
       assert created.hero == "aurora"
     end
 
-    test "quick match button is hidden when the only game is a tournament match", %{
+    test "quick match button is hidden when the only game is hero-less", %{
       conn: conn,
       scope: scope
     } do
       opponent = user_scope_fixture()
 
-      {:ok, match_game} =
-        %Tabletop.Games.Game{}
-        |> Tabletop.Games.Game.match_changeset(%{
+      match_game =
+        Tabletop.Repo.insert!(%Tabletop.Games.Game{
           title: "Summer Cup — Swiss 1 · Table 3",
           format: :classic_constructed,
           status: :active,
           user_id: scope.user.id,
           user2_id: opponent.user.id
         })
-        |> Tabletop.Repo.insert()
 
       Tabletop.Games.terminate_game(scope, match_game)
 
@@ -458,35 +434,6 @@ defmodule TabletopWeb.GameLiveTest do
       # The hero preview only renders for the selected hero, so its icon path
       # confirms the hero field was seeded too.
       assert filled =~ Tabletop.Heroes.icon_path(hero.slug)
-    end
-  end
-
-  describe "Home tournaments column" do
-    alias Tabletop.Repo
-    alias Tabletop.Tournaments.Tournament
-
-    test "lists upcoming and in-progress tournaments with links", %{conn: conn} do
-      up = Repo.insert!(%Tournament{name: "Upcoming Open", status: :registration})
-      live_t = Repo.insert!(%Tournament{name: "Live Swiss", status: :swiss})
-
-      {:ok, _live, html} = live(conn, ~p"/")
-
-      assert html =~ "Upcoming Open"
-      assert html =~ "Live Swiss"
-      assert html =~ ~p"/tournaments/#{up}"
-      assert html =~ ~p"/tournaments/#{live_t}"
-      assert html =~ "View all"
-    end
-
-    test "excludes finished/draft tournaments and shows an empty state", %{conn: conn} do
-      Repo.insert!(%Tournament{name: "Old Cup", status: :finished})
-      Repo.insert!(%Tournament{name: "Secret Draft", status: :draft})
-
-      {:ok, _live, html} = live(conn, ~p"/")
-
-      assert html =~ "No tournaments scheduled"
-      refute html =~ "Old Cup"
-      refute html =~ "Secret Draft"
     end
   end
 
@@ -723,45 +670,30 @@ defmodule TabletopWeb.GameLiveTest do
     end
   end
 
-  describe "Show (tournament match)" do
+  describe "Show (game ended)" do
     alias Tabletop.Games
     alias Tabletop.Repo
-    alias Tabletop.Tournaments
-    alias Tabletop.TournamentsFixtures
 
-    test "ending the game redirects participants to the tournament", %{conn: conn, scope: scope} do
-      admin = TournamentsFixtures.admin_scope_fixture()
-      t = TournamentsFixtures.tournament_fixture(scope: admin)
-      {:ok, t} = Tournaments.open_registration(admin, t)
-
-      # The logged-in user is one of the two paired players.
-      {:ok, _} =
-        Tournaments.register(scope, t.id, %{
-          "decklist_url" => TournamentsFixtures.valid_fabrary_url()
-        })
-
+    test "ending the game redirects participants to the lobby", %{conn: conn, scope: scope} do
       opponent = user_scope_fixture()
 
-      {:ok, _} =
-        Tournaments.register(opponent, t.id, %{
-          "decklist_url" => TournamentsFixtures.valid_fabrary_url()
+      game =
+        Repo.insert!(%Games.Game{
+          title: "Ending game",
+          format: :classic_constructed,
+          hero: "aurora",
+          status: :active,
+          user_id: scope.user.id,
+          user2_id: opponent.user.id
         })
-
-      {:ok, t} = Tournaments.open_check_in(admin, t)
-      {:ok, _} = Tournaments.check_in(scope, t.id)
-      {:ok, _} = Tournaments.check_in(opponent, t.id)
-      {:ok, t} = Tournaments.start_tournament(admin, t)
-
-      [match] = Tournaments.list_matches_for_round(t.current_round_id)
-      game = Repo.get!(Games.Game, match.game_id)
 
       {:ok, show_live, _html} = live(conn, ~p"/games/#{game}")
 
       # The opponent leaving ends the game — the same `game_ended` broadcast the
-      # disconnect grace timer fires. The surviving player goes to the tournament.
+      # disconnect grace timer fires. The surviving player goes to the lobby.
       {:ok, _} = Games.terminate_game(opponent, game)
 
-      assert_redirect(show_live, ~p"/tournaments/#{t.id}", 2000)
+      assert_redirect(show_live, ~p"/", 2000)
     end
   end
 

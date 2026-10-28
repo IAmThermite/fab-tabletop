@@ -35,7 +35,7 @@ defmodule Tabletop.Tracing.PathSamplerTest do
 
   describe "sampled paths" do
     test "keeps ordinary application requests" do
-      for path <- ["/", "/games/abc-123", "/tournaments", "/users/settings"] do
+      for path <- ["/", "/games/abc-123", "/camera-setup", "/users/settings"] do
         assert sample(%{@url_path => path}, config()) == :record_and_sample,
                "#{path} should be traced"
       end
